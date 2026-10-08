@@ -78,6 +78,11 @@ between September and October 2026.
   placement checks waiting for a valid reader sample, and `cost` in placement results.
 - Reading-only replies costing game time from the 12th in a row instead of ending the
   run, and the warning after each reply without a tool call. Not yet run live.
+- Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that
+  enforces it, and the version in `run.json` and the report. Resumable series: the
+  episode outcomes, which attempts count, where a series resumes and the settings a
+  resume must match. The runner's stop, retry, pause and `--resume` path and its game
+  machine check have not run live yet.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.

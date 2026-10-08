@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HarnessVersion } from "../shared/protocol.js";
+import type { BenchmarkStamp, HarnessVersion } from "../shared/protocol.js";
+import { readBenchmarkStamp } from "./benchmark-version.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 /** Paths whose contents decide how a run behaves; docs and notes do not. */
@@ -38,3 +39,12 @@ function readCodeVersion(): Pick<HarnessVersion, "commit" | "dirty" | "diffSha25
 }
 
 export const codeVersion = readCodeVersion();
+
+/** The benchmark version this host process runs, read once at start like the code version. */
+export const benchmarkStamp: BenchmarkStamp = (() => {
+  try {
+    return readBenchmarkStamp();
+  } catch {
+    return { version: null, fingerprint: "unknown", guide: null };
+  }
+})();

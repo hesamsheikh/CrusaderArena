@@ -88,6 +88,8 @@ export type RunRow = {
   modelSettings: string | null;
   /** Short commit, "+" and the change hash when the code was uncommitted; prompt and tool hashes. */
   harness: string | null;
+  /** The benchmark version the run recorded (benchmark-versions.json); null before versioning. */
+  benchmarkVersion: string | null;
   /** The learning series the run is an episode of, if any. */
   series: RunSeries | null;
   benchmark: string | null;
@@ -429,6 +431,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
     model: typeof run?.model?.name === "string" ? run.model.name : null,
     modelSettings: run?.model ? settingsLabel(run.model) : null,
     harness: harnessLabel(run?.harness),
+    benchmarkVersion: typeof run?.benchmark?.version === "string" ? run.benchmark.version : null,
     series: seriesOf(run?.series) ?? seriesOf(episode?.series),
     benchmark: typeof run?.benchmarkType === "string" ? run.benchmarkType : typeof episode?.benchmark === "string" ? episode.benchmark : null,
     map: typeof episode?.map === "string" ? episode.map : typeof observed?.map_name === "string" ? observed.map_name : null,
@@ -524,6 +527,7 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Model", (r) => r.model ?? ""],
   ["Model settings", (r) => r.modelSettings ?? ""],
   ["Harness", (r) => r.harness ?? ""],
+  ["Version", (r) => r.benchmarkVersion ?? ""],
   ["Benchmark", (r) => r.benchmark ?? ""],
   ["Map", (r) => r.map ?? ""],
   ["Ended", (r) => (r.ended === "error" && r.endDetail ? `error: ${r.endDetail.slice(0, 48)}${r.endDetail.length > 48 ? "…" : ""}` : r.ended)],
@@ -563,7 +567,7 @@ const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\s+/g, " ");
 function seriesOf(value: unknown): RunSeries | null {
   const s = value as Obj | undefined;
   return typeof s?.id === "string" && num(s.episode) !== null && num(s.episodes) !== null
-    ? { id: s.id, episode: s.episode, episodes: s.episodes }
+    ? { id: s.id, episode: s.episode, episodes: s.episodes, ...(num(s.attempt) !== null ? { attempt: s.attempt } : {}) }
     : null;
 }
 
@@ -589,7 +593,10 @@ export function seriesRows(rows: RunRow[]): SeriesRow[] {
   for (const row of rows) if (row.series) groups.set(row.series.id, [...(groups.get(row.series.id) ?? []), row]);
   return [...groups].map(([id, runs]) => {
     const episodes = Math.max(...runs.map((r) => r.series!.episodes));
-    const episode = (i: number) => runs.find((r) => r.series!.episode === i + 1);
+    // An episode run again (after a stop or an infrastructure failure) counts by its last attempt.
+    const episode = (i: number) => runs
+      .filter((r) => r.series!.episode === i + 1)
+      .sort((a, b) => (b.series!.attempt ?? 1) - (a.series!.attempt ?? 1))[0];
     const netWorth = Array.from({ length: episodes }, (_, i) => episode(i)?.scorecard.netWorth ?? null);
     const valid = Array.from({ length: episodes }, (_, i) => episode(i)?.scorecard.valid ?? null);
     const [first, final] = [netWorth[0], netWorth[episodes - 1]];

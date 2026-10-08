@@ -47,7 +47,7 @@ import { MapView } from "./map-view.js";
 import { cameraKey } from "./construction-ui.js";
 import type { Ack } from "./placement.js";
 import type { Store } from "./store.js";
-import { codeVersion, sha256 } from "./version.js";
+import { benchmarkStamp, codeVersion, sha256 } from "./version.js";
 
 /** Most `Z` presses the final overview tries; it stops once the camera stops zooming out. */
 const MAX_ZOOM_OUT_STEPS = 8;
@@ -328,6 +328,9 @@ export class RunController {
         systemPromptSha256: sha256(this.systemPromptText),
         toolsSha256: sha256(JSON.stringify(this.contextTools())),
       },
+      // A version only covers code as committed: uncommitted behavioural edits change the
+      // fingerprint, so such a run has no version.
+      benchmark: benchmarkStamp,
     });
     this.memory.write("inputs.json", {
       version: 2,
@@ -850,11 +853,15 @@ export class RunController {
     } catch (error) {
       if (!this.session.reason) {
         this.session.stop("error");
+        this.progress.endError = String(error);
         this.log("error", String(error));
       }
     } finally {
       this.session.close();
-      if (this.session.errorDetail) this.log("error", this.session.errorDetail);
+      if (this.session.errorDetail) {
+        this.progress.endError ??= this.session.errorDetail;
+        this.log("error", this.session.errorDetail);
+      }
       if (this.recorder) {
         const recording = await this.recorder.stop();
         this.progress.recording = { frames: recording.frames, bytes: recording.bytes, ...(recording.lastError ? { lastError: recording.lastError } : {}) };

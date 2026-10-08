@@ -119,7 +119,7 @@ logs. **Export logs** and **Download full events** download them.
 
 | File | Contents |
 | --- | --- |
-| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, cost (when the provider reports it), the learning series and episode (if any), and progress: budget used, which limit ended the run, plan, notebook, playbook, compactions, timings, memory, recording summary. Also the harness version (see below) |
+| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, cost (when the provider reports it), the learning series, episode and attempt (if any), and progress: budget used, which limit ended the run, the error that ended it, plan, notebook, playbook, compactions, timings, memory, recording summary. Also the harness and benchmark versions (see below) |
 | `inputs.json` | Exactly what the agent was given: system prompt, benchmark rules, controls, settings, model |
 | `logs.jsonl` | Readable log of messages, actions and errors, written live |
 | `events.jsonl` | Every model stream event and tool result, including screenshots and the full reader sample behind each observation, plus host events. Can reach hundreds of MB |
@@ -136,7 +136,9 @@ logs. **Export logs** and **Download full events** download them.
 `src/`, `tools/` or the package files had uncommitted changes (and a hash of those
 changes), and hashes of the exact system prompt and tool definitions. The run page
 shows it, and `npm run report` has a Harness column, so runs made with different code
-are easy to tell apart.
+are easy to tell apart. `run.json` also records the [benchmark version](benchmark.md#versions)
+under `benchmark`: the version, the fingerprint of the files it covers, and a hash of the
+private preparation images.
 
 Known API keys and fields named like keys are replaced with `[redacted]` before
 anything is logged. Treat the runs folder as private anyway: it holds full screenshots

@@ -298,6 +298,27 @@ test("a learning series is scored by its last episode, with the change from the 
   assert.match(renderMarkdown(rows), /\| 20261008-series1 \| Model A \| Oasis construction \| 1300 → – → 1650! \| 1650! \| \+350 \| \$1\.00 \|/);
 });
 
+test("an episode run again counts by its last attempt; runs show their benchmark version", async () => {
+  const dir = root();
+  const series = (attempt: number) => ({ id: "20261009-series2", episode: 1, episodes: 1, attempt });
+  // Attempt 1 was stopped by the operator; attempt 2 ran the episode again.
+  for (const [attempt, worth] of [[1, 900], [2, 1500]] as const)
+    writeRun(dir, `Model-A-Oasis-20261009-10000${attempt}Z-2026-10-09T10-00-0${attempt}-000Z-r000000${attempt}`, {
+      "run.json": {
+        id: `r000000${attempt}-1111-2222-3333-444444444444`, model: { name: "Model A", modelId: "vendor/model-a" },
+        benchmarkType: "Oasis construction", startedAt: START + attempt * 1000, status: attempt === 1 ? "stopped" : "completed",
+        turns: 3, tokens: 100, series: series(attempt), benchmark: { version: "v1", fingerprint: "f", guide: null },
+      },
+      "episode.json": { episode: 1, series: series(attempt), source: "final", map: "Oasis", gold: worth, population: 10, net_worth: worth, valid: attempt === 2 },
+    });
+  const rows = await buildReport(dir);
+  const [row] = seriesRows(rows);
+  assert.deepEqual(row.netWorth, [1500]);
+  assert.deepEqual(row.valid, [true]);
+  assert.deepEqual(rows.map((r) => r.benchmarkVersion), ["v1", "v1"]);
+  assert.match(renderMarkdown(rows), /\| Version \|/);
+});
+
 test("growth is net worth minus what doing nothing scores on the same save and budget", async () => {
   const dir = root();
   // An older episode.json stored growth against the starting package; the report recomputes it.

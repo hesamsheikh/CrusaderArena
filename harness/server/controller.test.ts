@@ -358,6 +358,8 @@ test("replies without any tool call end the run after four in a row, and the mod
   assert.equal(f.requests.length, 4);
   assert.match(JSON.stringify(f.requests[1].messages.at(-1)), /called no tools.*4 replies in a row without a tool call end the run/);
   assert.ok(f.logMessages.some((m) => /No tool calls in 4 replies in a row/.test(m)), JSON.stringify(f.logMessages));
+  // run.json keeps the error, so the episode runner counts this as the model's failure.
+  assert.match(f.store.get(f.run.id).progress?.endError ?? "", /No tool calls in 4 replies in a row/);
 });
 test("brief reader freshness gaps do not end a timed run", async () => {
   const f = fixture(1);

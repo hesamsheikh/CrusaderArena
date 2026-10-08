@@ -255,6 +255,8 @@ export type RuntimeProgress = {
   /** How the host set the game speed before timed play (runs from 2026-10-08). */
   gameSpeed?: GameSpeedSetting;
   stopReason?: string;
+  /** The error that ended the run, when one did. */
+  endError?: string;
   plan: { step: string; status: "pending" | "in_progress" | "completed" }[];
   notebook: { revision: number; text: string };
   /** A learning episode's playbook (see RunSeries); absent in other runs. */
@@ -285,6 +287,15 @@ export type HarnessVersion = {
   systemPromptSha256: string;
   toolsSha256: string;
 };
+/** The benchmark version a host runs (harness/server/benchmark-version.ts). */
+export type BenchmarkStamp = {
+  /** v1, v2, …; null when benchmark-versions.json lists no version for the fingerprint. */
+  version: string | null;
+  /** SHA-256 of the files that decide how a run plays and is scored. */
+  fingerprint: string;
+  /** SHA-256 of the private preparation images; null when the guide is text only. */
+  guide: string | null;
+};
 export type Run = {
   config?: RunConfig;
   progress?: RuntimeProgress;
@@ -296,6 +307,8 @@ export type Run = {
   model: Pick<ModelProfile, "name" | "modelId" | "baseUrl"> & Partial<ModelSettings>;
   /** The harness that ran it; runs before 2026-10-08 have none. */
   harness?: HarnessVersion;
+  /** The benchmark version it ran; runs before versioning have none. */
+  benchmark?: BenchmarkStamp;
   prompt: string;
   maxTurns: number | null;
   folder: string;
@@ -320,10 +333,13 @@ export type Run = {
   legacySource?: string;
 };
 /** Episodes of one series play the same save in turn, carrying the agent's playbook forward. */
-export type RunSeries = { id: string; episode: number; episodes: number };
+/** An episode of a learning series; `attempt` counts its runs (an infrastructure failure or a stop is run again). */
+export type RunSeries = { id: string; episode: number; episodes: number; attempt?: number };
 export type State = {
   /** When the dashboard server process started (ms); runs use the code loaded then. */
   serverStartedAt?: number;
+  /** The benchmark version and code this host runs, read when it started. */
+  benchmark?: BenchmarkStamp & { commit: string | null; dirty: boolean | null };
   /** Host memory guard for the connected game (see GameDevice.guardState). */
   memoryGuard?: "off" | "starting" | "active" | "failed";
   models: ModelProfile[];

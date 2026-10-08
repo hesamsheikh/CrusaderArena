@@ -9,8 +9,12 @@
  *
  * The episodes (3 by default) form a learning series: each starts from the playbook the agent
  * left at the end of the one before, and the last episode's score is the series' score.
- * --no-playbook runs them as independent runs instead. A failed episode is recorded and the
- * series goes on; if the harness or prompt files change under the dashboard, the series stops.
+ * --no-playbook runs them as independent runs instead. An episode counts when it is a full-budget
+ * score or the model itself ended it (series.ts). One stopped by the operator (Ctrl-C here, the
+ * dashboard or the control monitor) pauses the series; one ended by the harness, game or provider is
+ * run once more, then pauses it. --resume <series id> continues a paused series from that episode
+ * with the playbook it started from. A series needs a benchmark version (benchmark-version.ts) and
+ * a game machine whose helper and reader files match this checkout, unless --unversioned.
  *
  * --idle measures the do-nothing baseline: no agent, the game runs untouched at the benchmark's
  * speed for the same game time, then the scorecard is read.
@@ -22,7 +26,8 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { gameHost, quote } from "./device.js";
@@ -30,36 +35,82 @@ import { netWorth } from "./market-prices.js";
 import { idleBaseline } from "./baselines.js";
 import { renderVideo, type VideoResult } from "./video.js";
 import { setGameSpeed } from "./game-speed.js";
-import { TICKS_PER_GAME_SECOND, type Frame, type GameAction, type GameSpeedSetting, type Run, type RunSeries, type State } from "../shared/protocol.js";
+import { behaviourFiles } from "./benchmark-version.js";
+import { classify, counts, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
+import { TICKS_PER_GAME_SECOND, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
 const { values: opts } = parseArgs({
   options: {
+    // Series settings: no defaults here, so --resume can refuse any that is given (see DEFAULTS).
     save: { type: "string" },
     map: { type: "string" },
-    benchmark: { type: "string", default: "Custom" },
+    benchmark: { type: "string" },
     model: { type: "string" },
     prompt: { type: "string" },
     "prompt-file": { type: "string" },
-    "game-minutes": { type: "string", default: "25" },
-    "wall-limit-minutes": { type: "string", default: "360" },
-    "default-wait": { type: "string", default: "5" },
-    "min-turn-seconds": { type: "string", default: "8" },
-    "context-budget": { type: "string", default: "120000" },
-    episodes: { type: "string", default: "3" },
-    "no-playbook": { type: "boolean", default: false },
+    "game-minutes": { type: "string" },
+    "wall-limit-minutes": { type: "string" },
+    "default-wait": { type: "string" },
+    "min-turn-seconds": { type: "string" },
+    "context-budget": { type: "string" },
+    episodes: { type: "string" },
+    "no-playbook": { type: "boolean" },
+    record: { type: "boolean" },
+    // How to run, not what.
+    resume: { type: "string" },
+    unversioned: { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
     idle: { type: "boolean", default: false },
     restart: { type: "boolean", default: false },
     "keep-game": { type: "boolean", default: false },
-    record: { type: "boolean", default: false },
     port: { type: "string", default: process.env.PORT || "4317" },
   },
 });
+const DEFAULTS = {
+  benchmark: "Custom", "game-minutes": "25", "wall-limit-minutes": "360", "default-wait": "5",
+  "min-turn-seconds": "8", "context-budget": "120000", episodes: "3",
+};
+const setting = (name: keyof typeof DEFAULTS) => opts[name] ?? DEFAULTS[name];
+const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-file", "game-minutes", "wall-limit-minutes",
+  "default-wait", "min-turn-seconds", "context-budget", "episodes", "no-playbook", "record"] as const;
+/** What an episode is run with: a series' settings, or the flags for --idle and --dry-run. */
+type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
 const base = `http://127.0.0.1:${opts.port}/api/`;
 const renders: Promise<VideoResult | null>[] = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const log = (text: string) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${text}`);
+/** The series' runner.log, once there is one: Ctrl-C also ends a `| tee`. */
+let logFile: string | undefined;
+const log = (text: string) => {
+  const line = `[${new Date().toISOString().slice(11, 19)}] ${text}`;
+  console.log(line);
+  if (logFile) appendFileSync(logFile, line + "\n");
+};
+process.stdout.on("error", () => {});
+
+/**
+ * Ctrl-C (or SIGTERM) stops the current episode: the dashboard run is stopped, the game closed and
+ * the series paused there, to be continued with --resume. npm and tsx can pass on the same Ctrl-C
+ * more than once, so only a second one at least 2 s later quits at once.
+ */
+let stopRequested = false;
+let stopRequestedAt = 0;
+function requestStop() {
+  if (stopRequested) {
+    if (Date.now() - stopRequestedAt < 2000) return;
+    log("Second stop: quitting now. The game and a dashboard run may still be going.");
+    process.exit(130);
+  }
+  stopRequested = true;
+  stopRequestedAt = Date.now();
+  log("Stop requested: ending this episode, closing the game and pausing the series. Ctrl-C again to quit at once.");
+  api("agent/stop", {}).catch(() => {});
+}
+process.on("SIGINT", requestStop);
+process.on("SIGTERM", requestStop);
+function checkStop() {
+  if (stopRequested) throw new Error("Stopped by the operator.");
+}
 
 async function api<T = any>(route: string, body?: unknown): Promise<T> {
   const res = await fetch(base + route, body === undefined ? undefined : {
@@ -93,6 +144,7 @@ function gameSession(command: "status" | "launch" | "activate" | "close", timeou
 }
 
 async function frame() {
+  checkStop();
   return api<Frame>("frame");
 }
 /**
@@ -130,9 +182,10 @@ function keysFor(text: string) {
   });
 }
 
-async function waitFor<T>(what: string, seconds: number, probe: () => Promise<T | undefined>) {
+async function waitFor<T>(what: string, seconds: number, probe: () => Promise<T | undefined>, stoppable = true) {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
+    if (stoppable) checkStop();
     const value = await probe().catch(() => undefined);
     if (value !== undefined) return value;
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}.`);
@@ -303,12 +356,12 @@ async function checkDashboardFresh() {
 async function episode(
   n: number,
   total: number,
-  modelId: string | undefined,
-  prompt: string,
+  plan: Plan,
   series?: RunSeries,
   playbook?: string,
 ) {
-  log(`Episode ${n}/${total}: starting the game`);
+  checkStop();
+  log(`Episode ${n}/${total}${series?.attempt && series.attempt > 1 ? ` (attempt ${series.attempt})` : ""}: starting the game`);
   const before = await gameSession("status");
   if (before.running) {
     if (!opts.restart) throw new Error("A game is already running; close it or pass --restart.");
@@ -327,40 +380,34 @@ async function episode(
     }
   });
   try {
-    log(`Loading "${opts.save}"`);
-    const loaded = await loadSave(opts.save!, opts.map, launchedAt);
+    log(`Loading "${plan.save}"`);
+    const loaded = await loadSave(plan.save, plan.map, launchedAt);
     log(`Loaded ${loaded.map_name} at game tick ${loaded.game_time}; pausing`);
     await setPaused(true);
-    const baseline = idleBaseline(opts.save, Number(opts["game-minutes"]));
+    const baseline = idleBaseline(plan.save, plan.config.gameMinutes);
     let run: Run | undefined;
     let lastGood: State | undefined;
     let idleSpeed: GameSpeedSetting | undefined;
-    if (opts.idle) idleSpeed = await idle(Number(opts["game-minutes"]), Number(opts["wall-limit-minutes"]));
+    if (opts.idle) idleSpeed = await idle(plan.config.gameMinutes, plan.config.wallLimitMinutes);
     else if (!opts["dry-run"]) {
+      checkStop();
       const { runId } = await api<{ runId: string }>("agent/run", {
-        benchmarkType: opts.benchmark,
-        modelId,
-        prompt,
-        config: {
-          gameMinutes: Number(opts["game-minutes"]),
-          wallLimitMinutes: Number(opts["wall-limit-minutes"]),
-          defaultWaitSeconds: Number(opts["default-wait"]),
-          minTurnSeconds: Number(opts["min-turn-seconds"]),
-          contextBudget: Number(opts["context-budget"]),
-          imageTokenEstimate: 4096,
-          recordVideo: opts.record,
-        },
+        benchmarkType: plan.benchmark,
+        modelId: plan.profileId,
+        prompt: plan.prompt,
+        config: plan.config,
         // Rendered below, after the scorecard, so the video's result card can show it.
         renderVideo: false,
         ...(series ? { series, playbook: playbook ?? "" } : {}),
       });
       log(`Agent run ${runId} started`);
       await sleep(3000);
-      await waitFor("the agent run to finish", Number(opts["wall-limit-minutes"]) * 60 + 600, async () => {
+      // Not stoppable: a stop request stops the dashboard run, and this wait sees it end.
+      await waitFor("the agent run to finish", plan.config.wallLimitMinutes * 60 + 600, async () => {
         const state = await api<State>("state");
         if (state.stats?.status === "ok" && state.stats.observation) lastGood = state;
         return state.running ? undefined : true;
-      });
+      }, false);
       run = (await api<{ run: Run }>(`runs/${runId}`)).run;
       log(`Run ${run.status}: ${run.progress?.stopReason ?? "?"}; ${run.turns} turns`);
     }
@@ -379,8 +426,8 @@ async function episode(
     mkdirSync(dir, { recursive: true });
     const file = path.join(dir, run ? "episode.json" : `${opts.idle ? "idle" : "dry-run"}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     writeFileSync(file, JSON.stringify({
-      episode: n, save: opts.save, benchmark: opts.benchmark, ...(series ? { series } : {}),
-      ...(opts.idle ? { idle: { gameMinutes: Number(opts["game-minutes"]), gameSpeed: idleSpeed } } : {}), ...card,
+      episode: n, save: plan.save, benchmark: plan.benchmark, ...(series ? { series } : {}),
+      ...(opts.idle ? { idle: { gameMinutes: plan.config.gameMinutes, gameSpeed: idleSpeed } } : {}), ...card,
     }, null, 2));
     log(`Scorecard: ${file}`);
     // Renders run one at a time on this Mac, in the background of the next episode.
@@ -434,76 +481,214 @@ async function idle(gameMinutes: number, wallLimitMinutes: number) {
   return speed;
 }
 
+/**
+ * Game-machine files that differ from this checkout: the window bridge, reader stream, memory guard
+ * and reader sources run there from a copy synced by hand, so a version needs them to match. (The
+ * reader binaries are not compared; rebuild them after syncing the sources.)
+ */
+async function gameMachineDifferences() {
+  const files = behaviourFiles().filter((file) => /^(tools\/ubuntu|src|cmake)\//.test(file) || file === "CMakeLists.txt");
+  const local = new Map(files.map((file) => [file, createHash("sha256").update(readFileSync(file)).digest("hex")]));
+  const { host, root } = gameHost();
+  const output = await new Promise<string>((resolve, reject) => {
+    const child = spawn("ssh", ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host,
+      `cd ${quote(root)} && sha256sum -- ${files.map(quote).join(" ")} 2>/dev/null; true`]);
+    let text = "";
+    child.stdout.on("data", (d) => (text += d));
+    child.on("error", reject);
+    child.on("close", () => resolve(text));
+  });
+  const remote = new Map(output.split("\n").filter(Boolean).map((line) => {
+    const [hash, ...name] = line.split("  ");
+    return [name.join("  "), hash] as const;
+  }));
+  return files.filter((file) => remote.get(file) !== local.get(file));
+}
+
+const seriesDir = (id: string) => path.join("harness/runtime/series", id);
+
+function writeSeries(record: SeriesRecord) {
+  writeFileSync(path.join(seriesDir(record.id), "series.json"), JSON.stringify(record, null, 2));
+}
+
+function loadSeries(id: string): SeriesRecord {
+  if (!/^[A-Za-z0-9-]{1,80}$/.test(id)) throw new Error(`Not a series ID: ${JSON.stringify(id)}.`);
+  const file = path.join(seriesDir(id), "series.json");
+  if (!existsSync(file)) throw new Error(`No series ${id} under harness/runtime/series.`);
+  const record = JSON.parse(readFileSync(file, "utf8")) as SeriesRecord;
+  if (!record.settings) throw new Error(`Series ${id} was made before series could be resumed; start a new one.`);
+  if (record.status === "completed") throw new Error(`Series ${id} is already complete.`);
+  return record;
+}
+
+/** The host's benchmark version and code, and a model profile's current settings. */
+function current(state: State, profileId: string): Pick<SeriesSettings, "version" | "model"> {
+  const profile = state.models.find((m) => m.id === profileId) as ModelProfile | undefined;
+  if (!profile?.keyConfigured) throw new Error("The series' model profile is gone or has no API key.");
+  const b = state.benchmark;
+  return {
+    version: { version: b?.version ?? null, fingerprint: b?.fingerprint ?? "unknown", guide: b?.guide ?? null, commit: b?.commit ?? null },
+    model: { profileId, name: profile.name, modelId: profile.modelId, baseUrl: profile.baseUrl, ...modelSettings(profile) },
+  };
+}
+
+/** Run or continue an agent series until every episode has a result, or pause it. */
+async function runSeries(state: State, record: SeriesRecord, resuming: boolean) {
+  const { settings } = record;
+  const now = current(state, settings.model.profileId);
+  // Runs are comparable only under one benchmark version, with the game machine in step.
+  const problems: string[] = [];
+  if (!state.benchmark) problems.push("the dashboard reports no benchmark version (restart it)");
+  else {
+    if (!state.benchmark.version) problems.push(`no benchmark version for fingerprint ${state.benchmark.fingerprint.slice(0, 12)} (npm run benchmark-version -- check)`);
+    if (state.benchmark.dirty) problems.push("uncommitted changes to the harness, prompt or tools");
+  }
+  const remote = await gameMachineDifferences();
+  if (remote.length) problems.push(`the game machine's copy differs: ${remote.join(", ")}`);
+  if (problems.length) {
+    if (!opts.unversioned) throw new Error(`Not a versioned benchmark run: ${problems.join("; ")}. Fix it, or pass --unversioned for a trial run.`);
+    log(`Unversioned run: ${problems.join("; ")}`);
+  }
+  if (resuming) {
+    const differences = settingsDifferences(settings, now);
+    if (differences.length) throw new Error(`Series ${record.id} cannot continue on different settings: ${differences.join("; ")}.`);
+  }
+  mkdirSync(seriesDir(record.id), { recursive: true });
+  logFile = path.join(seriesDir(record.id), "runner.log");
+  const plan: Plan = { save: settings.save, map: settings.map, benchmark: settings.benchmark, prompt: settings.prompt, profileId: settings.model.profileId, config: settings.config };
+  const playbookAfter = (n: number) => {
+    const file = path.join(seriesDir(record.id), `playbook-after-episode-${n}.md`);
+    return n > 0 && existsSync(file) ? readFileSync(file, "utf8") : "";
+  };
+  log(`${resuming ? "Resuming" : settings.learning ? "Learning" : "Independent"} series ${record.id}: ${record.episodes} episode(s), benchmark ${now.version.version ?? "unversioned"}${settings.learning ? "; the playbook carries over between them" : ""}`);
+  record.status = "running";
+  delete record.stopped;
+  writeSeries(record);
+  const pause = (reason: string) => {
+    record.status = "paused";
+    record.stopped = reason;
+    writeSeries(record);
+    log(`Series paused: ${reason}. Continue it with: npm run episodes -- --resume ${record.id}`);
+    process.exitCode = 1;
+  };
+  // An infrastructure failure is run again once at once; a second one pauses the series.
+  let retried = false;
+  for (let n = nextEpisode(record); n !== null; n = nextEpisode(record)) {
+    try {
+      await checkDashboardFresh();
+    } catch (error) {
+      pause(`before episode ${n}: ${error instanceof Error ? error.message : String(error)}`);
+      break;
+    }
+    if (stopRequested) {
+      pause(`stopped by the operator before episode ${n}`);
+      break;
+    }
+    const attempt = nextAttempt(record.results, n);
+    const playbook = settings.learning ? playbookAfter(n - 1) : undefined;
+    const series = settings.learning ? { id: record.id, episode: n, episodes: record.episodes, attempt } : undefined;
+    let result: Attempt;
+    try {
+      const { card, run } = await episode(n, record.episodes, plan, series, playbook);
+      console.log(JSON.stringify(card));
+      result = {
+        episode: n, attempt, ...classify({ run, valid: card.valid, invalid: card.invalid, stopRequested }),
+        run: run?.id, folder: run?.folder, status: run?.status, net_worth: card.net_worth,
+        net_worth_growth: card.net_worth_growth, valid: card.valid, ...(card.invalid ? { invalid: card.invalid } : {}),
+      };
+      // What the agent left in its playbook (after its reflection) starts the next episode.
+      if (counts(result) && settings.learning) {
+        const file = run ? path.join("harness/runtime/runs", run.folder, "playbook.md") : "";
+        writeFileSync(path.join(seriesDir(record.id), `playbook-after-episode-${n}.md`), file && existsSync(file) ? readFileSync(file, "utf8") : playbook ?? "");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result = { episode: n, attempt, ...classify({ error: message, stopRequested }), error: message };
+    }
+    record.results.push(result);
+    writeSeries(record);
+    log(`Episode ${n}, attempt ${attempt}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
+    if (counts(result)) {
+      retried = false;
+      continue;
+    }
+    if (result.outcome === "infrastructure" && !retried) {
+      retried = true;
+      log(`Running episode ${n} again from the same playbook.`);
+      continue;
+    }
+    pause(`episode ${n} ${result.outcome === "stopped" ? "was stopped" : "failed twice"} (${result.reason ?? result.outcome})`);
+    break;
+  }
+  if (nextEpisode(record) === null) {
+    record.status = "completed";
+    writeSeries(record);
+  }
+  const worth = Array.from({ length: record.episodes }, (_, i) => {
+    const r = resultOf(record.results, i + 1);
+    return !r ? "–"
+      : r.outcome === "model_failure" ? `${r.net_worth ?? "?"} (ended by the model: ${r.reason})`
+        : r.valid === false ? `${r.net_worth} (not a full-budget score: ${(r.invalid ?? []).join("; ")})`
+          : String(r.net_worth);
+  });
+  log(`Net worth by episode: ${worth.join(" → ")}`);
+}
+
+/** --idle and --dry-run: no agent and no series. */
+async function runPlain(plan: Plan, total: number) {
+  for (let n = 1; n <= total && !stopRequested; n++) {
+    try {
+      const { card } = await episode(n, total, plan);
+      console.log(JSON.stringify(card));
+    } catch (error) {
+      log(`Episode ${n} failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  }
+}
+
 async function main() {
-  if (!opts.save) throw new Error("--save is required (the save name shown in Load Game).");
   const state = await api<State>("state").catch(() => {
     throw new Error(`The dashboard is not reachable on port ${opts.port}; start it with npm run dev.`);
   });
   if (state.running || state.connected) throw new Error("The dashboard is connected or running; disconnect it first.");
-  let modelId: string | undefined;
-  let prompt = "";
   const agent = !opts["dry-run"] && !opts.idle;
-  if (agent) {
-    const model = state.models.find((m) => m.id === opts.model || m.name === opts.model);
-    if (!model?.keyConfigured) throw new Error("--model must name a saved model profile with an API key.");
-    modelId = model.id;
-    prompt = opts.prompt ?? (opts["prompt-file"] ? readFileSync(opts["prompt-file"], "utf8").trim() : "");
-    if (!prompt) throw new Error("--prompt or --prompt-file is required for an agent run.");
-  }
-  const total = Number(opts.episodes);
-  if (!Number.isInteger(total) || total < 1 || total > 20) throw new Error("--episodes must be 1 to 20.");
-  const learning = agent && !opts["no-playbook"];
-  const id = `${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "")}-${randomUUID().slice(0, 8)}`;
-  const seriesDir = path.join("harness/runtime/series", id);
-  const results: Record<string, unknown>[] = [];
-  let playbook = "";
-  let stopped: string | undefined;
-  if (learning) {
-    mkdirSync(seriesDir, { recursive: true });
-    log(`Learning series ${id}: ${total} episode(s); the playbook carries over between them`);
-  }
-  for (let n = 1; n <= total; n++) {
-    const series = learning ? { id, episode: n, episodes: total } : undefined;
-    // Changed harness or prompt files would leave every later episode on older code: stop.
-    if (agent) {
-      try {
-        await checkDashboardFresh();
-      } catch (error) {
-        stopped = `Stopped before episode ${n}: ${error instanceof Error ? error.message : String(error)}`;
-        log(stopped);
-        break;
-      }
-    }
-    try {
-      const { card, run } = await episode(n, total, modelId, prompt, series, playbook);
-      console.log(JSON.stringify(card));
-      // What the agent left in its playbook (after its reflection) starts the next episode.
-      const file = run ? path.join("harness/runtime/runs", run.folder, "playbook.md") : "";
-      if (learning && file && existsSync(file)) playbook = readFileSync(file, "utf8");
-      results.push({ episode: n, run: run?.id, folder: run?.folder, status: run?.status, net_worth: card.net_worth, net_worth_growth: card.net_worth_growth, valid: card.valid, ...(card.invalid ? { invalid: card.invalid } : {}) });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log(`Episode ${n} failed: ${message}`);
-      results.push({ episode: n, error: message });
-    }
-    if (learning) {
-      writeFileSync(path.join(seriesDir, `playbook-after-episode-${n}.md`), playbook);
-      writeSeries();
+  if (opts.resume) {
+    if (!agent) throw new Error("--resume continues an agent series; leave out --idle and --dry-run.");
+    const given = SETTING_FLAGS.filter((flag) => opts[flag] !== undefined);
+    if (given.length) throw new Error(`--resume runs the series with its own settings; leave out ${given.map((f) => `--${f}`).join(", ")}.`);
+    await runSeries(state, loadSeries(opts.resume), true);
+  } else {
+    if (!opts.save) throw new Error("--save is required (the save name shown in Load Game).");
+    const total = Number(setting("episodes"));
+    if (!Number.isInteger(total) || total < 1 || total > 20) throw new Error("--episodes must be 1 to 20.");
+    const config = runConfigSchema.parse({
+      gameMinutes: Number(setting("game-minutes")),
+      wallLimitMinutes: Number(setting("wall-limit-minutes")),
+      defaultWaitSeconds: Number(setting("default-wait")),
+      minTurnSeconds: Number(setting("min-turn-seconds")),
+      contextBudget: Number(setting("context-budget")),
+      imageTokenEstimate: 4096,
+      recordVideo: opts.record ?? false,
+    });
+    const plan: Plan = { save: opts.save, map: opts.map, benchmark: setting("benchmark"), prompt: "", config };
+    if (!agent) await runPlain(plan, total);
+    else {
+      const model = state.models.find((m) => m.id === opts.model || m.name === opts.model);
+      if (!model?.keyConfigured) throw new Error("--model must name a saved model profile with an API key.");
+      const prompt = opts.prompt ?? (opts["prompt-file"] ? readFileSync(opts["prompt-file"], "utf8").trim() : "");
+      if (!prompt) throw new Error("--prompt or --prompt-file is required for an agent run.");
+      const id = `${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "")}-${randomUUID().slice(0, 8)}`;
+      await runSeries(state, {
+        id, save: plan.save, map: plan.map, benchmark: plan.benchmark, model: model.name, episodes: total,
+        results: [], status: "running",
+        settings: {
+          save: plan.save, map: plan.map, benchmark: plan.benchmark, prompt, config,
+          learning: !opts["no-playbook"], ...current(state, model.id),
+        },
+      }, false);
     }
   }
-  function writeSeries() {
-    writeFileSync(path.join(seriesDir, "series.json"), JSON.stringify({
-      id, save: opts.save, map: opts.map, benchmark: opts.benchmark, model: opts.model, episodes: total, results,
-      ...(stopped ? { stopped } : {}),
-    }, null, 2));
-  }
-  if (learning && stopped) writeSeries();
-  const worth = results.map((r) =>
-    typeof r.net_worth !== "number" ? "failed"
-      : r.valid === false ? `${r.net_worth} (not a full-budget score: ${(r.invalid as string[]).join("; ")})`
-        : String(r.net_worth));
-  if (worth.length) log(`Net worth by episode: ${worth.join(" → ")}`);
-  if (stopped || results.every((r) => r.error)) process.exitCode = 1;
   if (renders.length) {
     log(`Waiting for ${renders.length} video render(s)`);
     await Promise.all(renders);

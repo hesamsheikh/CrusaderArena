@@ -19,6 +19,7 @@ import { GameDevice } from "./device.js";
 import { testModel, modelConfig } from "./model.js";
 import { renderVideo } from "./video.js";
 import { RunController } from "./controller.js";
+import { benchmarkStamp, codeVersion } from "./version.js";
 import { atlasHtml, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -55,6 +56,7 @@ function snapshot(): State {
   return {
     ...state,
     serverStartedAt,
+    benchmark: { ...benchmarkStamp, commit: codeVersion.commit, dirty: codeVersion.dirty },
     streamingText: store.redact(state.streamingText),
     models: store.models(),
     runs: store.list(),
@@ -339,6 +341,7 @@ app.post("/api/agent/run", async (req, res) => {
           id: z.string().regex(/^[A-Za-z0-9-]{1,80}$/),
           episode: z.number().int().min(1),
           episodes: z.number().int().min(1).max(20),
+          attempt: z.number().int().min(1).max(20).optional(),
         })
         .strict()
         .refine((s) => s.episode <= s.episodes)
@@ -446,7 +449,12 @@ app.post("/api/agent/run", async (req, res) => {
       state.modelStatus = outcome === "error" ? "error" : "ready";
     } catch (e) {
       outcome = controller.session.reason === "stopped" ? "stopped" : "error";
-      if (outcome === "error") controller.stop("error");
+      if (outcome === "error") {
+        controller.stop("error");
+        // Kept in run.json: the episode runner tells model failures (no BEGIN) from the harness's.
+        controller.progress.endError ??= safeError(e);
+        controller.publish();
+      }
       log("error", safeError(e));
     } finally {
       // Clear the busy state whatever happens below, or the host would refuse every later run.

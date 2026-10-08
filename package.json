@@ -11,6 +11,7 @@
     "test": "node --import tsx --test harness/**/*.test.ts",
     "episodes": "tsx harness/server/episodes.ts",
     "report": "tsx harness/server/run-report.ts",
+    "benchmark-version": "tsx harness/server/benchmark-version.ts",
     "video": "python3 tools/video/render-video.py",
     "package": "python3 tools/dataset/package.py",
     "upload": "python3 tools/dataset/upload.py"

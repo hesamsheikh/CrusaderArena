@@ -35,7 +35,7 @@ git identity or other git configuration.
 
 | Path | Contents | Read |
 | --- | --- | --- |
-| `harness/server/` | Host server (`index.ts`), run loop (`controller.ts`, `session.ts`), agent and tools (`model.ts` plus `placement.ts`, `anchors.ts`, `economy.ts`, `tile-map.ts`, `map-view.ts`), prompt assembly (`preparation.ts`), context and compaction (`context.ts`), what the model sees of game state (`status.ts`, `game-events.ts`), game connection (`device.ts`), storage (`store.ts`, `run-memory.ts`), episodes and reports (`episodes.ts`, `run-report.ts`), recording (`recorder.ts`, `video.ts`) | [agent](docs/agent.md), [context](docs/context.md), [tools](docs/tools.md), [harness](docs/harness.md) |
+| `harness/server/` | Host server (`index.ts`), run loop (`controller.ts`, `session.ts`), agent and tools (`model.ts` plus `placement.ts`, `anchors.ts`, `economy.ts`, `tile-map.ts`, `map-view.ts`), prompt assembly (`preparation.ts`), context and compaction (`context.ts`), what the model sees of game state (`status.ts`, `game-events.ts`), game connection (`device.ts`), storage (`store.ts`, `run-memory.ts`), episodes, series and reports (`episodes.ts`, `series.ts`, `run-report.ts`), benchmark versions (`benchmark-version.ts`), recording (`recorder.ts`, `video.ts`) | [agent](docs/agent.md), [context](docs/context.md), [tools](docs/tools.md), [harness](docs/harness.md) |
 | `harness/shared/protocol.ts` | Types shared by server and dashboard: run settings, model settings, allowed keys | |
 | `harness/src/` | The React dashboard | [harness](docs/harness.md) |
 | `prompt/` | Everything the model reads: controls, game reference, benchmark rules, objectives | [context](docs/context.md), [benchmark](docs/benchmark.md) |
@@ -54,6 +54,11 @@ git identity or other git configuration.
 - **Say how you know.** Keep apart what was checked in the live game, what is tested
   in code, and what comes from static analysis. Never claim a live check you did not
   make.
+- **Version behavioural changes.** A change to what a run plays or scores (harness,
+  prompt, tools, game-machine helpers, reader) needs a new entry in
+  `benchmark-versions.json` in the same commit: `npm run benchmark-version -- bump "…"`,
+  or `relock "…"` when behaviour is unchanged. `npm test` fails until it has one. See
+  [Versions](docs/benchmark.md#versions).
 - **Keep the system prompt fixed within a run.** It must stay byte-identical for
   provider caching; per-turn information travels in observations and tool results.
 - **Restart the host after editing `prompt/` or `harness/`**: it loads them once at
