@@ -52,6 +52,11 @@ between September and October 2026.
 - The minimum turn length (8 game seconds), in a 2-game-minute GLM 5.3 Flash episode
   on 2026-10-08: every turn that ran the game took at least 8 game seconds, short
   turns were topped up with the model told why, and reading-only turns stayed free.
+- A learning series of three 3-game-minute GLM 5.3 Flash episodes on 2026-10-08: each
+  episode started from the playbook the one before left, the agent changed it during
+  play, the request after each episode rewrote it, and the series records and report
+  table were written. What OpenRouter billed was recorded for every request, about
+  $0.04 per episode.
 
 ## Tested in code only
 
@@ -60,11 +65,6 @@ between September and October 2026.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.
-- Learning series: the playbook carried from one episode to the next, its tools, and
-  the request after each episode that rewrites it. The episode runner's series
-  bookkeeping has not run live.
-- Recording what OpenRouter bills per request: checked against a recorded-style
-  response stream, not yet against a live one.
 - Host shutdown ending a run with the final pause, and the host staying ready when a
   run cannot be set up.
 
@@ -77,8 +77,8 @@ between September and October 2026.
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
 - **Long runs:** runs longer than the default 10 game minutes have not been shown to
   be stable, because of the memory issue below.
-- **The current prompt** has been used in only one short run, and no model has yet
-  played with the text-only menu guide.
+- **The current prompt** has been used only in runs of up to 5 game minutes, and no
+  model has yet played with the text-only menu guide.
 - **Benchmark:** scoring exists only for Oasis by the Sea; there is no military
   scoring, no ranking across runs and no published comparison of models. Early
   single-model pilots used older harness versions and are not comparable.
