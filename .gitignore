@@ -2,10 +2,8 @@
 /GameFiles/
 /MOD-CAREFUL/
 
-# Private research notes and agent instructions; kept locally, never published.
+# Private research notes; kept locally, never published.
 /analysis/
-/Agents.md
-/AGENTS.md
 
 # Build trees, packaged executables, compiler output and memory captures.
 /build/
