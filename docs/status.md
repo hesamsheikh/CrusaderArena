@@ -70,7 +70,9 @@ between September and October 2026.
 - `observe` and `wait_and_observe` waiting out the minimum turn length, and the "Game
   time left" line after the last tool result of each reply. Not yet run live.
 - Context compaction across many turns, stop and deadline handling, and failure
-  paths, with fake models and game devices (`npm test`).
+  paths, with fake models and game devices (`npm test`). This includes the retries
+  added before the first 25-game-minute run: failed handoff and playbook requests,
+  cut-off replies with tool calls, and unconfirmed pause toggles.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.

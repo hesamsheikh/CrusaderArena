@@ -54,6 +54,9 @@ const MAX_ZOOM_OUT_STEPS = 8;
 /** Time for the game to draw the zoomed-out view before the overview capture. */
 const OVERVIEW_SETTLE_MS = 700;
 
+/** Waits before each retry of a failed model request; the game is paused while it waits. */
+const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
+
 /** Provider failures worth one more request: no content, overload, rate limit or server error. */
 export function isTransientProviderError(message?: string) {
   return /empty response|overloaded|rate limit|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up/i.test(message ?? "");
@@ -275,9 +278,10 @@ export class RunController {
       const instruction: AgentMessage = { role: "user", content: handoffInstruction, timestamp: Date.now() };
       const limit = this.runtime.config.contextBudget - 4096;
       const request = async (messages: AgentMessage[], tools: AgentTool<any>[]) => {
-        const result = await (this.dependencies.handoff
-          ? this.dependencies.handoff(messages, system, tools)
-          : compactHandoff(profile, key, messages, system, tools, this.runtime));
+        const result = await this.retried("compaction", () => !!this.session.reason, () =>
+          this.dependencies.handoff
+            ? this.dependencies.handoff(messages, system, tools)
+            : compactHandoff(profile, key, messages, system, tools, this.runtime));
         this.session.check();
         store.event(run.id, { type: "compaction_usage", usage: result.usage });
         store.update(run.id, { tokens: run.tokens + result.usage.totalTokens });
@@ -381,9 +385,53 @@ export class RunController {
   private systemPrompt() {
     return this.systemPromptText;
   }
+  /**
+   * A handoff or reflection request that failed transiently is retried like a gameplay reply; the
+   * game is paused meanwhile. Without this one 5xx during a compaction ended the run.
+   */
+  private async retried<T>(kind: string, ended: () => boolean, request: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await request();
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        if (attempt >= RETRY_DELAYS_MS.length || !isTransientProviderError(text) || this.operatorStopped || ended()) throw error;
+        this.log("error", `The ${kind} request failed (${text}); retrying.`);
+        this.store.event(this.run.id, { type: "inference_retry", kind, attempt: attempt + 1, error: text });
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+      }
+    }
+  }
+  /**
+   * Pause or unpause the game and wait for the reader to confirm it. A P key the reader does not
+   * confirm, or a reader without a fresh pause state, is checked again up to twice before the run
+   * ends: a 25-game-minute run toggles pause hundreds of times (2 of 53 runs to 2026-10-08 ended on
+   * one unconfirmed toggle). Each attempt reads the state before pressing P again.
+   */
   private async ensurePauseState(target: boolean) {
+    const toggle = { sent: false };
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.setPauseOnce(target, toggle);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error);
+        if (attempt >= 2 || !/not confirmed|Fresh pause state unavailable/.test(text) || this.operatorStopped || this.session.reason)
+          throw error;
+        this.log("error", `${text} Checking the pause state again.`);
+        this.store.event(this.run.id, { type: "pause_retry", target, attempt: attempt + 1, error: text });
+      }
+    }
+  }
+  private async setPauseOnce(target: boolean, toggle: { sent: boolean }) {
     const allowed = () => {
       if (this.operatorStopped || this.session.reason) throw new Error("Run stopped.");
+    };
+    const settled = () => {
+      if (target) this.pauseStartedAt = Date.now();
+      else if (this.pauseStartedAt !== undefined) {
+        this.pausedTotalMs += Date.now() - this.pauseStartedAt;
+        this.pauseStartedAt = undefined;
+      }
     };
     const freshState = async () => {
       for (let i = 0; i < 16; i++) {
@@ -395,26 +443,24 @@ export class RunController {
       }
       throw new Error("Fresh pause state unavailable after three seconds; refusing to toggle P blindly.");
     };
-    allowed();
-    let before = await freshState();
-    if (before.observation?.paused === target) {
+    // Already in the target state. After an unconfirmed P of ours that is the toggle landing late;
+    // otherwise only a pause the harness has not counted yet is accepted.
+    const reached = () => {
+      if (toggle.sent) return settled();
       if (target && this.pauseStartedAt === undefined)
         this.pauseStartedAt = Date.now();
       if (!target && this.pauseStartedAt !== undefined)
         throw new Error("Game became unpaused outside the harness; paused-frame age cannot be trusted.");
-      return;
-    }
+    };
+    allowed();
+    let before = await freshState();
+    if (before.observation?.paused === target) return reached();
     const frame = await this.device.capture();
     allowed();
     before = await freshState();
-    if (before.observation?.paused === target) {
-      if (target && this.pauseStartedAt === undefined)
-        this.pauseStartedAt = Date.now();
-      if (!target && this.pauseStartedAt !== undefined)
-        throw new Error("Game became unpaused outside the harness; paused-frame age cannot be trusted.");
-      return;
-    }
+    if (before.observation?.paused === target) return reached();
     await this.device.action({ type: "key", key: "P" }, frame.id, allowed);
+    toggle.sent = true;
     const previousExpiry = before.valid_until_unix_ms || 0;
     for (let i = 0; i < 15; i++) {
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -424,14 +470,8 @@ export class RunController {
         current.status === "ok" &&
         current.observation?.paused === target &&
         (current.valid_until_unix_ms || 0) > previousExpiry
-      ) {
-        if (target) this.pauseStartedAt = Date.now();
-        else if (this.pauseStartedAt !== undefined) {
-          this.pausedTotalMs += Date.now() - this.pauseStartedAt;
-          this.pauseStartedAt = undefined;
-        }
-        return;
-      }
+      )
+        return settled();
     }
     throw new Error(`${target ? "Pause" : "Unpause"} input sent but not confirmed by a new reader sample.`);
   }
@@ -503,7 +543,7 @@ export class RunController {
         const text = error instanceof Error ? error.message : String(error);
         if (attempt >= 5 || !isTransientProviderError(text) || this.operatorStopped || this.session.reason) throw error;
         this.log("error", `Preparation request failed (${text}); retrying.`);
-        await new Promise((resolve) => setTimeout(resolve, [2000, 4000, 8000, 16000, 30000][attempt]));
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
         continue;
       }
       if (this.operatorStopped || this.session.reason) throw new Error("Run stopped during preparation.");
@@ -700,9 +740,10 @@ export class RunController {
         let lengthRetries = 0;
         for (let attempt = 0; ; attempt++) {
           const tail = this.agent.state.messages.at(-1);
+          const sent = this.agent.state.messages.length;
           if (truncated)
             await this.agent.prompt(
-              "Your previous reply ran out of output tokens while reasoning and was discarded. Think briefly, then call tools now.",
+              "Your previous reply ran out of output tokens and was discarded; no tool call in it ran. Think briefly and keep tool arguments short, then call tools now.",
             );
           else if (tail?.role === "user" || tail?.role === "toolResult")
             await this.agent.continue();
@@ -714,12 +755,17 @@ export class RunController {
           this.session.check();
           const reply = this.agent.state.messages.at(-1);
           // GLM 5.3 Flash once reasoned in a loop until maxTokens ("length", 2026-09-28). Discard the
-          // truncated reply and ask for a short one, up to twice per turn.
-          if (lengthRetries < 2 && reply?.role === "assistant" && reply.stopReason === "length") {
+          // truncated reply and ask for a short one, up to twice per turn. Pi refuses to run the tool
+          // calls of a cut-off reply and adds an error result for each, so the reply may be followed
+          // by tool results; they go with it.
+          let cut = this.agent.state.messages.length - 1;
+          while (cut >= sent && this.agent.state.messages[cut].role !== "assistant") cut--;
+          const cutReply = cut >= sent ? this.agent.state.messages[cut] : undefined;
+          if (lengthRetries < 2 && cutReply?.role === "assistant" && cutReply.stopReason === "length") {
             lengthRetries++;
             this.log("error", "Model reply hit the output-token limit; retrying with a brief-reply nudge.");
             this.store.event(this.run.id, { type: "inference_retry", attempt: lengthRetries, error: "length" });
-            this.agent.state.messages = this.agent.state.messages.slice(0, -1);
+            this.agent.state.messages = this.agent.state.messages.slice(0, cut);
             truncated = true;
             continue;
           }
@@ -733,7 +779,7 @@ export class RunController {
             this.store.event(this.run.id, { type: "inference_retry", attempt: attempt + 1, error: reply.errorMessage });
             this.agent.state.messages = this.agent.state.messages.slice(0, -1);
             // Image requests to the provider failed in bursts (502 "provider unavailable", 2026-09-28).
-            await new Promise((resolve) => setTimeout(resolve, [2000, 4000, 8000, 16000, 30000][attempt]));
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
             this.session.check();
             continue;
           }
@@ -853,9 +899,11 @@ export class RunController {
       timestamp: Date.now(),
     };
     const request = async (messages: AgentMessage[], tools: AgentTool<any>[]) => {
-      const result = await (this.dependencies.reflection
-        ? this.dependencies.reflection(messages, system, tools)
-        : reflectionReply(this.profile, this.key, messages, system, tools, this.runtime));
+      // The session is over by now, so only an operator stop ends the retries.
+      const result = await this.retried("reflection", () => false, () =>
+        this.dependencies.reflection
+          ? this.dependencies.reflection(messages, system, tools)
+          : reflectionReply(this.profile, this.key, messages, system, tools, this.runtime));
       this.store.event(this.run.id, { type: "reflection_usage", usage: result.usage });
       this.store.update(this.run.id, { tokens: this.run.tokens + result.usage.totalTokens });
       return result;

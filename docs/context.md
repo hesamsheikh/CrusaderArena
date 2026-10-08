@@ -156,9 +156,11 @@ writes for its future self.
   the handoff; the last model reply with its tool
   results; and a fresh observation. The system prompt never changed, so the rules,
   controls and objective are still there.
-- **Failure.** If the summary fails, is out of range, or the new conversation is still
-  over 65% of the budget, the run ends with an error. The previous conversation and
-  checkpoint are kept. Compaction is not retried.
+- **Failure.** A summary request that fails with a transient provider error (timeout,
+  rate limit, overload, server error) is retried up to 5 times, as gameplay requests
+  are. If it fails otherwise, is out of range, or the new conversation is still over
+  65% of the budget, the run ends with an error. The previous conversation and
+  checkpoint are kept.
 
 Compaction takes real time but no game time, and never resets the budget.
 

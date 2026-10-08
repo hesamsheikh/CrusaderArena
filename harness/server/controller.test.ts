@@ -103,6 +103,9 @@ function fixture(
     text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
   });
   const actions: unknown[] = [];
+  // Faults for the next P presses, in order: "drop" (the game ignores it), "late" (the game
+  // pauses or unpauses but the reader sends no new sample), null (works).
+  const pauseFaults: ("drop" | "late" | null)[] = [];
   const ageCredits: number[] = [];
   const logMessages: string[] = [];
   const events = new GameEvents();
@@ -141,12 +144,13 @@ function fixture(
       guard?.();
       actions.push(action);
       ageCredits.push(ageCreditMs);
-      paused = (action as { key?: string }).key === "P" ? !paused : paused;
+      const fault = (action as { key?: string }).key === "P" ? pauseFaults.shift() : undefined;
+      paused = (action as { key?: string }).key === "P" && fault !== "drop" ? !paused : paused;
       const input = action as { type?: string; key?: string; button?: number };
       if (camera && input.key === "Z" && camera.tiles_wide < 40)
         camera = { ...camera, tiles_wide: camera.tiles_wide + 10, tiles_high: camera.tiles_high + 10 };
       if (camera && input.type === "click" && input.button === 1) camera = { ...camera, centre_tile_x: 50, centre_tile_y: 60 };
-      statsExpiry += 2000;
+      if (fault !== "late") statsExpiry += 2000;
     },
     // A 100×100 map with the keep's 3×3 tiles around (50, 60).
     mapSummary: async () => ({
@@ -232,6 +236,7 @@ function fixture(
     isPaused: () => paused,
     guard: (record: Record<string, unknown>) => guardListeners.forEach((l) => l(record)),
     setUnavailableSamples: (n: number) => { unavailableSamples = n; },
+    faultPauseKeys: (...faults: ("drop" | "late" | null)[]) => { pauseFaults.push(...faults); },
     setCamera: (value: Record<string, number>) => { camera = value; },
     logMessages,
     captures: () => captures,
@@ -1003,6 +1008,70 @@ test("a reply cut off at the output-token limit is discarded and retried with a 
   assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
   assert.equal(calls, 2);
   assert.ok(nudged);
+});
+
+test("a cut-off reply with tool calls is discarded with their refused results and retried", async () => {
+  const f = fixture(1);
+  let calls = 0;
+  let retry = "";
+  f.controller.agent.streamFunction = (_m, ctx) => {
+    calls++;
+    const stream = createAssistantMessageEventStream();
+    if (calls === 1) {
+      const m = { ...message([call("notebook_write", { revision: 0, text: "A long playbook" })]), stopReason: "length" as const };
+      stream.push({ type: "done", reason: "length", message: m });
+    } else {
+      retry = JSON.stringify(ctx.messages);
+      stream.push({ type: "done", reason: "stop", message: message([{ type: "text", text: "Observed." }]) });
+    }
+    return stream;
+  };
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.equal(calls, 2);
+  assert.match(retry, /ran out of output tokens/);
+  assert.doesNotMatch(retry, /notebook_write|was not executed/);
+  assert.equal(f.controller.memory.notebook.revision, 0);
+});
+
+test("an unconfirmed pause or unpause is checked again instead of ending the run", async () => {
+  const f = fixture(2);
+  f.provider((n) => n === 1
+    ? [call("game_action", { type: "key", key: "Z" }), call("wait_and_observe", { seconds: 0 })]
+    : [{ type: "text", text: "Observed." }], true);
+  // The first pause is dropped and pressed again; the unpause lands without a new reader sample,
+  // so the second check finds it done and does not press P again.
+  f.faultPauseKeys("drop", null, "late");
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.deepEqual(f.actions.map((a) => (a as { key?: string }).key), ["P", "P", "P", "Z", "P"]);
+  assert.equal(f.logMessages.filter((m) => /Checking the pause state again/.test(m)).length, 2);
+  assert.equal(f.isPaused(), true);
+});
+
+test("a transiently failed handoff or reflection request is retried", async () => {
+  const f = fixture(7);
+  let failures = 1;
+  f.setHandoffHook(() => {
+    if (failures-- > 0) throw new Error("503 Service Unavailable");
+  });
+  f.provider(() => [
+    { type: "text", text: "Evidence ".repeat(5750) },
+    call("observe", {}),
+  ]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.ok(f.controller.memory.compactions >= 1);
+  assert.ok(f.logMessages.some((m) => /compaction request failed \(503/.test(m)), JSON.stringify(f.logMessages));
+
+  const series = { id: "series-test", episode: 1, episodes: 3 };
+  const g = fixture(1, 0, 10, {}, { series, playbook: "" });
+  await g.controller.prepare();
+  g.setReflectionReply((n) => {
+    if (n === 1) throw new Error("429 rate limit exceeded");
+    return { text: "- Build houses early." };
+  });
+  g.provider(() => [call("observe", {})]);
+  await g.controller.runSession();
+  assert.equal(g.controller.memory.playbook?.text, "- Build houses early.");
+  assert.ok(g.logMessages.some((m) => /reflection request failed \(429/.test(m)), JSON.stringify(g.logMessages));
 });
 
 test("memory-guard samples are recorded with the game clock and summarised in progress", async () => {

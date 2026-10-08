@@ -119,11 +119,15 @@ turn. The dashboard shows both to the operator live.
 ## When things go wrong
 
 - **Provider errors.** Timeouts, rate limits, overloads, server errors and empty
-  replies are retried up to 5 times, waiting 2, 4, 8, 16 and 30 seconds. Other errors
-  end the run.
+  replies are retried up to 5 times, waiting 2, 4, 8, 16 and 30 seconds, with the game
+  paused. This holds for gameplay, preparation, compaction and the playbook request
+  after an episode. Other errors end the run.
 - **Cut-off replies.** A reply that hits the profile's output limit (8,192 tokens by
-  default) is discarded and retried up to twice per turn with a reminder to think
-  briefly.
+  default) is discarded, tool calls included (none of them runs), and retried up to
+  twice per turn with a reminder to think briefly and keep tool arguments short.
+- **Pause toggles.** If the reader does not confirm a pause or unpause within about 3
+  seconds, the host reads the pause state again and presses `P` again only if the game
+  has not changed. After three failed attempts the run ends with an error.
 - **No `BEGIN`.** A preparation reply without `BEGIN`, or cut off at the output limit,
   is retried; after three replies the run fails with the game still paused.
 - **Failed tool calls** are not retried by the host. The model gets the error and
