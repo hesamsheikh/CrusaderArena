@@ -11,7 +11,7 @@ test("an episode counts when valid or ended by the model; stops and other failur
   assert.equal(classify({ run: run("error", { endError: "Error: No tool calls in 4 replies in a row." }), valid: false }).outcome, "model_failure");
   assert.equal(classify({ run: run("error", { endError: "Error: Model stopped: length" }), valid: false }).outcome, "model_failure");
   // The operator: Ctrl-C in the runner, the dashboard or monitor (a stopped run), a host shutdown.
-  assert.equal(classify({ run: run("stopped", { stopReason: "stopped" }), valid: false }).outcome, "stopped");
+  assert.deepEqual(classify({ run: run("stopped", { stopReason: "stopped" }), valid: false }), { outcome: "stopped", reason: "stopped by the operator" });
   assert.equal(classify({ error: "Timed out waiting for the save to load.", stopRequested: true }).outcome, "stopped");
   // The harness, game, provider or a limit.
   const memory = classify({ run: run("completed", { stopReason: "memory_guard" }), valid: false, invalid: ["ended by memory_guard"] });

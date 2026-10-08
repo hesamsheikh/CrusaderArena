@@ -12,6 +12,12 @@
       "fingerprint": "107c9ceef99f90c7ecf5a9658de6059ce362d705d9d176f03e5b86718b329193",
       "date": "2026-10-08",
       "note": "The uncommitted-change check (harness.dirty) covers only the fingerprinted files; play and scoring are unchanged."
+    },
+    {
+      "version": "v1",
+      "fingerprint": "f1be10a5cdcc2ddf4cd395c2fcd44c862449f432d60b2019a9aff554e15f2582",
+      "date": "2026-10-08",
+      "note": "Clearer stop reason in the series record and runner log; play and scoring are unchanged."
     }
   ]
 }

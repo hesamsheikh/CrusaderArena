@@ -617,7 +617,7 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
       log(`Running episode ${n} again from the same playbook.`);
       continue;
     }
-    pause(`episode ${n} ${result.outcome === "stopped" ? "was stopped" : "failed twice"} (${result.reason ?? result.outcome})`);
+    pause(result.outcome === "stopped" ? `episode ${n}: ${result.reason}` : `episode ${n} failed twice (${result.reason ?? result.outcome})`);
     break;
   }
   if (nextEpisode(record) === null) {

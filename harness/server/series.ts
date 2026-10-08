@@ -80,8 +80,10 @@ export function classify(input: {
   stopRequested?: boolean;
 }): { outcome: Outcome; reason?: string } {
   const { run } = input;
-  if (input.stopRequested || run?.status === "stopped")
-    return { outcome: "stopped", reason: run?.progress?.stopReason ? `stopped (${run.progress.stopReason})` : "stopped by the operator" };
+  if (input.stopRequested || run?.status === "stopped") {
+    const why = run?.progress?.stopReason;
+    return { outcome: "stopped", reason: why && why !== "stopped" ? `stopped (${why})` : "stopped by the operator" };
+  }
   if (input.error || !run) return { outcome: "infrastructure", reason: input.error ?? "no agent run" };
   if (input.valid) return { outcome: "valid" };
   const endError = run.progress?.endError ?? "";

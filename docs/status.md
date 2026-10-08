@@ -62,6 +62,14 @@ between September and October 2026.
   brought it to 39.9. Doing nothing then scored 1,304 net worth; the game placed the
   granary by itself.
 
+- Stopping and resuming a series, in a learning series of two 1-game-minute GLM 5.3
+  Flash episodes on 2026-10-08 at benchmark v1: Ctrl-C during episode 1 stopped the
+  dashboard run, closed the game and paused the series within 2 seconds; `--resume`
+  ran episode 1 again as attempt 2 and then episode 2 from its playbook, and the report
+  counted episode 1 by its second attempt. Every run recorded v1, its attempt and a clean
+  commit, and the runner's check of the game machine's files caught an out-of-date one
+  before the run.
+
 ## Tested in code only
 
 - The fixed game speed in an agent run: the host setting it before the budget starts,
@@ -79,10 +87,9 @@ between September and October 2026.
 - Reading-only replies costing game time from the 12th in a row instead of ending the
   run, and the warning after each reply without a tool call. Not yet run live.
 - Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that
-  enforces it, and the version in `run.json` and the report. Resumable series: the
-  episode outcomes, which attempts count, where a series resumes and the settings a
-  resume must match. The runner's stop, retry, pause and `--resume` path and its game
-  machine check have not run live yet.
+  enforces it. Resumable series: the episode outcomes, which attempts count, where a
+  series resumes and the settings a resume must match. The automatic re-run after an
+  infrastructure failure has not happened live yet.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.
