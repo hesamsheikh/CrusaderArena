@@ -82,8 +82,8 @@ On **Home**, fill in:
 | Benchmark type | | Benchmark name; selects `prompt/benchmarks/<name>.md` (see [The benchmark](benchmark.md#scenarios)) |
 | Model | | A saved profile |
 | Instruction | | The operator's instruction to the agent, up to 12,000 characters |
-| Play time | 10 minutes | Budget: real time while the game runs; paused time does not count (0.5 to 120) |
-| Wall limit | 60 minutes | Real-time limit, including thinking time (up to 240) |
+| Game minutes | 25 | Game-time budget (0.5 to 120). The game speed is fixed at 40 and not a setting; see [How it works](how-it-works.md#time-is-game-time) |
+| Wall limit | 360 minutes | Real-time limit, including thinking time (up to 720) |
 | Default wait | 5 game seconds | How long the host waits after a turn that acted without looking (0 to 300) |
 | Minimum turn | 8 game seconds | Least game time a turn that runs the game takes; the host waits out the rest (0 to 60, 0 turns it off). See [the agent](agent.md#a-turn) |
 | Context budget | 120,000 tokens | When to compact the conversation (32,000 to 200,000; see [Context](context.md#compaction)) |
@@ -102,7 +102,7 @@ While a run is active the dashboard shows the agent's latest screenshot, stats, 
 agent's messages and tool calls, its plan and notebook, the phase, the time left,
 inference timing and compactions. The dashboard takes no screenshots of its own during
 a run: the preview changes when the agent observes. Extra captures would queue behind
-the agent's inputs and cost it play time.
+the agent's inputs and cost it game time.
 
 Stop a run with **Stop** in the dashboard, by disconnecting, or with the control
 monitor on the game machine (below). Stopping aborts the model request and waits, and

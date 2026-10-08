@@ -52,17 +52,20 @@ machine listens on the network.
 3. **Prepare.** The host pauses the game and sends the model its system prompt and a
    preparation message with a guide to the construction menus. The model has no tools
    yet. It plans and must end its reply with `BEGIN`.
-4. **Play.** The host unpauses the game and sends the first screenshot. From then on
+4. **Play.** The host unpauses the game and sets it to the benchmark's fixed speed (40),
+   measuring the speed from the reader and pressing the game's speed keys until it
+   matches. Then the budget starts and the host sends the first screenshot. From then on
    the model works in turns: it thinks while the game is paused, then calls tools.
    Tools that only read (stats, notes, lookups, map reads) run with the game still
    paused; the host unpauses it at the first tool that acts, waits or takes a
    screenshot.
-   If a turn acts without looking at the result, or calls no tools at all, the host
-   lets 5 game seconds pass and sends a new screenshot. A turn that ran the game for
-   less than the minimum turn length (8 game seconds by default) is topped up the same
-   way, which caps how many requests, and so how much cost, a run can take.
-5. **Finish.** The run ends when the play-time budget is used up (10 minutes by
-   default), the real-time safety limit is reached (60 minutes), the operator stops
+   A turn that runs the game lasts at least the minimum turn length (8 game seconds by
+   default): the model's screenshots wait until the turn has run that long, and if a
+   turn acts without looking at the result, or calls no tools at all, the host lets the
+   longer of 5 game seconds and the rest of the minimum pass and sends a new screenshot.
+   This caps how many requests, and so how much cost, a run can take.
+5. **Finish.** The run ends when the game-time budget is used up (25 game minutes by
+   default), the real-time safety limit is reached (6 hours), the operator stops
    it, or something fails. The host pauses the game, confirms the pause and saves a
    final screenshot and reading. It then centres the camera on the keep, zooms all the
    way out and saves that view too, as a picture of what the agent built.
@@ -70,23 +73,28 @@ machine listens on the network.
    recorded run can be rendered into a video. Unattended episodes
    (`npm run episodes`) also write a scorecard.
 
-## Time is play time
+## Time is game time
 
-Models think at very different speeds, so the budget is **play time**: real time while
-the game is running, not wall-clock time. The game is paused whenever the model is
-thinking, and stays paused while it only reads, so thinking and reading cost nothing.
-The host measures play time from the reader: the real time between samples in which the
-game's clock advanced. A pause from any cause, including a game menu, does not count.
+Models think at very different speeds, so the budget is measured in **game time**, not
+wall-clock time. The game is paused whenever the model is thinking, and stays paused
+while it only reads, so thinking and reading cost no game time. Only the game's own
+clock counts: 30 game ticks per game second.
 
-Game speed matters. At the normal speed setting (30) the game advances 30 ticks a
-second and one game second takes one real second; a faster setting fits more game time,
-and so more production and income, into the same play time. The model changes it with
-`+` and `-` and sees the current speed in every observation. Waits, the default wait and
-the minimum turn length are measured in game seconds.
+The game speed is fixed at 40 for every run, where the clock runs about 40 ticks a
+second and a game second takes about 0.75 real seconds. The model cannot change it.
+With a game-time budget, a free speed would let a model trade how much game passes
+during each action and wait against real time, which is not what the benchmark
+measures. The run record keeps the speed the host found and measured
+(`progress.gameSpeed`). The seconds it takes to set the speed pass before the budget's
+first tick.
 
-A separate real-time limit (60 minutes by default) stops runs that would otherwise
-take too long. It does include thinking time, so a very slow model can be cut off
-before its play time is used up. The run record says which limit ended the run.
+Every request shows the model the game time left in minutes and seconds: `run_clock`
+in each screenshot, and a "Game time left" line after the last tool result of each
+reply.
+
+A separate real-time limit (6 hours by default) stops runs that have gone badly wrong.
+It does include thinking time, so a very slow model could in principle be cut off
+before its game time is used up. The run record says which limit ended the run.
 
 ## What the model can and cannot do
 

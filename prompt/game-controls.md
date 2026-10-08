@@ -12,10 +12,11 @@ system prompt stays identical for the whole run (prompt caching).
    screenshot allows in one reply: for example one `build_structure` call with 3–4
    placements, then `place_near` or `expand_storage`, then `wait_and_observe`. Split
    work across replies only when the next choice truly depends on a result.
-3. End the reply with `observe` (an immediate screenshot) or `wait_and_observe(seconds)`
-   (let that much game time pass first). If you acted and requested neither, the host
-   lets its default wait pass and then sends a screenshot. A reply that ran the game for
-   less than the minimum turn length in your briefing is topped up the same way.
+3. End the reply with `observe` (a screenshot once the reply has run the minimum turn
+   length) or `wait_and_observe(seconds)` (let that much game time pass first, and at
+   least the minimum turn). If you acted and requested neither, the host lets its default
+   wait pass and then sends a screenshot; a reply that ran the game for less than the
+   minimum turn length is topped up the same way.
 
 At most 8 actions per reply. Each `build_structure` placement counts as one, as does
 each `game_action`, `place_near`, `expand_storage`, `center_on`, `go_to_tile`,
@@ -25,8 +26,10 @@ Reading tools (`observe`, `status`, `get_inventory`, `find_sites`, `flat_view`,
 
 The game is paused while you think and stays paused until the first tool in your reply
 that acts, waits or observes; from then on it runs for the rest of the reply. Other
-reading tools therefore cost no play time when they come first: call them before your
-actions, or in a reply of their own.
+reading tools therefore cost no game time when they come first: call them before your
+actions, or in a reply of their own. From that first tool, a reply runs at least the
+minimum turn length (see Time in your instructions): `observe` and `wait_and_observe`
+return the game only once it has passed, so act first and look last.
 
 ## What you see
 
@@ -36,8 +39,7 @@ actions, or in a reply of their own.
   targets the ground behind it. A screenshot older than 30 seconds cannot be used for
   clicks.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
-  `run_clock` gives the play time used and left, the game time that has passed and the
-  game speed. `stats` has the date, gold, population
+  `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population
   (with housing and idle peasants), popularity (with its upcoming change and factors, in
   the game's popularity points), `tax_level`, food, stored `goods` by name, the
   placement mode and the camera's centre tile. `status: "unavailable"` or a missing
@@ -124,12 +126,10 @@ Game rules for placement:
 
 - `Z` zooms out and `X` zooms in (via `game_action` key). Arrow keys move the camera.
   Re-observe after each step: world positions move, the interface does not.
-- `+` and `-` change the game speed (30 is normal; `run_clock` shows `game_speed`). The
-  budget is play time, so a faster game fits more game time, and with it more production
-  and income, into the run; but the game also moves further while your tools act.
+- The game speed is fixed by the host; `+` and `-` are disabled.
 - Never press `P` (the host owns pause), `Escape` (it opens the game menu and halts
   play) or `Space` (it toggles the flattened view; use `flat_view`). The keys available
-  through `game_action` are Enter, Tab, Backspace, the arrows, A–Z, 0–9, `+` and `-`.
+  through `game_action` are Enter, Tab, Backspace, the arrows, A–Z and 0–9.
 - Right-click cancels a selection or placement mode.
 
 ## Opening playbook for a free build

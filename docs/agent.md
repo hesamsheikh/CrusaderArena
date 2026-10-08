@@ -14,7 +14,7 @@ A turn is one model reply plus the tool calls in it.
 
 1. **The game is paused while the model thinks.** Before every model request the host
    pauses the game and waits for the reader to confirm the pause. Thinking costs no
-   play time.
+   game time.
 2. **The model replies** with text and tool calls.
 3. **Tools run one at a time, in order.** Reading tools (`status`, `get_inventory`,
    `find_sites`, `map_overview`, `flat_view`, the lookup tools and the memory tools)
@@ -26,13 +26,20 @@ A turn is one model reply plus the tool calls in it.
    observing afterwards, or called no tools at all, the host lets the default wait
    pass (5 game seconds) and sends a fresh screenshot. A turn that ends with a fresh
    observation, or only read, goes straight to the next request.
-5. **A turn that runs the game lasts a minimum time.** If the game ran for less than
-   the minimum turn length (8 game seconds by default) between the start of the
-   request and the end of the turn's tools, the host lets the rest pass and sends a
-   fresh screenshot; a turn that acted without looking waits for the longer of the two.
-   This caps the number of model requests per game minute, and so the cost of a run:
-   at 8 seconds, a 20-game-minute run has at most 150 turns that run the game. Turns
-   that only read stay free and are limited separately (see [Stuck loops](#when-things-go-wrong)).
+5. **A turn that runs the game lasts a minimum time**, the minimum turn length (8 game
+   seconds by default, about 6 real seconds at the fixed speed), counted from the start
+   of the request. `observe` and `wait_and_observe` wait until the turn has run that
+   long before they capture, so a screenshot the model asks for always shows the game
+   at least that far into the turn, and the result says how long the host waited. A
+   turn that ran the game for less without looking at the end is topped up: the host
+   lets the rest pass and sends a fresh screenshot; a turn that acted without looking
+   waits for the longer of this and the default wait. This caps the number of model
+   requests per game minute, and so the cost of a run: at 8 seconds, a 25-game-minute
+   run has at most 187 turns that run the game. Turns that only read stay free and are
+   limited separately (see [Stuck loops](#when-things-go-wrong)).
+6. **Every request shows the time left.** Screenshots carry `run_clock`; when a reply's
+   last tool result has no screenshot, the host adds a line such as "Game time left:
+   23 min 41 s of 25 min."
 
 Each reply can take **at most 8 actions**. An action is anything that sends input to
 the game: a click or key (`game_action`), each building placed by `build_structure`,
@@ -123,7 +130,7 @@ turn. The dashboard shows both to the operator live.
   decides what to do.
 - **Stuck loops.** Four replies in a row with no tool calls, or twelve in a row that
   only read (no action, wait or screenshot), end the run with an error. Reading costs
-  no play time, so without this a model could stall the budget forever.
+  no game time, so without this a model could stall the budget forever.
 - **Host shutdown.** Stopping the host (Ctrl-C or a terminate signal) ends a run as
   `stopped` but, unlike the dashboard's Stop, still pauses the game and takes the final
   reading, waiting up to 10 seconds; a second Ctrl-C exits at once. An unexpected host

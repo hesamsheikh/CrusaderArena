@@ -60,9 +60,13 @@ between September and October 2026.
 
 ## Tested in code only
 
-- The play-time budget: real time counted from reader samples in which the game clock
-  advanced, the game speed in `run_clock`, and play time in the dashboard, report and
-  video. Not yet run in the live game; every live run so far had a game-time budget.
+- The fixed game speed: measuring the speed from reader ticks, pressing `+` and `-`
+  until it reads 40, failing when the keys do nothing or step past 40, and the idle
+  baseline doing the same. Not yet run in the live game: the speed keys' step size and
+  the speed the saves start at are unknown (2026-10-08 runs ran at about 20 ticks a
+  second).
+- `observe` and `wait_and_observe` waiting out the minimum turn length, and the "Game
+  time left" line after the last tool result of each reply. Not yet run live.
 - Context compaction across many turns, stop and deadline handling, and failure
   paths, with fake models and game devices (`npm test`).
 - Removing duplicate messages that appear in several channels at once.
@@ -78,8 +82,8 @@ between September and October 2026.
 - **Mouse-wheel camera zoom** does not work through the bridge (use `Z` and `X`).
 - **Other setups:** other Linux distributions and desktops, native Wayland, Windows
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
-- **Long runs:** runs longer than 10 game minutes have not been shown to
-  be stable, because of the memory issue below.
+- **Long runs:** runs longer than 10 game minutes, including the default 25, have not
+  been shown to be stable, because of the memory issue below.
 - **The current prompt** has been used only in runs of up to 5 game minutes, and no
   model has yet played with the text-only menu guide.
 - **Benchmark:** scoring exists only for Oasis by the Sea; there is no military

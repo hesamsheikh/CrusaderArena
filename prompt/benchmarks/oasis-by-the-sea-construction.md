@@ -4,7 +4,7 @@ military: false
 # Benchmark: Oasis by the Sea economy
 
 **Task.** Grow the economy of the freshly loaded **Oasis by the Sea-1** Free Build save
-as far as you can within the play-time budget.
+as far as you can within the game-time budget.
 
 **Score.** Your net worth when the run ends: gold plus every stored good valued at the
 marketplace sell price per unit (wood 1, stone 7, iron 23; bread, cheese, meat and

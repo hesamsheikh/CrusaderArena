@@ -3,7 +3,7 @@
 [← Documentation](README.md)
 
 The benchmark asks a model to build and run a medieval economy from a fixed starting
-save, within a fixed amount of **play time** (real time while the game runs), using only screenshots and mouse and
+save, within a fixed amount of **game time**, using only screenshots and mouse and
 keyboard tools. It tests whether a model can turn what it sees into a sequence of
 working actions in a real-time strategy game: find space, place buildings that the
 game accepts, keep workers fed and housed, and grow.
@@ -12,13 +12,15 @@ game accepts, keep workers fed and housed, and grow.
 
 - **Same start.** Every episode launches the game fresh and loads the same save by
   name.
-- **Same play time.** The budget is real time while the game runs, measured from the
-  reader's game clock, so every model gets the same amount of running game. The game
-  speed is the model's choice: a faster speed fits more game time into the budget, but
-  the game also moves further during each action.
+- **Same game time.** The budget is counted in game ticks (1,800 per game minute; 25
+  game minutes by default), so every model gets the same amount of in-game time.
+- **Same speed.** The game runs at a fixed speed of 40. The host sets it with the
+  game's speed keys before the budget starts and the model cannot change it, so speed
+  is not a lever: it cannot trade game time for how often the model looks.
 - **Thinking is free.** The game is paused while the model thinks and while it only
-  reads, so a slow model is not penalised in play time. A real-time limit (60 minutes by default) stops runs
-  that take too long; the record shows when that limit ended a run.
+  reads, so a slow model is not penalised in game time. A real-time limit (6 hours by
+  default) only stops runs that have gone badly wrong; the record shows when it ended a
+  run.
 - **Same tools and prompt.** Every model gets the same system prompt, tools and guide
   for a given benchmark and harness version. Each run records the harness commit and
   hashes of its prompt and tools, plus the model's settings, so a comparison can
@@ -77,8 +79,9 @@ the game code and spot-checked in play. They are in `harness/server/market-price
 so it is a fixed constant rather than a reading at load time.
 
 **Baseline.** `npm run episodes -- --idle` measures what doing nothing scores: it loads
-the save, lets the game run untouched for the same play time an agent gets, counted
-the same way, and writes the scorecard to `harness/runtime/episodes/idle-<time>.json`.
+the save, sets the game speed as an agent run does, lets the game run untouched for
+the same game time an agent gets, and writes the scorecard to
+`harness/runtime/episodes/idle-<time>.json`.
 
 Population, popularity, food and buildings are reported beside the score but do not
 count. Buildings matter only through what they produce. Buying at the marketplace
@@ -105,7 +108,7 @@ dashboard would otherwise run every later episode on the older code.
 ```bash
 npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
   --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
-  --prompt-file prompt/objectives/oasis-by-the-sea.txt --play-minutes 10
+  --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 25
 ```
 
 | Flag | Default | Meaning |
@@ -115,8 +118,8 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--benchmark` | `Custom` | Benchmark name (selects the rules file) |
 | `--model` | | Name of a saved model profile with a key |
 | `--prompt`, `--prompt-file` | | The operator instruction (one is required unless `--dry-run` or `--idle`) |
-| `--play-minutes` | 10 | Play-time budget: minutes of real time while the game runs |
-| `--wall-limit-minutes` | 60 | Real-time limit |
+| `--game-minutes` | 25 | Game-time budget |
+| `--wall-limit-minutes` | 360 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
 | `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
 | `--context-budget` | 120000 | Working context budget in tokens |
@@ -124,7 +127,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--no-playbook` | off | Run the episodes as independent runs, with no playbook and no series |
 | `--record` | off | Record the run and render a video |
 | `--dry-run` | off | Everything except the agent run; no model cost |
-| `--idle` | off | The do-nothing baseline: no agent; the game runs untouched for the play-time budget |
+| `--idle` | off | The do-nothing baseline: no agent; the game runs untouched at the benchmark speed for the game-time budget |
 | `--restart` | off | Close a game that is already running instead of stopping |
 | `--keep-game` | off | Leave the game running and paused afterwards |
 | `--port` | 4317 | Dashboard port |
@@ -193,7 +196,7 @@ provider's model ID; `--since` takes an ISO date or time.
 
 Columns, in order: run, start time, model, model settings (reasoning, output limit,
 providers), harness version (commit, uncommitted-change hash, and prompt and tool
-hashes), benchmark, map, how it ended, play seconds, game seconds, wall seconds, turns, tokens
+hashes), benchmark, map, how it ended, game seconds, wall seconds, turns, tokens
 (total, uncached input, cache reads, cache writes, the share of input read from the
 cache, output, tokens per game minute), cost in US dollars as the provider billed it
 (OpenRouter reports it; other providers leave it blank), population, housing,
@@ -202,8 +205,7 @@ from, building placements attempted / placed / failed, anchor-tool calls / place
 failed, retries, retry methods, retries skipped, peak game memory, tool errors and
 tool usage.
 
-"How it ended" is one of: `play_time` (budget used; `game_time` for runs before
-2026-10-08, which budgeted game time), `wall_limit`, `turn_limit`,
+"How it ended" is one of: `game_time` (budget used), `wall_limit`, `turn_limit`,
 `memory_guard`, `error: <last error>`, `stopped`, `interrupted`, `running` or
 `incomplete`. For runs without `episode.json`, the score is rebuilt from the last
 reading in the run's tool results and labelled `last_tool_observation`, without

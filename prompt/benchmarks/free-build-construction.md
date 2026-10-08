@@ -4,7 +4,7 @@ military: false
 # Benchmark: free-build construction (diagnostic)
 
 **Task.** On the freshly loaded **A Mightier Oasis-1** Free Build save, make real, visible
-construction progress within the play-time budget: a granary, stockpile, wood
+construction progress within the game-time budget: a granary, stockpile, wood
 production, housing and food, as resources and terrain permit. This diagnostic is not
 scored; record which structures you can verify.
 

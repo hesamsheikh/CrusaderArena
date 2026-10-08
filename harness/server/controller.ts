@@ -7,13 +7,14 @@ import type { Agent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-co
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   Frame,
+  GameSpeedSetting,
   ModelProfile,
   Run,
-  RunConfig,
   RuntimeProgress,
 } from "../shared/protocol.js";
 import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
+import { setGameSpeed, type SpeedControl } from "./game-speed.js";
 import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
 import { RunRecorder, defaultRecording } from "./recorder.js";
 import {
@@ -26,6 +27,7 @@ import {
 import {
   compactHandoff,
   gameControls,
+  HOST_OBSERVATION,
   makeAgent,
   prepareModel,
   reflectionReply,
@@ -133,17 +135,18 @@ export class RunController {
       spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams;
       /** The playbook a learning episode (run.series) starts with: what the previous episode left. */
       playbook?: string;
+      /** Sets the game speed before timed play (default: setGameSpeed against the live reader). */
+      gameSpeed?: (control: SpeedControl) => Promise<GameSpeedSetting>;
     } = {},
   ) {
-    if (run.config?.playMinutes === undefined) throw new Error("Missing run configuration");
-    const config = run.config as RunConfig;
+    if (!run.config) throw new Error("Missing run configuration");
     this.memory = new RunMemory(
       path.dirname(store.file(run.id, "run.json")),
       (event) => store.event(run.id, event),
     );
     // Before the agent is made: its playbook tools exist only in learning episodes.
     if (run.series) this.memory.startPlaybook(dependencies.playbook ?? "");
-    if (config.recordVideo)
+    if (run.config.recordVideo)
       this.recorder = new RunRecorder(
         path.dirname(store.file(run.id, "run.json")),
         () => device.currentStats(),
@@ -153,20 +156,20 @@ export class RunController {
         dependencies.spawnRecorder,
       );
     this.session = new Session(
-      config.wallLimitMinutes * 60,
+      run.config.wallLimitMinutes * 60,
       () => {
         this.agent?.abort();
         device.cancelQueued();
       },
       dependencies.now,
       {
-        budgetMs: config.playMinutes * 60000,
+        budgetTicks: Math.round(run.config.gameMinutes * 60 * TICKS_PER_GAME_SECOND),
         clock: () => {
           const stats = device.currentStats();
           const tick = stats.observation?.game_time;
           const map = stats.observation?.map_name;
           return stats.status === "ok" && typeof tick === "number" && typeof map === "string"
-            ? { tick, map, at: stats.captured_unix_ms ?? (dependencies.now ?? Date.now)() }
+            ? { tick, map }
             : null;
         },
       },
@@ -175,7 +178,7 @@ export class RunController {
       session: this.session,
       cycle: this.cycle,
       memory: this.memory,
-      config,
+      config: run.config,
       military: benchmarkSpec(run.benchmarkType || "")?.military ?? true,
       phase: (phase) => {
         this.progress.phase = phase;
@@ -336,10 +339,9 @@ export class RunController {
   }
   private compact: () => Promise<void>;
   publish() {
-    this.progress.remainingSeconds = this.session.playRemainingSeconds();
+    this.progress.remainingSeconds = this.session.gameRemainingSeconds();
     this.progress.budget = {
-      playSeconds: this.session.playBudgetSeconds,
-      usedPlaySeconds: this.session.playUsedSeconds(),
+      gameSeconds: this.session.gameBudgetSeconds,
       usedGameSeconds: this.session.gameUsedTicks() / TICKS_PER_GAME_SECOND,
       wallLimitSeconds: this.session.seconds,
       wallUsedSeconds: this.session.wallUsedSeconds(),
@@ -433,6 +435,43 @@ export class RunController {
     }
     throw new Error(`${target ? "Pause" : "Unpause"} input sent but not confirmed by a new reader sample.`);
   }
+  /**
+   * Run the game at the benchmark's fixed speed. Before the budget starts the host unpauses the
+   * game, measures its speed from the reader and presses the speed keys until it runs at
+   * GAME_SPEED. The game time this takes passes before the budget's first tick.
+   */
+  private async setGameSpeed() {
+    const allowed = () => {
+      if (this.operatorStopped || this.session.reason) throw new Error("Run stopped.");
+    };
+    this.runtime.phase("setting game speed");
+    await this.ensurePauseState(false);
+    const setting = await (this.dependencies.gameSpeed ?? setGameSpeed)({
+      clock: () => {
+        const stats = this.device.currentStats();
+        const tick = stats.observation?.game_time;
+        return stats.status === "ok" && typeof tick === "number" && typeof stats.captured_unix_ms === "number"
+          ? { tick, at: stats.captured_unix_ms }
+          : null;
+      },
+      press: async (key) => {
+        const frame = await this.device.capture();
+        allowed();
+        await this.device.action({ type: "key", key }, frame.id, allowed);
+      },
+      sleep: (ms) => {
+        allowed();
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      },
+    });
+    this.progress.gameSpeed = setting;
+    this.store.event(this.run.id, { type: "game_speed", ...setting });
+    this.log(
+      "system",
+      `Game speed set to ${setting.target}: measured ${setting.after} ticks/s (was ${setting.before}; ${setting.presses} key presses).`,
+    );
+    this.publish();
+  }
   async prepare() {
     if (this.prepared) throw new Error("Run already prepared.");
     this.runtime.phase("preparing");
@@ -493,7 +532,7 @@ export class RunController {
     await this.session.waitGame(seconds);
     const tool = this.agent.state.tools.find((t) => t.name === "observe")!;
     const result = await tool.execute(
-      "host-observation",
+      HOST_OBSERVATION,
       {},
       this.session.abort.signal,
     );
@@ -576,18 +615,20 @@ export class RunController {
       at: Date.now(),
       coverage: "Only events captured during this run; no hidden game history.",
     });
-    // The budget starts from a valid game-clock sample; a live stream has brief unavailable samples.
-    for (let i = 0; i < 30; i++) {
-      const stats = this.device.currentStats();
-      if (stats.status === "ok" && typeof stats.observation?.game_time === "number") break;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    this.session.start();
-    this.recorder?.start();
-    const unsubscribeInput = this.recorder && this.device.onInput?.((input) => this.recorder!.input(input));
+    let unsubscribeInput: (() => void) | undefined;
     let empty = 0,
       readingOnly = 0;
     try {
+      await this.setGameSpeed();
+      // The budget starts from a valid game-clock sample; a live stream has brief unavailable samples.
+      for (let i = 0; i < 30; i++) {
+        const stats = this.device.currentStats();
+        if (stats.status === "ok" && typeof stats.observation?.game_time === "number") break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      this.session.start();
+      this.recorder?.start();
+      unsubscribeInput = this.recorder && this.device.onInput?.((input) => this.recorder!.input(input));
       if (this.prepared) {
         this.recorder?.setActive(true);
         await this.ensurePauseState(false);
@@ -649,8 +690,8 @@ export class RunController {
           limit: this.runtime.config.contextBudget,
           compactions: this.memory.compactions,
         });
-        this.cycle.begin();
         const turnStartTicks = this.session.gameUsedTicks();
+        this.cycle.begin(turnStartTicks);
         this.runtime.phase("thinking");
         // A complete single Pi turn settles all its tool results before this loop continues.
         // A transient provider failure (empty response, overload, 5xx) on the model reply is retried up

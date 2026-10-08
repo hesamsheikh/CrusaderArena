@@ -85,7 +85,7 @@ export function observationStats(stats: Stats, { military = true } = {}) {
 /** Compact settlement status from one fresh reader sample; missing values stay absent, never zero. */
 export function statusReport(
   stats: Stats,
-  extra: { budget?: Record<string, number>; views?: string[] } = {},
+  extra: { budget?: Record<string, number | string>; views?: string[] } = {},
 ) {
   const o = stats.observation;
   if (stats.status !== "ok" || !o)

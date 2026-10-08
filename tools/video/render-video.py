@@ -320,10 +320,7 @@ class Run:
         episode = run_dir / 'episode.json'
         self.episode = json_or_none(episode.read_text(encoding='utf-8')) if episode.is_file() else None
         config = self.meta.get('config') or {}
-        # Runs from 2026-10-08 budget play time (real time while the game runs); older ones game time.
-        self.play_budget = config.get('playMinutes') is not None
-        self.budget = (config.get('playMinutes') or config.get('gameMinutes') or 0) * 60
-        self.budget_label = 'Play time' if self.play_budget else 'Game time'
+        self.budget = (config.get('gameMinutes') or 0) * 60
         self.default_wait = config.get('defaultWaitSeconds', 5)
         self.turns, self.plans, self.compactions, self.observations, self.marks = [], [], [], [], []
         self.final = self.overview = None
@@ -382,26 +379,6 @@ class Run:
         self.segments = self.build_segments()
         ticks = [f.stats.get('gameTime') for f in frames if f.stats and isinstance(f.stats.get('gameTime'), (int, float))]
         self.start_tick = ticks[0] if ticks else None
-        # Play time at each frame, counted as the host counts it: real time between frames in which
-        # the game clock advanced. A gap over a second is a recording hold (paused), not play.
-        self.play_times, total, prev = [], 0.0, None
-        for f in frames:
-            tick = (f.stats or {}).get('gameTime')
-            if isinstance(tick, (int, float)):
-                if prev and tick > prev[1] and f.time - prev[0] <= 1000:
-                    total += (f.time - prev[0]) / 1000
-                prev = (f.time, tick)
-            self.play_times.append(total)
-
-    def used_at(self, at):
-        """Budget seconds used at `at`: play time, or game time for older runs; None when unknown."""
-        if self.play_budget:
-            i = self.frame_at(at)
-            return self.play_times[i] if i is not None else None
-        stats = self.stats_at(at)
-        if self.start_tick is None or not stats or not isinstance(stats.get('gameTime'), (int, float)):
-            return None
-        return (stats['gameTime'] - self.start_tick) / TICKS_PER_GAME_SECOND
 
     def label_build_clicks(self):
         """Name the building on a terrain click that hits a build_structure target exactly."""
@@ -823,14 +800,15 @@ class Renderer:
 
     # -- bottom strip
 
-    def strip(self, stats, used, action, detail, detail_color, mode):
-        """Stats, the budget used so far with its progress bar, and the current action."""
+    def strip(self, stats, action, detail, detail_color, progress, mode):
         im = Image.new('RGB', (GAME_W, STRIP_H), BG)
         d = ImageDraw.Draw(im)
         d.line([(0, 0), (GAME_W, 0)], fill=LINE, width=2)
         s = stats or {}
+        used = None
+        if self.run.start_tick is not None and isinstance(s.get('gameTime'), (int, float)):
+            used = (s['gameTime'] - self.run.start_tick) / TICKS_PER_GAME_SECOND
         clock = game_clock(used) if used is not None else '--:--'
-        progress = used / self.run.budget if used is not None and self.run.budget else None
         if self.run.budget:
             clock += f' / {game_clock(self.run.budget)}'
 
@@ -838,7 +816,7 @@ class Renderer:
             v = s.get(key)
             return '–' if v is None else f'{v:,}' if isinstance(v, int) else str(v)
         population = value('population') + (f" / {s['housing']}" if s.get('housing') is not None else '')
-        items = [(self.run.budget_label, clock), ('Gold', value('gold')), ('Population', population),
+        items = [('Game time', clock), ('Gold', value('gold')), ('Population', population),
                  ('Popularity', value('popularity')), ('Food', value('food')), ('Wood', value('wood')),
                  ('Stone', value('stone')), ('Iron', value('iron'))]
         x = PAD
@@ -985,8 +963,8 @@ class Renderer:
             def build():
                 return self.compose(self.game(index, badge='Paused · context compaction', badge_color=WARN),
                                     self.compaction_panel(clip.data['handoff']),
-                                    self.strip(stats, run.used_at(at), ('Compacting context', ''), 'The agent summarised its own history into a handoff note to stay within its context budget.',
-                                               MUTED, 'pause'))
+                                    self.strip(stats, ('Compacting context', ''), 'The agent summarised its own history into a handoff note to stay within its context budget.',
+                                               MUTED, self.progress_at(stats), 'pause'))
             return ('compaction', id(clip)), build
         if clip.kind == 'think':
             turn = clip.data['turn']
@@ -1001,7 +979,7 @@ class Renderer:
                 names = ', '.join(dict.fromkeys(c.name for c in turn.calls)) or 'no tools'
                 return self.compose(self.game(index, badge='Paused · agent thinking', badge_color=WARN),
                                     self.panel(turn, reveal, turn.end, plan),
-                                    self.strip(stats, run.used_at(turn.start), ('Thinking', f'next: {names}'), cut, MUTED, 'pause'))
+                                    self.strip(stats, ('Thinking', f'next: {names}'), cut, MUTED, self.progress_at(stats), 'pause'))
             return ('think', turn.number, reveal), build
         # play
         speed, fast = clip.data['speed'], clip.data['pace'] == 'idle'
@@ -1030,13 +1008,13 @@ class Renderer:
         badge = f'Fast-forward {speed:.0f}×' if fast else 'Real time' if speed == 1 else f'{speed:g}×'
         overlay = () if fast else self.overlay(at, clip)
         stats_key = tuple(sorted((k, v) for k, v in (stats or {}).items() if k != 'paused'))
-        used = run.used_at(at)
-        key = ('play', index, turn.number if turn else 0, statuses, plan_i, stats_key, action, detail, overlay, badge, used)
+        progress = self.progress_at(stats)
+        key = ('play', index, turn.number if turn else 0, statuses, plan_i, stats_key, action, detail, overlay, badge)
 
         def build():
             panel = self.panels.get_or((turn.number if turn else 0, statuses, plan_i), lambda: self.panel(turn, 1.0, at, plan))
             return self.compose(self.game(index, overlay=overlay, badge=badge, badge_color=GOOD, fast=fast), panel,
-                                self.strip(stats, used, action, detail, color, mode))
+                                self.strip(stats, action, detail, color, progress, mode))
         return key, build
 
 
@@ -1054,12 +1032,8 @@ class Renderer:
             ended = str((run.meta.get('progress') or {}).get('stopReason') or run.meta.get('status', '')).replace('_', ' ')
             draw = ImageDraw.Draw(game)
             self.draw_badge(draw, badge, ACCENT)
-            # The host's own meter when recorded, else the count from the frames.
-            budget = (run.meta.get('progress') or {}).get('budget') or {}
-            used = budget.get('usedPlaySeconds' if run.play_budget else 'usedGameSeconds')
-            used = used if isinstance(used, (int, float)) else run.used_at(math.inf)
             self.cache['outro'] = self.compose(game, self.result_panel(stats),
-                                               self.strip(stats, used, ('Result', f'ended: {ended}'), '', MUTED, 'completed'))
+                                               self.strip(stats, ('Result', f'ended: {ended}'), '', MUTED, self.progress_at(stats), 'completed'))
         return self.cache['outro']
 
     def result_panel(self, s):
@@ -1100,9 +1074,8 @@ class Renderer:
                 y += 21
         progress = meta.get('progress') or {}
         budget = progress.get('budget') or {}
-        used, play = budget.get('usedGameSeconds'), budget.get('usedPlaySeconds')
-        facts = [f'{game_clock(play)} of play' if play is not None else None,
-                 f'{game_clock(used)} game time' if used is not None else None,
+        used = budget.get('usedGameSeconds')
+        facts = [f'{game_clock(used)} game time' if used is not None else None,
                  f"{meta.get('turns') or len(run.turns)} turns",
                  f"{meta.get('tokens'):,} tokens" if isinstance(meta.get('tokens'), int) else None,
                  f"{budget['wallUsedSeconds'] / 60:.1f} min real time" if budget.get('wallUsedSeconds') else None]
@@ -1124,6 +1097,10 @@ class Renderer:
         canvas.paste(strip, (0, GAME_H))
         return canvas
 
+    def progress_at(self, stats):
+        if not stats or self.run.start_tick is None or not self.run.budget or not isinstance(stats.get('gameTime'), (int, float)):
+            return None
+        return (stats['gameTime'] - self.run.start_tick) / TICKS_PER_GAME_SECOND / self.run.budget
 
 
     def compaction_panel(self, handoff):
@@ -1162,9 +1139,9 @@ def render(run, args, output):
     renderer = Renderer(run, args)
     # Turn ticks on the progress bar, by the game time at each reply.
     for turn in run.turns:
-        used = run.used_at(turn.end)
-        if used is not None and run.budget:
-            renderer.turn_ticks.append(min(1, max(0, used / run.budget)))
+        p = renderer.progress_at(run.stats_at(turn.end))
+        if p is not None:
+            renderer.turn_ticks.append(min(1, max(0, p)))
     ffmpeg = shutil.which('ffmpeg')
     if not ffmpeg:
         sys.exit('ffmpeg not found on PATH (macOS: brew install ffmpeg).')

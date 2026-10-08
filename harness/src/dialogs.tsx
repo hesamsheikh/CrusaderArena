@@ -280,7 +280,7 @@ export function ModelForm({
 export type RunDraft = {
   benchmarkType: string;
   prompt: string;
-  playMinutes: number;
+  gameMinutes: number;
   wallLimitMinutes: number;
   waitSeconds: number;
   minTurnSeconds: number;
@@ -392,17 +392,17 @@ export function NewRunDialog({
         <fieldset className="budgets">
           <legend>Budgets</legend>
           <label className="field">
-            <span>Play time</span>
+            <span>Game time</span>
             <div className="input-unit">
               <input
                 type="number"
                 min={0.5}
                 max={120}
                 step={0.5}
-                value={draft.playMinutes}
-                onChange={number("playMinutes")}
+                value={draft.gameMinutes}
+                onChange={number("gameMinutes")}
               />
-              <em>min running</em>
+              <em>game min</em>
             </div>
           </label>
           <label className="field">
@@ -411,7 +411,7 @@ export function NewRunDialog({
               <input
                 type="number"
                 min={1}
-                max={240}
+                max={720}
                 value={draft.wallLimitMinutes}
                 onChange={number("wallLimitMinutes")}
               />
@@ -469,8 +469,8 @@ export function NewRunDialog({
           Record video
           <small>
             Screen-records the game with the agent's reasoning and tools. Idle
-            play is fast-forwarded and thinking pauses are shortened. Ends on a
-            zoomed-out view of the keep. Saved as video.mp4 in the run folder.
+            play is fast-forwarded and thinking pauses become short reasoning
+            cards. Saved as video.mp4 in the run folder.
           </small>
         </label>
         <footer className="modal-foot">

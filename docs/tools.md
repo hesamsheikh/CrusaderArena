@@ -8,7 +8,7 @@ has none. All are defined in `harness/server/model.ts`. Tool calls run one at a 
 **Reading tools keep the game paused.** `status`, `get_inventory`, `find_sites`,
 `map_overview`, `flat_view`, `building_info`, `list_buildings`, `guide_page` and the
 memory tools run with the game still paused from the model's thinking, so they cost no
-play time. Any other tool unpauses the game, which then runs for the rest of that
+game time. Any other tool unpauses the game, which then runs for the rest of that
 reply. `observe` unpauses too, because a paused game shows a "Game Paused" overlay.
 
 **Action** marks tools that count toward the limit of 8 actions per reply. **Obs**
@@ -21,8 +21,8 @@ not counting time the game spent paused by the host.
 
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
-| `observe` | none | Takes a screenshot now | Obs | No |
-| `wait_and_observe` | `seconds` 0–300 (game seconds); optional `until: {amount, at_least}` | Lets game time pass, then looks. `until` ends the wait early once a good, `gold`, `population`, `food` or `idle_peasants` reaches a value | Wait result, then Obs | No |
+| `observe` | none | Takes a screenshot once the turn has run the minimum turn length; the host lets the rest pass first and says so | Obs | No |
+| `wait_and_observe` | `seconds` 0–300 (game seconds); optional `until: {amount, at_least}` | Lets game time pass, at least until the turn has run the minimum turn length, then looks. `until` ends the wait early once a good, `gold`, `population`, `food` or `idle_peasants` reaches a value, but not before the minimum | Wait result, then Obs | No |
 | `flat_view` | none | With the game paused, toggles the flattened landscape view, captures it, toggles back and restores the pause state it found. Buildings and rock become flat footprints, which shows free ground | Flat image (for reading only), then Obs (the targeting image) | No |
 
 ## Build
@@ -106,11 +106,10 @@ current game's tooltips win if they differ.
 | --- | --- | --- | --- | --- |
 | `game_action` | `type`: `click`, `drag`, `key` or `scroll`; `x`, `y`; `endX`, `endY` for drags; `button` 1 (left) or 3 (right); `key`; `direction` for scrolls | Sends one input to the game window at pixels of the latest screenshot | "Input acknowledged; outcome unverified" | Yes |
 
-Allowed keys: letters, digits, arrows, `Enter`, `Tab`, `Backspace`, `+` and `-`.
-`P` and `Escape` are refused, and `Space` is not offered. Useful ones: arrows move
-the camera, `Z` zooms out and `X` zooms in, `+` and `-` change game speed (more game
-time per second of play), and a right
-click cancels placement or selection. Mouse-wheel zoom does not work through the
+Allowed keys: letters, digits, arrows, `Enter`, `Tab` and `Backspace`. `P` and
+`Escape` are refused; `Space`, `+` and `-` are not offered (the game speed is fixed by
+the host). Useful ones: arrows move the camera, `Z` zooms out and `X` zooms in, and a
+right click cancels placement or selection. Mouse-wheel zoom does not work through the
 bridge.
 
 ## Memory

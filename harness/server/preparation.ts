@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Run, RunSeries, Stats } from "../shared/protocol.js";
+import { GAME_SPEED, TICKS_PER_GAME_SECOND, type Run, type RunSeries, type Stats } from "../shared/protocol.js";
 import { netWorth } from "./market-prices.js";
 import { observationStats } from "./status.js";
 import { atlasIndex, constructionAtlas, exampleSettlement } from "./visual-atlas.js";
@@ -70,8 +70,7 @@ const minutes = (value: number) => `${value} ${value === 1 ? "minute" : "minutes
  */
 export function runSystemPrompt(run: Run) {
   if (!run.config) throw new Error("Missing run configuration");
-  const { playMinutes, wallLimitMinutes, defaultWaitSeconds, minTurnSeconds } = run.config;
-  if (playMinutes === undefined) throw new Error("Missing play-time budget");
+  const { gameMinutes, wallLimitMinutes, defaultWaitSeconds, minTurnSeconds } = run.config;
   const benchmark = benchmarkSpec(run.benchmarkType || "Custom");
   const briefing = `# Crusader Arena: you are being evaluated
 
@@ -96,18 +95,22 @@ questions during the run. The run is judged by the game's state when it ends.
 
 ## Time
 
-- The budget is **${minutes(playMinutes)} of play**: real time while the game runs. It passes
-  only while your tools act and wait. The host pauses the game during every one of your
-  replies, so thinking costs no play time.
-- The game speed sets how much game time passes per second of play: at the normal speed
-  of 30, one game second takes one real second. \`+\` and \`-\` change it (see the controls).
-- A real-time limit of ${minutes(wallLimitMinutes)} also ends the run. Every reply takes real time,
-  so do several useful things per reply.
-- Every observation has \`run_clock\` with the play time used and left. If you act without
-  observing, the host lets ${defaultWaitSeconds} game seconds pass and then sends a screenshot.${minTurnSeconds > 0 ? `
-- A reply whose tools run the game takes at least ${minTurnSeconds} game seconds. If they finish
-  sooner, the host lets the rest pass and then sends a screenshot, so batch your actions or
-  wait at least that long.` : ""}
+- The budget is **${minutes(gameMinutes)} of game time** (${gameMinutes * 60} game seconds). The host runs
+  the game at a fixed speed of ${GAME_SPEED}, where a game second takes about
+  ${TICKS_PER_GAME_SECOND / GAME_SPEED} real seconds; \`+\` and \`-\` are disabled.
+- Game time passes only while the game runs: while your tools act and wait. The host
+  pauses the game during every one of your replies, so thinking costs no game time.
+- A real-time limit of ${minutes(wallLimitMinutes)} also ends the run. It is a safety limit; game time
+  is the budget.
+- Every request shows the game time left in minutes and seconds: \`run_clock\` in each
+  screenshot, and a "Game time left" line after the last tool result of each reply.
+- If you act without observing, the host lets ${defaultWaitSeconds} game seconds pass and then sends
+  a screenshot.${minTurnSeconds > 0 ? `
+- A reply whose tools run the game lasts at least ${minTurnSeconds} game seconds, counted from its
+  first tool that acts, waits or looks. \`observe\` and \`wait_and_observe\` return the game
+  only once the reply has run that long (the host lets the rest pass first), so a
+  screenshot shows the game at least ${minTurnSeconds} game seconds after your reply's first
+  action. Batch your actions before you look.` : ""}
 
 ## Ground rules
 

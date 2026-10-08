@@ -205,15 +205,18 @@ export function settingsProblem(baseUrl: string, settings: ModelSettings) {
  * game second is one real second at the default speed of 30.
  */
 export const TICKS_PER_GAME_SECOND = 30;
+/**
+ * The benchmark's fixed game speed setting. The host sets it with the game's speed keys before
+ * timed play and the agent cannot change it; the game clock then runs about 40 ticks per real
+ * second, so a game second takes about 0.75 real seconds.
+ */
+export const GAME_SPEED = 40;
 export const runConfigSchema = z
   .object({
-    /**
-     * Benchmark budget in play time: minutes of real time while the game runs. Paused time (model
-     * thinking, reading tools) does not count, and a faster game speed fits more game time in.
-     */
-    playMinutes: z.number().min(0.5).max(120).default(10),
+    /** Benchmark budget in game time: 1 game minute = 60 × 30 = 1,800 game ticks. */
+    gameMinutes: z.number().min(0.5).max(120).default(25),
     /** Real-time safety limit covering model thinking while the game is paused. */
-    wallLimitMinutes: z.number().min(0.5).max(240).default(60),
+    wallLimitMinutes: z.number().min(0.5).max(720).default(360),
     /** Fallback wait after an action turn, in game seconds. */
     defaultWaitSeconds: z.number().min(0).max(300).default(5),
     /**
@@ -228,25 +231,22 @@ export const runConfigSchema = z
   })
   .strict();
 export type RunConfig = z.infer<typeof runConfigSchema>;
-/** A stored run's settings: runs before 2026-10-08 had a game-time budget instead of play time. */
-export type StoredRunConfig = Omit<RunConfig, "playMinutes"> & { playMinutes?: number; gameMinutes?: number };
+/** The speed the host found, the speed it measured after setting it, and the key presses it took. */
+export type GameSpeedSetting = { target: number; before: number; after: number; presses: number };
 export type RuntimeProgress = {
   phase: string;
-  /** Play seconds left in the budget (before 2026-10-08: game seconds; before 2026-09-28: wall seconds). */
+  /** Game seconds left in the budget (runs before 2026-09-28: wall seconds). */
   remainingSeconds: number;
   budget?: {
-    /** The play-time budget and its use, in real seconds while the game ran (from 2026-10-08). */
-    playSeconds?: number;
-    usedPlaySeconds?: number;
-    /** The game-time budget of runs before 2026-10-08. */
-    gameSeconds?: number;
-    /** Game time that passed. */
+    gameSeconds: number;
     usedGameSeconds: number;
     wallLimitSeconds: number;
     wallUsedSeconds: number;
-    /** Which limit ended the run, if one did (game_time: runs before 2026-10-08). */
-    endedBy?: "play_time" | "game_time" | "wall_limit";
+    /** Which limit ended the run, if one did. */
+    endedBy?: "game_time" | "wall_limit";
   };
+  /** How the host set the game speed before timed play (runs from 2026-10-08). */
+  gameSpeed?: GameSpeedSetting;
   stopReason?: string;
   plan: { step: string; status: "pending" | "in_progress" | "completed" }[];
   notebook: { revision: number; text: string };
@@ -279,7 +279,7 @@ export type HarnessVersion = {
   toolsSha256: string;
 };
 export type Run = {
-  config?: StoredRunConfig;
+  config?: RunConfig;
   progress?: RuntimeProgress;
   benchmarkType?: string;
   id: string;

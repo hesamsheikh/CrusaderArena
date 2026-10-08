@@ -1,19 +1,19 @@
 /**
  * Unattended benchmark episodes through the running dashboard (npm run dev or start):
  * start the game through Steam on the Ubuntu host, load a save by name, pause,
- * run the agent with a play-time budget, record a scorecard, close the game.
+ * run the agent with a game-time budget, record a scorecard, close the game.
  *
  *   npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
  *     --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
- *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --play-minutes 10
+ *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 25
  *
  * The episodes (3 by default) form a learning series: each starts from the playbook the agent
  * left at the end of the one before, and the last episode's score is the series' score.
  * --no-playbook runs them as independent runs instead. A failed episode is recorded and the
  * series goes on; if the harness or prompt files change under the dashboard, the series stops.
  *
- * --idle measures the do-nothing baseline: no agent, the game runs untouched for the same play
- * time, then the scorecard is read.
+ * --idle measures the do-nothing baseline: no agent, the game runs untouched at the benchmark's
+ * speed for the same game time, then the scorecard is read.
  *
  * --dry-run does everything except the agent run (no model cost); --keep-game leaves
  * the game running (paused) afterwards for manual inspection; --record records the game
@@ -28,7 +28,8 @@ import { parseArgs } from "node:util";
 import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
 import { renderVideo, type VideoResult } from "./video.js";
-import type { Frame, GameAction, Run, RunSeries, State } from "../shared/protocol.js";
+import { setGameSpeed } from "./game-speed.js";
+import { TICKS_PER_GAME_SECOND, type Frame, type GameAction, type GameSpeedSetting, type Run, type RunSeries, type State } from "../shared/protocol.js";
 
 const { values: opts } = parseArgs({
   options: {
@@ -38,8 +39,8 @@ const { values: opts } = parseArgs({
     model: { type: "string" },
     prompt: { type: "string" },
     "prompt-file": { type: "string" },
-    "play-minutes": { type: "string", default: "10" },
-    "wall-limit-minutes": { type: "string", default: "60" },
+    "game-minutes": { type: "string", default: "25" },
+    "wall-limit-minutes": { type: "string", default: "360" },
     "default-wait": { type: "string", default: "5" },
     "min-turn-seconds": { type: "string", default: "8" },
     "context-budget": { type: "string", default: "120000" },
@@ -322,14 +323,15 @@ async function episode(
     const startWorth = startingWorth[opts.save!];
     let run: Run | undefined;
     let lastGood: State | undefined;
-    if (opts.idle) await idle(Number(opts["play-minutes"]), Number(opts["wall-limit-minutes"]));
+    let idleSpeed: GameSpeedSetting | undefined;
+    if (opts.idle) idleSpeed = await idle(Number(opts["game-minutes"]), Number(opts["wall-limit-minutes"]));
     else if (!opts["dry-run"]) {
       const { runId } = await api<{ runId: string }>("agent/run", {
         benchmarkType: opts.benchmark,
         modelId,
         prompt,
         config: {
-          playMinutes: Number(opts["play-minutes"]),
+          gameMinutes: Number(opts["game-minutes"]),
           wallLimitMinutes: Number(opts["wall-limit-minutes"]),
           defaultWaitSeconds: Number(opts["default-wait"]),
           minTurnSeconds: Number(opts["min-turn-seconds"]),
@@ -367,7 +369,7 @@ async function episode(
     const file = path.join(dir, run ? "episode.json" : `${opts.idle ? "idle" : "dry-run"}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     writeFileSync(file, JSON.stringify({
       episode: n, save: opts.save, benchmark: opts.benchmark, ...(series ? { series } : {}),
-      ...(opts.idle ? { idle: { playMinutes: Number(opts["play-minutes"]) } } : {}), ...card,
+      ...(opts.idle ? { idle: { gameMinutes: Number(opts["game-minutes"]), gameSpeed: idleSpeed } } : {}), ...card,
     }, null, 2));
     log(`Scorecard: ${file}`);
     // Renders run one at a time on this Mac, in the background of the next episode.
@@ -385,30 +387,40 @@ async function episode(
 }
 
 /**
- * The do-nothing baseline: the game runs with no input for the play-time budget, counted like an
- * agent run's (real time in which the game clock advanced), then it is paused for the reading.
+ * The do-nothing baseline: the host sets the benchmark's game speed as an agent run does, then the
+ * game runs with no input for the game-time budget, counted in reader ticks, and is paused for
+ * the reading.
  */
-async function idle(playMinutes: number, wallLimitMinutes: number) {
-  log(`Idle baseline: the game runs untouched for ${playMinutes} minute(s) of play time`);
+async function idle(gameMinutes: number, wallLimitMinutes: number) {
+  log(`Idle baseline: the game runs untouched for ${gameMinutes} game minute(s)`);
   await setPaused(false);
+  const reading = async () => {
+    const stats = (await api<State>("state")).stats;
+    const tick = stats?.observation?.game_time;
+    return stats?.status === "ok" && typeof tick === "number" && typeof stats.captured_unix_ms === "number"
+      ? { tick, at: stats.captured_unix_ms }
+      : null;
+  };
+  const speed = await setGameSpeed({ clock: reading, press: (key) => act({ type: "key", key }), sleep });
+  log(`Game speed set to ${speed.target}: measured ${speed.after} ticks/s (was ${speed.before}; ${speed.presses} key presses)`);
   const started = Date.now();
-  let played = 0;
-  let lastTick: number | undefined;
-  let lastAt = started;
-  while (played < playMinutes * 60_000) {
+  let first: number | undefined;
+  for (let i = 0; i < 30 && first === undefined; i++) {
+    first = (await reading())?.tick;
+    if (first === undefined) await sleep(100);
+  }
+  if (first === undefined) throw new Error("No game-clock reading; cannot start the idle baseline's budget.");
+  const budget = gameMinutes * 60 * TICKS_PER_GAME_SECOND;
+  let tick = first;
+  while (tick - first < budget) {
     if (Date.now() - started > wallLimitMinutes * 60_000)
       throw new Error(`The idle baseline passed the ${wallLimitMinutes}-minute real-time limit.`);
-    await sleep(1000);
-    const tick = (await api<State>("state")).stats?.observation?.game_time;
-    const now = Date.now();
-    if (typeof tick === "number") {
-      if (lastTick !== undefined && tick > lastTick) played += now - lastAt;
-      lastTick = tick;
-    }
-    lastAt = now;
+    await sleep(100);
+    tick = (await reading())?.tick ?? tick;
   }
   await setPaused(true);
-  log(`Idle baseline: paused after ${Math.round(played / 1000)} s of play`);
+  log(`Idle baseline: paused after ${Math.round((tick - first) / TICKS_PER_GAME_SECOND)} game seconds`);
+  return speed;
 }
 
 async function main() {

@@ -56,19 +56,26 @@ import { marketTrade, setTax, taxLevels, tradeGoods } from "./economy.js";
 import { describeBuilding, observationStats, statusReport } from "./status.js";
 import type { GameHotkey } from "./device.js";
 import type { RunConfig } from "../shared/protocol.js";
+/** The tool-call ID of the host's own screenshots, which never wait for the minimum turn. */
+export const HOST_OBSERVATION = "host-observation";
+
+/** Whole seconds as minutes and seconds: "23 min 41 s", "25 min", "40 s". */
+export function minutesSeconds(seconds: number) {
+  const total = Math.max(0, Math.round(seconds));
+  const m = Math.floor(total / 60),
+    s = total % 60;
+  return m && s ? `${m} min ${s} s` : m ? `${m} min` : `${s} s`;
+}
+
 /**
- * Play time used and left, the game time that has passed and the current game speed, for each
- * observation (kept out of the system prompt for caching).
+ * Game time left, used and budgeted, and real minutes left, for each observation and the end of
+ * every reply's tool results (kept out of the system prompt for caching).
  */
 export function runClock(session: Session) {
-  const tenths = (value: number) => Math.round(value * 10) / 10;
-  const speed = session.gameSpeed();
   return {
-    play_seconds_used: tenths(session.playUsedSeconds()),
-    play_seconds_left: tenths(session.playRemainingSeconds()),
-    play_seconds_budget: session.playBudgetSeconds,
-    game_seconds_passed: tenths(session.gameUsedTicks() / TICKS_PER_GAME_SECOND),
-    ...(speed !== null ? { game_speed: Math.round(speed) } : {}),
+    game_time_left: minutesSeconds(session.gameRemainingSeconds()),
+    game_time_used: minutesSeconds(session.gameBudgetSeconds - session.gameRemainingSeconds()),
+    game_time_budget: minutesSeconds(session.gameBudgetSeconds),
     real_minutes_left: Math.floor(session.remaining() / 60000),
   };
 }
@@ -109,6 +116,7 @@ import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
   allowedKeys,
+  GAME_SPEED,
   isOpenRouter,
   modelSettings,
   TICKS_PER_GAME_SECOND,
@@ -310,6 +318,20 @@ export function makeAgent(
     tiles: (frame) => readTileMap(frame, device.currentStats().observation?.camera as TileCamera | undefined),
     state: anchorState,
   });
+  /**
+   * Game seconds this turn still owes the minimum turn length. The model's looks (observe,
+   * wait_and_observe) return the game only once the turn has run that long, so the host does not
+   * follow them with a second screenshot.
+   */
+  const turnShortfall = () => {
+    if (!runtime?.config.minTurnSeconds) return 0;
+    const ran = (runtime.session.gameUsedTicks() - runtime.cycle.startTicks) / TICKS_PER_GAME_SECOND;
+    return Math.round(Math.max(0, runtime.config.minTurnSeconds - ran) * 10) / 10;
+  };
+  const turnNote = (seconds: number) => ({
+    type: "text" as const,
+    text: `Minimum turn (${runtime?.config.minTurnSeconds} game seconds): the host let ${seconds} more game seconds pass before this screenshot.`,
+  });
   const observe = async () => {
     runtime?.session.check();
     runtime?.phase("observing");
@@ -375,9 +397,17 @@ export function makeAgent(
       name: "observe",
       label: "Observe game",
       description:
-        "Take an immediate screenshot of the game window with its stats, buffered game events and run_clock (play time used and left, game time passed, game speed). Coordinates are image pixels; a screenshot older than thirty seconds cannot be used for clicks.",
+        "Screenshot of the game window with its stats, buffered game events and run_clock (game time left and used). It returns once your turn has run the minimum turn length of game time (the host lets the rest pass first). Coordinates are image pixels; a screenshot older than thirty seconds cannot be used for clicks.",
       parameters: Type.Object({}),
-      execute: async () => observe(),
+      execute: async (toolCallId) => {
+        const owed = toolCallId === HOST_OBSERVATION ? 0 : turnShortfall();
+        if (owed > 0) {
+          runtime!.phase("waiting");
+          await runtime!.session.waitGame(owed);
+        }
+        const view = await observe();
+        return owed > 0 ? { ...view, content: [turnNote(owed), ...view.content] } : view;
+      },
     },
     {
       name: "guide_page",
@@ -449,13 +479,14 @@ export function makeAgent(
       name: "game_action",
       label: "Control game",
       description:
-        "Send one mouse or keyboard action to the game window only, for what no other tool covers. x/y are pixels in the latest screenshot, exactly as in build_structure. No OS shortcuts or desktop access. Never P, Escape or Space. After your actions call observe or wait_and_observe; otherwise the host applies its default wait and sends a screenshot.",
+        "Send one mouse or keyboard action to the game window only, for what no other tool covers. x/y are pixels in the latest screenshot, exactly as in build_structure. No OS shortcuts or desktop access. Never P, Escape or Space; the game speed is fixed. After your actions call observe or wait_and_observe; otherwise the host applies its default wait and sends a screenshot.",
       // One object schema (some providers, e.g. Moonshot, reject a top-level anyOf); modelToolAction
       // keeps only the fields of the chosen type and validates them against actionSchema.
       parameters: Type.Object({
         type: Type.Union([Type.Literal("click"), Type.Literal("drag"), Type.Literal("key"), Type.Literal("scroll")]),
         // Space toggles the flattened landscape; flat_view uses it and always toggles back.
-        key: Type.Optional(Type.Union(allowedKeys.filter((k) => k !== "Space").map((k) => Type.Literal(k)), { description: "type key only" })),
+        // + and - would change the game speed, which the benchmark fixes.
+        key: Type.Optional(Type.Union(allowedKeys.filter((k) => !["Space", "+", "-"].includes(k)).map((k) => Type.Literal(k)), { description: "type key only" })),
         x: Type.Optional(Type.Integer({ minimum: 0, description: "click, drag, scroll" })),
         y: Type.Optional(Type.Integer({ minimum: 0, description: "click, drag, scroll" })),
         endX: Type.Optional(Type.Integer({ minimum: 0, description: "drag only" })),
@@ -473,6 +504,8 @@ export function makeAgent(
         // Escape opens Game Options, which halts play and blocks the host's pause (live 2026-09-25).
         if (runtime && action.type === "key" && action.key === "Escape")
           throw new Error("Escape opens the game menu during timed runs; right-click to cancel a selection or placement mode.");
+        if (runtime && action.type === "key" && (action.key === "+" || action.key === "-"))
+          throw new Error(`The benchmark runs at a fixed game speed of ${GAME_SPEED}; + and - are disabled.`);
         runtime?.cycle.action();
         runtime?.phase("acting");
         const frameId = observed.id;
@@ -995,7 +1028,7 @@ export function makeAgent(
       name: "status",
       label: "Settlement status",
       description:
-        "Text-only settlement summary from the read-only game reader: play-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, placement mode, open building panel, camera and saved views. No screenshot and no game input.",
+        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, placement mode, open building panel, camera and saved views. No screenshot and no game input.",
       parameters: Type.Object({}),
       execute: async () => {
         const budget = runtime ? runClock(runtime.session) : undefined;
@@ -1060,7 +1093,7 @@ export function makeAgent(
         name: "wait_and_observe",
         label: "Wait and observe",
         description:
-          "Let N game seconds pass (30 game ticks each; a faster game speed finishes sooner in real time), then capture the game, stats and accumulated events. Zero means immediate. Replaces the default wait. The wait ends early if the play-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
+          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({
@@ -1072,14 +1105,23 @@ export function makeAgent(
           runtime.phase("waiting");
           const until = args.until;
           const current = () => until ? amountOf(device.currentStats().observation, until.amount) : undefined;
+          const condition = until ? () => (current() ?? -1) >= until.at_least : undefined;
           const startTick = device.currentStats().observation?.game_time;
-          const met = await runtime.session.waitGame(args.seconds, until ? () => (current() ?? -1) >= until.at_least : undefined);
+          // The turn's minimum length comes first; `until` can end only the rest of the wait.
+          const owed = turnShortfall();
+          let met = false;
+          if (!condition) await runtime.session.waitGame(Math.max(args.seconds, owed));
+          else {
+            if (owed > 0) await runtime.session.waitGame(owed);
+            met = condition() || (await runtime.session.waitGame(Math.max(0, args.seconds - owed), condition));
+          }
           const view = await observe();
-          if (!until) return view;
+          const longer = owed > args.seconds ? [turnNote(Math.round((owed - args.seconds) * 10) / 10)] : [];
+          if (!until) return { ...view, content: [...longer, ...view.content] };
           const endTick = device.currentStats().observation?.game_time;
           const waited = typeof startTick === "number" && typeof endTick === "number" ? Math.round((endTick - startTick) / 30) : undefined;
           const summary = { until: `${until.amount} >= ${until.at_least}`, met: !!met, value: current() ?? null, waitedGameSeconds: waited };
-          return { ...view, content: [{ type: "text" as const, text: JSON.stringify(summary) }, ...view.content] };
+          return { ...view, content: [{ type: "text" as const, text: JSON.stringify(summary) }, ...longer, ...view.content] };
         },
       }),
       defineTool({
@@ -1230,6 +1272,21 @@ export function makeAgent(
           terminate: true,
         };
       }
+    },
+    // The last tool result of every reply carries the clock, so each request shows the time left;
+    // a result with a screenshot already has it in run_clock.
+    afterToolCall: async ({ assistantMessage, toolCall, result }) => {
+      if (!runtime) return;
+      const calls = assistantMessage.content.filter((part) => part.type === "toolCall");
+      if (calls.at(-1)?.id !== toolCall.id) return;
+      if (result.content.some((part) => part.type === "text" && part.text.includes('"run_clock"'))) return;
+      const clock = runClock(runtime.session);
+      return {
+        content: [
+          ...result.content,
+          { type: "text", text: `Game time left: ${clock.game_time_left} of ${clock.game_time_budget}.` },
+        ],
+      };
     },
     streamFn: async (m, c, o) => {
       await runtime?.beforeInference?.();

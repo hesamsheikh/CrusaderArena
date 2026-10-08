@@ -18,7 +18,8 @@ import { Session, requestTimeout } from "./session.js";
 import { pruneImages, contextEstimate } from "./context.js";
 import { RunMemory } from "./run-memory.js";
 import { availableAtlasPages, constructionAtlasInstalled } from "./visual-atlas.js";
-import { runConfigSchema, type Frame, type RunSeries } from "../shared/protocol.js";
+import { runConfigSchema, type Frame, type GameSpeedSetting, type RunSeries } from "../shared/protocol.js";
+import type { SpeedControl } from "./game-speed.js";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -50,11 +51,13 @@ const message = (content: AssistantMessage["content"]): AssistantMessage => ({
 function fixture(
   turns: number | null = 3,
   defaultWait = 0,
-  playMinutes = 10,
+  gameMinutes = 10,
   recording: { spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams } = {},
   learning?: { series: RunSeries; playbook: string },
   /** Off unless a test sets it, so the other tests count only the waits they cause. */
   minTurnSeconds = 0,
+  /** The fake game has no running clock, so speed setting is stubbed unless a test replaces it. */
+  gameSpeed: (control: SpeedControl) => Promise<GameSpeedSetting> = async () => ({ target: 40, before: 40, after: 40, presses: 0 }),
 ) {
   const store = new Store(
     mkdtempSync(path.join(tmpdir(), "arena-controller-")),
@@ -69,7 +72,7 @@ function fixture(
   );
   store.update(run.id, {
     config: runConfigSchema.parse({
-      playMinutes,
+      gameMinutes,
       wallLimitMinutes: 0.5,
       defaultWaitSeconds: defaultWait,
       minTurnSeconds,
@@ -181,6 +184,7 @@ function fixture(
       },
       spawnRecorder: recording.spawnRecorder,
       playbook: learning?.playbook,
+      gameSpeed,
     },
   );
   let prepareHook = async (_input: AgentMessage, _system: string) => message([{ type: "text", text: "Ready.\nBEGIN" }]);
@@ -757,8 +761,8 @@ test("provider timeout clamps fractional remaining time to a positive integer", 
   assert.equal(requestTimeout(0.5), 1);
 });
 
-test("a turn that ran the game for less than the minimum is topped up; longer and reading-only turns are not", async () => {
-  const f = fixture(4, 5, 10, {}, undefined, 8);
+test("a turn lasts the minimum: looks wait it out, a turn without one is topped up, reading-only turns are free", async () => {
+  const f = fixture(5, 5, 10, {}, undefined, 8);
   const waits: number[] = [];
   // Game waits advance the reader clock by the waited game seconds.
   f.controller.session.waitGame = async (seconds) => {
@@ -772,16 +776,22 @@ test("a turn that ran the game for less than the minimum is topped up; longer an
       f.advanceTicks(60); // The turn's tools run the game for 2 game seconds.
       return [call("game_action", { type: "key", key: "Z" }), call("observe", {})];
     }
-    if (n === 2) return [call("game_action", { type: "key", key: "X" }), call("wait_and_observe", { seconds: 10 })];
+    if (n === 2) return [call("game_action", { type: "key", key: "X" }), call("wait_and_observe", { seconds: 3 })];
+    if (n === 3) return [call("game_action", { type: "key", key: "Z" }), call("wait_and_observe", { seconds: 10 })];
+    if (n === 4) return [call("game_action", { type: "key", key: "X" })];
     return [call("status", {})];
   });
   assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
-  // The first screenshot, the top-up after turn 1, then turn 2's own wait; turn 3 only read.
-  assert.deepEqual(waits, [0, 6, 10]);
-  const topUp = JSON.stringify(f.requests[1].messages.at(-1));
-  assert.match(topUp, /ran the game for 2 game seconds, less than the minimum of 8, so the host let 6 more pass/);
-  assert.match(f.requests[0].systemPrompt!, /A reply whose tools run the game takes at least 8 game seconds/);
-  assert.doesNotMatch(runSystemPrompt(fixture(1).run), /takes at least/);
+  // The first screenshot; observe waits out turn 1's last 6 s and wait_and_observe(3) is
+  // lengthened to 8, so neither turn is topped up; turn 3 waits as asked; turn 4 looked at
+  // nothing, so the host lets the minimum pass; turn 5 only read.
+  assert.deepEqual(waits, [0, 6, 8, 10, 8]);
+  assert.match(JSON.stringify(f.requests[1].messages.at(-1)), /Minimum turn \(8 game seconds\): the host let 6 more game seconds pass before this screenshot/);
+  assert.match(JSON.stringify(f.requests[2].messages.at(-1)), /the host let 5 more game seconds pass/);
+  assert.doesNotMatch(JSON.stringify(f.requests[3].messages.at(-1)), /Minimum turn/);
+  assert.match(JSON.stringify(f.requests[4].messages.at(-1)), /the host let 8 game seconds pass/);
+  assert.match(f.requests[0].systemPrompt!, /A reply whose tools run the game lasts at least 8 game seconds/);
+  assert.doesNotMatch(runSystemPrompt(fixture(1).run), /lasts at least/);
 });
 
 test("explicit N-second observation replaces the configured default exactly once", async () => {
@@ -850,27 +860,59 @@ test("request timing logs first content once and resets it before the next reque
   assert.equal(timings[1].afterFirstDeltaMs, null);
 });
 
-test("the play-time budget ends the run and blocks further game actions", async () => {
-  // Samples without a capture time are timed by the test clock: 31 s pass while the game runs
-  // (the play-time check comes before the 30-second wall limit's).
-  const f = fixture(null, 0, 0.5);
+test("the game-time budget ends the run and blocks further game actions", async () => {
+  const f = fixture(null, 0, 0.5); // 0.5 game minutes = 900 ticks
   f.provider(() => {
-    f.advanceTicks(930);
-    f.advance(31000);
+    f.advanceTicks(1000);
     return [call("game_action", { type: "key", key: "X" })];
   });
   assert.equal(await f.controller.runSession(), "completed");
   assert.equal(f.run.progress?.stopReason, "deadline");
-  assert.equal(f.run.progress?.budget?.endedBy, "play_time");
+  assert.equal(f.run.progress?.budget?.endedBy, "game_time");
   assert.deepEqual(f.actions, [{ type: "key", key: "P" }]);
-  assert.match(f.requests[0].systemPrompt!, /The budget is \*\*0\.5 minutes of play\*\*: real time while the game runs/);
+  assert.match(f.requests[0].systemPrompt!, /The budget is \*\*0\.5 minutes of game time\*\* \(30 game seconds/);
   const observation = f.requests[0].messages
     .flatMap((m) => (Array.isArray(m.content) ? m.content : []) as { type: string; text?: string }[])
     .find((part) => part.type === "text" && part.text?.includes("run_clock"));
   assert.ok(observation?.text);
-  assert.deepEqual(JSON.parse(observation.text).run_clock, {
-    play_seconds_used: 0, play_seconds_left: 30, play_seconds_budget: 30, game_seconds_passed: 0, real_minutes_left: 0,
+  assert.deepEqual(JSON.parse(observation.text).run_clock, { game_time_left: "30 s", game_time_used: "0 s", game_time_budget: "30 s", real_minutes_left: 0 });
+});
+
+test("every request shows the game time left: the last tool result of a reply carries it unless it has run_clock", async () => {
+  const f = fixture(3);
+  f.provider((n) =>
+    n === 1
+      ? [call("status", {}), call("building_info", { name: "Hovel" })]
+      : n === 2
+        ? [call("game_action", { type: "key", key: "Z" }), call("observe", {})]
+        : [{ type: "text", text: "Done." }],
+  );
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const results = (request: number) =>
+    f.requests[request].messages.filter((m) => m.role === "toolResult").slice(-2).map((m) => JSON.stringify(m.content));
+  const [status, info] = results(1);
+  assert.doesNotMatch(status, /Game time left/);
+  assert.match(info, /Game time left: 10 min of 10 min\./);
+  const [, observed] = results(2);
+  assert.match(observed, /run_clock/);
+  assert.doesNotMatch(observed, /Game time left:/);
+});
+
+test("the host sets the game speed before the budget starts and the agent cannot change it", async () => {
+  let pausedWhileSetting: boolean | undefined;
+  const f = fixture(2, 0, 10, {}, undefined, 0, async (control) => {
+    pausedWhileSetting = f.isPaused();
+    await control.press("+");
+    return { target: 40, before: 35.4, after: 40.4, presses: 1 };
   });
+  f.provider((n) => (n === 1 ? [call("game_action", { type: "key", key: "+" })] : [{ type: "text", text: "Done." }]));
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.equal(pausedWhileSetting, false);
+  // The host's press only: the agent's + fails the tool's key schema.
+  assert.deepEqual(f.actions.filter((a) => (a as { key?: string }).key === "+").length, 1);
+  assert.deepEqual(f.run.progress?.gameSpeed, { target: 40, before: 35.4, after: 40.4, presses: 1 });
+  assert.ok(f.logMessages.some((m) => /Game speed set to 40: measured 40\.4 ticks\/s \(was 35\.4; 1 key presses\)/.test(m)));
+  assert.match(f.requests[0].systemPrompt!, /fixed speed of 40/);
 });
 
 test("a game clock reset (reload or map change) ends the run with an error", async () => {
@@ -886,7 +928,7 @@ test("a game clock reset (reload or map change) ends the run with an error", asy
 
 test("game-time waits end when the ticks advance, and a stalled clock is bounded", async () => {
   let tick = 0;
-  const session = new Session(60, () => {}, undefined, { budgetMs: 1e9, clock: () => ({ tick, map: "m", at: Date.now() }) });
+  const session = new Session(60, () => {}, undefined, { budgetTicks: 100000, clock: () => ({ tick, map: "m" }) });
   session.start();
   const timer = setInterval(() => { tick += 30; }, 20);
   const started = performance.now();
@@ -896,7 +938,7 @@ test("game-time waits end when the ticks advance, and a stalled clock is bounded
   assert.ok(tick >= 60);
   // A stalled clock ends the wait after about three real seconds per game second.
   let now = 0;
-  const stalled = new Session(60, () => {}, () => (now += 500), { budgetMs: 1e9, clock: () => ({ tick: 5, map: "m", at: now }) });
+  const stalled = new Session(60, () => {}, () => (now += 500), { budgetTicks: 100000, clock: () => ({ tick: 5, map: "m" }) });
   stalled.start();
   await stalled.waitGame(1);
   assert.equal(stalled.gameUsedTicks(), 0);
