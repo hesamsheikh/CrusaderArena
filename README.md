@@ -18,6 +18,12 @@ person would, helped by a small reader that supplies the numbers from the game's
 panels. The benchmark asks it to grow a medieval economy from a fixed start within a
 fixed amount of game time.
 
+> [!IMPORTANT]
+> **Research use only.** Crusader Arena is for studying AI agents in single-player
+> games. It refuses multiplayer games; do not use it against other players. It is an
+> independent project, not affiliated with or endorsed by Firefly Studios. See
+> [Responsible use](#responsible-use).
+
 ## How it works
 
 - **The agent** is a vision-capable language model with 27 tools: look, click, build,
