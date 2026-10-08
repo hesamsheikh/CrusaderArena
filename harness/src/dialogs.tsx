@@ -1,0 +1,392 @@
+import { useState, type ChangeEvent, type ReactNode } from "react";
+import { Play, Settings2, X } from "lucide-react";
+import type { ModelProfile } from "../shared/protocol";
+import { runNameFor } from "../shared/protocol";
+import { request } from "./api";
+
+function Dialog({
+  id,
+  title,
+  lede,
+  close,
+  children,
+  wide = false,
+}: {
+  id: string;
+  title: string;
+  lede?: string;
+  close: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <div
+      className="modal-backdrop"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close();
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) close();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={id}
+        className={`modal ${wide ? "wide" : ""}`}
+      >
+        <header className="modal-head">
+          <div>
+            <h2 id={id}>{title}</h2>
+            {lede && <p>{lede}</p>}
+          </div>
+          <button className="icon-button" aria-label="Close" onClick={close}>
+            <X size={18} />
+          </button>
+        </header>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+export function ModelForm({
+  model,
+  close,
+  saved,
+}: {
+  model?: ModelProfile;
+  close: () => void;
+  saved: (model: ModelProfile) => void;
+}) {
+  const [name, setName] = useState(model?.name || "");
+  const [modelId, setModelId] = useState(model?.modelId || "");
+  const [baseUrl, setBaseUrl] = useState(
+    model?.baseUrl || "https://api.moonshot.ai/v1",
+  );
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState("");
+  return (
+    <Dialog
+      id="model-title"
+      title={model ? "Model settings" : "Add a model"}
+      lede="Moonshot or any OpenAI-compatible API with image and tool support."
+      close={close}
+    >
+      <form
+        className="form"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setSaving(true);
+          setError("");
+          try {
+            const m = await request<ModelProfile>("models", {
+              id: model?.id,
+              name,
+              modelId,
+              baseUrl,
+              apiKey: key,
+            });
+            setKey("");
+            saved(m);
+            close();
+          } catch (e) {
+            setError((e as Error).message);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <div className="field-row">
+          <label className="field">
+            <span>Display name</span>
+            <input
+              autoFocus
+              required
+              maxLength={80}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Kimi K3"
+            />
+          </label>
+          <label className="field">
+            <span>Model ID</span>
+            <input
+              required
+              maxLength={150}
+              value={modelId}
+              onChange={(e) => setModelId(e.target.value)}
+              placeholder="kimi-k3"
+            />
+          </label>
+        </div>
+        <label className="field">
+          <span>API endpoint</span>
+          <input
+            type="url"
+            required
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>API key</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder={
+              model?.keyConfigured
+                ? "Saved · leave blank to keep"
+                : "Enter API key"
+            }
+          />
+          <small>
+            Stored privately on this host. Your existing .env key remains
+            available for Kimi K3.
+          </small>
+        </label>
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
+        {result && (
+          <p role="status" className="form-ok">
+            {result}
+          </p>
+        )}
+        <footer className="modal-foot">
+          {model?.keyConfigured && (
+            <button
+              type="button"
+              className="button ghost"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                setError("");
+                try {
+                  await request("model/test", { modelId: model.id });
+                  setResult("Connection ready.");
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Test saved model
+            </button>
+          )}
+          <button className="button primary" disabled={saving}>
+            {saving ? "Saving…" : "Save model"}
+          </button>
+        </footer>
+      </form>
+    </Dialog>
+  );
+}
+
+export type RunDraft = {
+  benchmarkType: string;
+  prompt: string;
+  gameMinutes: number;
+  wallLimitMinutes: number;
+  waitSeconds: number;
+  contextBudget: number;
+  recordVideo: boolean;
+  modelId: string;
+};
+
+export function NewRunDialog({
+  draft,
+  update,
+  models,
+  close,
+  start,
+  configure,
+  blocker,
+  busy,
+  now,
+}: {
+  draft: RunDraft;
+  update: (patch: Partial<RunDraft>) => void;
+  models: ModelProfile[];
+  close: () => void;
+  start: () => void;
+  configure: (model?: ModelProfile) => void;
+  /** Why the run cannot start yet, or null when it can. */
+  blocker: string | null;
+  busy: boolean;
+  now: number;
+}) {
+  const model = models.find((m) => m.id === draft.modelId) || models[0];
+  const number = (key: keyof RunDraft) => (e: ChangeEvent<HTMLInputElement>) =>
+    update({ [key]: Number(e.target.value) });
+  return (
+    <Dialog
+      id="run-title"
+      title="New run"
+      lede="The agent plays the connected game window until a budget runs out."
+      close={close}
+      wide
+    >
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          start();
+        }}
+      >
+        <div className="field-row">
+          <label className="field">
+            <span>Benchmark</span>
+            <input
+              required
+              autoFocus
+              maxLength={60}
+              placeholder="e.g. Economy, Combat, Custom"
+              value={draft.benchmarkType}
+              onChange={(e) => update({ benchmarkType: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>Model</span>
+            <div className="select-with-action">
+              <select
+                value={model?.id || ""}
+                onChange={(e) => update({ modelId: e.target.value })}
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Model settings"
+                title="Model settings"
+                onClick={() => configure(model)}
+              >
+                <Settings2 size={16} />
+              </button>
+            </div>
+            <small className={model?.keyConfigured ? "" : "warn-text"}>
+              {model
+                ? `${model.modelId} · ${model.keyConfigured ? "API key saved" : "API key needed"}`
+                : "Add a model to begin"}
+              {" · "}
+              <button
+                type="button"
+                className="link"
+                onClick={() => configure()}
+              >
+                Add model
+              </button>
+            </small>
+          </label>
+        </div>
+        <label className="field">
+          <span>Instruction</span>
+          <textarea
+            required
+            rows={7}
+            value={draft.prompt}
+            onChange={(e) => update({ prompt: e.target.value })}
+            placeholder="What should the agent do?"
+          />
+        </label>
+        <fieldset className="budgets">
+          <legend>Budgets</legend>
+          <label className="field">
+            <span>Game time</span>
+            <div className="input-unit">
+              <input
+                type="number"
+                min={0.5}
+                max={120}
+                step={0.5}
+                value={draft.gameMinutes}
+                onChange={number("gameMinutes")}
+              />
+              <em>game min</em>
+            </div>
+          </label>
+          <label className="field">
+            <span>Real-time limit</span>
+            <div className="input-unit">
+              <input
+                type="number"
+                min={1}
+                max={240}
+                value={draft.wallLimitMinutes}
+                onChange={number("wallLimitMinutes")}
+              />
+              <em>min</em>
+            </div>
+          </label>
+          <label className="field">
+            <span>Screenshot wait</span>
+            <div className="input-unit">
+              <input
+                type="number"
+                min={0}
+                max={300}
+                value={draft.waitSeconds}
+                onChange={number("waitSeconds")}
+              />
+              <em>game s</em>
+            </div>
+          </label>
+          <label className="field">
+            <span>Context budget</span>
+            <div className="input-unit">
+              <input
+                type="number"
+                min={32000}
+                max={200000}
+                step={1000}
+                value={draft.contextBudget}
+                onChange={number("contextBudget")}
+              />
+              <em>tokens</em>
+            </div>
+          </label>
+        </fieldset>
+        <label className="switch record-video">
+          <input
+            type="checkbox"
+            checked={draft.recordVideo}
+            onChange={(e) => update({ recordVideo: e.target.checked })}
+          />
+          <span aria-hidden />
+          Record video
+          <small>
+            Screen-records the game with the agent's reasoning and tools. Idle
+            play is fast-forwarded and thinking pauses become short reasoning
+            cards. Saved as video.mp4 in the run folder.
+          </small>
+        </label>
+        <footer className="modal-foot">
+          <p className="run-name" title="Generated when the run starts">
+            {blocker ??
+              runNameFor(
+                model?.name || "Model",
+                draft.benchmarkType || "Custom",
+                now,
+              )}
+          </p>
+          <button className="button primary" disabled={!!blocker || busy}>
+            <Play size={14} />
+            Start run
+          </button>
+        </footer>
+      </form>
+    </Dialog>
+  );
+}

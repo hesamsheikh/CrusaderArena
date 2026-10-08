@@ -1,0 +1,41 @@
+{
+  "name": "crusader-arena",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx harness/server/index.ts",
+    "build": "tsc --noEmit && vite build --config harness/vite.config.ts",
+    "start": "NODE_ENV=production tsx harness/server/index.ts",
+    "test": "node --import tsx --test harness/**/*.test.ts",
+    "episodes": "tsx harness/server/episodes.ts",
+    "report": "tsx harness/server/run-report.ts",
+    "video": "python3 tools/video/render-video.py"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/cormorant-garamond": "^5.3.0",
+    "@fontsource/dm-sans": "^5.3.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typebox": "^1.0.42",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "prettier": "^3.9.8",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  }
+}
