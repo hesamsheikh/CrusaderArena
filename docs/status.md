@@ -57,14 +57,16 @@ between September and October 2026.
   play, the request after each episode rewrote it, and the series records and report
   table were written. What OpenRouter billed was recorded for every request, about
   $0.04 per episode.
+- The fixed game speed, set before a 25-game-minute idle baseline on 2026-10-08: the
+  save started at 19.9 ticks a second, and four presses of `+` (5 ticks a second each)
+  brought it to 39.9. Doing nothing then scored 1,304 net worth; the game placed the
+  granary by itself.
 
 ## Tested in code only
 
-- The fixed game speed: measuring the speed from reader ticks, pressing `+` and `-`
-  until it reads 40, failing when the keys do nothing or step past 40, and the idle
-  baseline doing the same. Not yet run in the live game: the speed keys' step size and
-  the speed the saves start at are unknown (2026-10-08 runs ran at about 20 ticks a
-  second).
+- The fixed game speed in an agent run: the host setting it before the budget starts,
+  and failing when the keys do nothing or step past 40. The same setting worked live
+  for the idle baseline (above); an agent run has not used it yet.
 - `observe` and `wait_and_observe` waiting out the minimum turn length, and the "Game
   time left" line after the last tool result of each reply. Not yet run live.
 - Context compaction across many turns, stop and deadline handling, and failure

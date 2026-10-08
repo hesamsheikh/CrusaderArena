@@ -17,6 +17,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { netWorth } from "./market-prices.js";
+import { idleBaseline } from "./baselines.js";
 import { settingsLabel, type RunSeries } from "../shared/protocol.js";
 
 /** "abc1234+def5678 p:0123abc t:4567def": commit (+ uncommitted changes), prompt and tool hashes. */
@@ -125,7 +126,10 @@ export type RunRow = {
     /** Gold plus stored goods at the marketplace sell price. */
     netWorth: number | null;
     /** Net worth change since the start of the run (runs that recorded the start only). */
+    /** Net worth minus netWorthBaseline; null without a baseline for the save and budget. */
     netWorthGrowth: number | null;
+    /** What doing nothing scores on the same save and game minutes (baselines.ts). */
+    netWorthBaseline: number | null;
     totalFood: number | null;
     structures: number | null;
     troops: number | null;
@@ -379,7 +383,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
   // Scorecard: episode.json when it carries a reading, else the last valid observation in the events.
   const observed = events?.lastObservation;
   const useEpisode = num(episode?.population) !== null;
-  const card = useEpisode
+  const card: RunRow["scorecard"] = useEpisode
     ? {
         source: typeof episode!.source === "string" ? episode!.source : "episode",
         population: num(episode!.population),
@@ -387,7 +391,8 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
         popularity: num(episode!.popularity),
         gold: num(episode!.gold),
         netWorth: num(episode!.net_worth) ?? (num(episode!.gold) !== null ? netWorth(num(episode!.gold), episode!.goods as Record<string, number>).netWorth : null),
-        netWorthGrowth: num(episode!.net_worth_growth),
+        netWorthGrowth: null,
+        netWorthBaseline: null,
         totalFood: num(episode!.total_food),
         structures: num(episode!.structures_map_wide),
         troops: num(episode!.troops),
@@ -400,11 +405,18 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
         gold: num(observed?.gold),
         netWorth: num(observed?.gold) !== null ? netWorth(num(observed?.gold), observed?.resources_by_name).netWorth : null,
         netWorthGrowth: null,
+        netWorthBaseline: null,
         totalFood: num(observed?.settlement?.total_food),
         structures: num(observed?.structures?.count),
         troops: num(observed?.own_troops?.total),
       };
 
+  // Growth is computed here, not read from episode.json, so every run is measured the same way.
+  const baseline = idleBaseline(episode?.save, num(run?.config?.gameMinutes) ?? undefined);
+  if (baseline !== undefined && card.netWorth !== null) {
+    card.netWorthBaseline = baseline;
+    card.netWorthGrowth = card.netWorth - baseline;
+  }
   const memory: Obj = progress.memory ?? {};
   return {
     folder,

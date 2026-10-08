@@ -74,14 +74,18 @@ stored good valued at the game's marketplace sell price per unit.
 The prices are a fixed table in the game (no difficulty or demand effects), read from
 the game code and spot-checked in play. They are in `harness/server/market-prices.ts`.
 
-**Growth** is net worth minus the starting package: 1,000 gold, 50 wood, 25 stone and
-50 bread, worth 1,425. The package arrives within about 25 game seconds of loading,
-so it is a fixed constant rather than a reading at load time.
-
 **Baseline.** `npm run episodes -- --idle` measures what doing nothing scores: it loads
 the save, sets the game speed as an agent run does, lets the game run untouched for
 the same game time an agent gets, and writes the scorecard to
-`harness/runtime/episodes/idle-<time>.json`.
+`harness/runtime/episodes/idle-<time>.json`. On `Oasis by the Sea-1` with 25 game
+minutes at speed 40 doing nothing scores **1,304**: the starting package of 1,000 gold,
+50 wood, 25 stone and 50 bread (worth 1,425) arrives, the game places the granary by
+itself (5 wood), and the peasants who move in eat 29 of the bread. Runs too short for
+the game to place the granary end lower: 1,225, with all the bread eaten.
+
+**Growth** is net worth minus the baseline for the same save and game minutes, so it
+shows what a run achieved beyond leaving the game alone. The measured baselines are in
+`harness/server/baselines.ts`; a run whose save and budget have none has no growth.
 
 Population, popularity, food and buildings are reported beside the score but do not
 count. Buildings matter only through what they produce. Buying at the marketplace
@@ -166,7 +170,8 @@ Runs started from the dashboard are never part of a series.
 
 `episode.json` holds:
 
-- `net_worth`, `goods_value`, and `net_worth_start` / `net_worth_growth` (Oasis only);
+- `net_worth`, `goods_value`, and `net_worth_baseline` / `net_worth_growth` when a
+  baseline exists for the save and game minutes;
 - `gold`, `population`, `housing`, `popularity`, `total_food`, the nonzero goods,
   the map-wide structure count and own troops;
 - the map, date and game time;

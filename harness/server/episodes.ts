@@ -27,6 +27,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
+import { idleBaseline } from "./baselines.js";
 import { renderVideo, type VideoResult } from "./video.js";
 import { setGameSpeed } from "./game-speed.js";
 import { TICKS_PER_GAME_SECOND, type Frame, type GameAction, type GameSpeedSetting, type Run, type RunSeries, type State } from "../shared/protocol.js";
@@ -220,17 +221,7 @@ async function setPaused(paused: boolean) {
   throw new Error(`Could not confirm the game ${paused ? "paused" : "running"}.`);
 }
 
-/**
- * Starting net worth per save. The Free Build start trickles in over the first game minute
- * after loading (at load Oasis by the Sea-1 shows 120 gold and 12 wood), so growth is measured
- * from the full starting package instead: 1000 gold, 50 wood, 25 stone (watched live with no
- * input, 2026-09-30) and the 50 bread the granary receives, at the sell prices.
- */
-const startingWorth: Record<string, number> = {
-  "Oasis by the Sea-1": netWorth(1000, { wood_planks: 50, stone: 25, bread: 50 }).netWorth,
-};
-
-function scorecard(state: State, run?: Run, source: "final" | "last_observed" = "final", startWorth?: number) {
+function scorecard(state: State, run?: Run, source: "final" | "last_observed" = "final", baseline?: number) {
   const o = state.stats?.observation;
   const s = o?.settlement;
   const goods = o?.resources_by_name ?? {};
@@ -245,7 +236,8 @@ function scorecard(state: State, run?: Run, source: "final" | "last_observed" = 
     // Economy score: gold plus stored goods at the marketplace sell price (market-prices.ts).
     net_worth: worth.netWorth,
     goods_value: worth.goodsValue,
-    ...(startWorth !== undefined ? { net_worth_start: startWorth, net_worth_growth: worth.netWorth - startWorth } : {}),
+    // Growth: what the run added beyond leaving the game alone for the same budget (baselines.ts).
+    ...(baseline !== undefined ? { net_worth_baseline: baseline, net_worth_growth: worth.netWorth - baseline } : {}),
     gold: o?.gold,
     population: o?.population,
     housing: s?.housing_cap,
@@ -320,7 +312,7 @@ async function episode(
     const loaded = await loadSave(opts.save!, opts.map, launchedAt);
     log(`Loaded ${loaded.map_name} at game tick ${loaded.game_time}; pausing`);
     await setPaused(true);
-    const startWorth = startingWorth[opts.save!];
+    const baseline = idleBaseline(opts.save, Number(opts["game-minutes"]));
     let run: Run | undefined;
     let lastGood: State | undefined;
     let idleSpeed: GameSpeedSetting | undefined;
@@ -360,8 +352,8 @@ async function episode(
       final = await api<State>("state");
     }
     const card = final.stats?.status === "ok" || !lastGood
-      ? scorecard(final, run, "final", startWorth)
-      : scorecard(lastGood, run, "last_observed", startWorth);
+      ? scorecard(final, run, "final", baseline)
+      : scorecard(lastGood, run, "last_observed", baseline);
     const dir = run
       ? path.join("harness/runtime/runs", run.folder)
       : path.join("harness/runtime/episodes");

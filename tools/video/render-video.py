@@ -1051,7 +1051,7 @@ class Renderer:
             d.text((x, y + 20), f"{ep['net_worth']:,}", font=condensed(52, 600), fill=INK)
             growth = ep.get('net_worth_growth')
             if isinstance(growth, (int, float)):
-                d.text((x, y + 84), f'{growth:+,} from the start', font=sans(15), fill=GOOD if growth >= 0 else BAD)
+                d.text((x, y + 84), f'{growth:+,} vs doing nothing', font=sans(15), fill=GOOD if growth >= 0 else BAD)
             y += 124
         rows = [('Gold', f"{s['gold']:,}" if isinstance(s.get('gold'), int) else None),
                 ('Population', f"{s.get('population')} / {s.get('housing')}" if s.get('population') is not None else None),

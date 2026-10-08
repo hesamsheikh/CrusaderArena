@@ -151,7 +151,7 @@ test("a complete run reports budget, tokens, scorecard, build results and retrie
   assert.deepEqual(row.scorecard, {
     source: "final", population: 37, housing: 74, popularity: 100, gold: 970,
     // 970 gold + 10 wood × 1 + 20 stone × 7 + 2 iron × 23 at the sell prices.
-    netWorth: 1166, netWorthGrowth: null, totalFood: 53, structures: 33, troops: 0,
+    netWorth: 1166, netWorthGrowth: null, netWorthBaseline: null, totalFood: 53, structures: 33, troops: 0,
   });
   assert.equal(row.tools?.build_structure, 2);
   assert.equal(row.tools?.observe, 1);
@@ -290,4 +290,26 @@ test("a learning series is scored by its last episode, with the change from the 
   assert.equal(row.change, 350);
   assert.ok(Math.abs(row.cost! - 1.0) < 1e-12);
   assert.match(renderMarkdown(rows), /\| 20261008-series1 \| Model A \| Oasis construction \| 1300 → – → 1650 \| 1650 \| \+350 \| \$1\.00 \|/);
+});
+
+test("growth is net worth minus what doing nothing scores on the same save and budget", async () => {
+  const dir = root();
+  // An older episode.json stored growth against the starting package; the report recomputes it.
+  for (const [id, minutes] of [["g0000025", 25], ["g0000010", 10]] as const)
+    writeRun(dir, `Model-A-Oasis-20261008-170000Z-2026-10-08T17-00-00-000Z-${id}`, {
+      "run.json": {
+        id: `${id}-1111-2222-3333-444444444444`, model: { name: "Model A", modelId: "vendor/model-a" },
+        benchmarkType: "Oasis by the Sea construction", startedAt: START, status: "completed", turns: 3, tokens: 100,
+        config: { gameMinutes: minutes },
+      },
+      "episode.json": { episode: 1, save: "Oasis by the Sea-1", source: "final", gold: 1100, population: 20, net_worth: 1500, net_worth_growth: 75 },
+    });
+  const rows = await buildReport(dir);
+  const scored = rows.find((r) => r.id === "g0000025")!;
+  assert.equal(scored.scorecard.netWorthBaseline, 1304);
+  assert.equal(scored.scorecard.netWorthGrowth, 196);
+  // No baseline was measured for a 10-minute budget, so that run has no growth.
+  const other = rows.find((r) => r.id === "g0000010")!;
+  assert.equal(other.scorecard.netWorthBaseline, null);
+  assert.equal(other.scorecard.netWorthGrowth, null);
 });
