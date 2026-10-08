@@ -83,6 +83,10 @@ function fixture(
     generation = 1,
     mapName = "map-1";
   let handoffHook = () => {};
+  const handoffs: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
+  let handoffReply = (_call: number): { text: string; stopReason?: string } => ({
+    text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
+  });
   const actions: unknown[] = [];
   const ageCredits: number[] = [];
   const logMessages: string[] = [];
@@ -142,12 +146,10 @@ function fixture(
     () => {},
     {
       now: () => clock,
-      handoff: async () => {
+      handoff: async (messages, system, tools) => {
         handoffHook();
-        return {
-          text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
-          usage: { totalTokens: 7 },
-        };
+        handoffs.push({ messages, system, tools: tools.map((t) => t.name) });
+        return { ...handoffReply(handoffs.length), usage: { totalTokens: 7 } };
       },
       prepare: async (input, system) => prepareHook(input, system),
       spawnRecorder: recording.spawnRecorder,
@@ -202,6 +204,10 @@ function fixture(
     captures: () => captures,
     setHandoffHook: (fn: () => void) => {
       handoffHook = fn;
+    },
+    handoffs,
+    setHandoffReply: (fn: typeof handoffReply) => {
+      handoffReply = fn;
     },
     setPrepareHook: (fn: typeof prepareHook) => {
       prepareHook = fn;
@@ -494,6 +500,41 @@ test("multiple compactions retain exact plan, notes and objective in actual next
   assert.deepEqual(disk.plan, f.controller.memory.plan);
   assert.equal(disk.notebook.revision, 1);
   assert.equal(disk.progress.phase, "completed");
+});
+test("the handoff request repeats the gameplay request; a tool call instead of a handoff falls back to text only", async () => {
+  const f = fixture(7);
+  await f.controller.prepare();
+  // The first handoff reply calls a tool; the text-only retry answers.
+  f.setHandoffReply((call) => call === 1 ? { text: "", stopReason: "toolUse" } : {
+    text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
+  });
+  f.provider(() => [
+    { type: "text", text: "Evidence ".repeat(5750) },
+    call("observe", {}),
+  ]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.ok(f.controller.memory.compactions >= 1);
+  const [first, retry] = f.handoffs;
+  const images = (messages: AgentMessage[]) =>
+    messages.flatMap((m) => ("content" in m && Array.isArray(m.content) ? m.content : []) as { type: string }[])
+      .filter((part) => part.type === "image").length;
+  // Same system prompt, tools and messages (images included) as gameplay, plus the instruction.
+  assert.equal(first.system, f.requests[0].systemPrompt);
+  assert.deepEqual(first.tools, f.controller.agent.state.tools.map((t) => t.name));
+  assert.match(JSON.stringify(first.messages.at(-1)), /about to be compacted/);
+  assert.ok(images(first.messages) > 0);
+  // It continues the last gameplay request, which differs only where a screenshot was pruned
+  // since; up to that request's oldest kept screenshot it is byte-identical (the cached prefix).
+  const before = f.requests.filter((r) => !JSON.stringify(r.messages).includes("Context was compacted")).at(-1)!;
+  const textOnly = (messages: AgentMessage[]) =>
+    JSON.stringify(pruneImages(messages, 0, new Set(messages.slice(0, 2))));
+  assert.equal(textOnly(first.messages.slice(0, before.messages.length)), textOnly(before.messages));
+  const oldest = before.messages.findIndex((m, i) => i >= 2 && images([m]) > 0);
+  assert.equal(JSON.stringify(first.messages.slice(0, oldest)), JSON.stringify(before.messages.slice(0, oldest)));
+  // The retry has no tools and no images.
+  assert.deepEqual(retry.tools, []);
+  assert.equal(images(retry.messages), 0);
+  assert.match(JSON.stringify(retry.messages.at(-1)), /about to be compacted/);
 });
 test("failed handoff preserves old transcript and stops without replay", async () => {
   const f = fixture(4);

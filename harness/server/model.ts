@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import { createModels, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
@@ -9,6 +9,7 @@ const defineTool = <T extends TSchema>(tool: AgentTool<T>): AgentTool<any> =>
 import type { RunMemory } from "./run-memory.js";
 import type { ObservationCycle, Session } from "./session.js";
 import { requestTimeout } from "./session.js";
+import { placeCacheBreakpoints } from "./context.js";
 import { atlasPage, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 import {
   buildableNames,
@@ -82,6 +83,8 @@ export interface AgentRuntime {
   /** Whether the host currently holds the game paused. */
   isPaused?: () => boolean;
   pausedMilliseconds?: () => number;
+  /** Messages that open every request unchanged (the preparation guide). */
+  pinned?: () => ReadonlySet<AgentMessage>;
   requestStarted?: () => void;
   timing: (
     milliseconds: number,
@@ -131,11 +134,33 @@ export function modelConfig(
       supportsDeveloperRole: false,
       maxTokensField: "max_tokens",
       ...(openRouter ? { thinkingFormat: "openrouter" as const } : {}),
+      // Pi adds Claude's cache markers only for its own "openrouter" provider id; profiles use their own id.
+      ...(anthropicCaching(profile) ? { cacheControlFormat: "anthropic" as const } : {}),
       // Pin the upstream provider so a run is served by one deployment (and its prompt cache).
       ...(openRouter && settings.providers.length
         ? { openRouterRouting: { order: settings.providers, allow_fallbacks: settings.allowFallbacks } }
         : {}),
     },
+  };
+}
+/** Claude through OpenRouter caches only what the request marks with `cache_control`. */
+const anthropicCaching = (profile?: ModelProfile) =>
+  Boolean(profile && isOpenRouter(profile.baseUrl) && profile.modelId.startsWith("anthropic/"));
+/** Moves Claude's cache markers to where the next request repeats the conversation (see placeCacheBreakpoints). */
+function cacheBreakpoints(
+  profile: ModelProfile,
+  messages: readonly unknown[],
+  runtime: AgentRuntime | undefined,
+  onPayload?: (params: unknown, model: Model<any>) => unknown,
+) {
+  return async (params: unknown, model: Model<any>) => {
+    if (anthropicCaching(profile)) {
+      const pinned = runtime?.pinned?.() ?? new Set();
+      let count = 0;
+      while (count < messages.length && pinned.has(messages[count] as AgentMessage)) count++;
+      placeCacheBreakpoints(params as Parameters<typeof placeCacheBreakpoints>[0], count);
+    }
+    return onPayload?.(params, model);
   };
 }
 /** Request options from the profile's settings: its reasoning level and output limit. */
@@ -1137,6 +1162,7 @@ export function makeAgent(
       runtime?.requestStarted?.();
       const stream = models.streamSimple(m, c, {
         ...o,
+        onPayload: cacheBreakpoints(profile, c.messages, runtime, o?.onPayload),
         ...requestOptions(profile),
         maxRetries: 0,
         timeoutMs: runtime
@@ -1214,59 +1240,64 @@ export async function prepareModel(
   return result;
 }
 
+/**
+ * The handoff request. Given the gameplay request's system prompt, tools and messages, it differs
+ * from that request only by the instruction at the end, so the provider's prompt cache covers it.
+ */
 export async function compactHandoff(
   profile: ModelProfile,
   apiKey: string,
-  messages: import("@earendil-works/pi-agent-core").AgentMessage[],
+  messages: AgentMessage[],
   systemPrompt: string,
+  tools: AgentTool<any>[],
   runtime: AgentRuntime,
 ) {
   runtime.session.check();
   const started = performance.now();
-  try {
-    const result = await registry(profile).completeSimple(
-      { ...modelConfig(profile), contextWindow: runtime.config.contextBudget },
-      {
-        systemPrompt,
-        messages: messages.filter(
-          (m): m is import("@earendil-works/pi-ai").Message =>
-            m.role === "user" ||
-            m.role === "assistant" ||
-            m.role === "toolResult",
-        ),
-      },
-      {
-        apiKey,
-        // Reasoning models (Kimi K3) spend part of the limit on reasoning; 2048 cut a handoff short.
-        ...requestOptions(profile),
-        maxTokens: Math.max(8192, modelSettings(profile).maxTokens),
-        maxRetries: 0,
-        timeoutMs: requestTimeout(runtime.session.remaining()),
-        signal: runtime.session.abort.signal,
-        maxRetryDelayMs: 3000,
-      },
-    );
-    runtime.timing(
-      performance.now() - started,
-      result.stopReason,
-      "compaction",
-    );
-    runtime.session.check();
-    if (
-      result.stopReason === "error" ||
-      result.stopReason === "aborted" ||
-      result.stopReason === "length"
-    )
-      throw new Error(result.errorMessage || "Compaction did not complete.");
-    return {
-      text: result.content
-        .filter((c) => c.type === "text")
-        .map((c) => c.text)
-        .join("\n"),
-      usage: result.usage,
-    };
-  } catch (error) {
-    throw error;
-  }
+  const context = {
+    systemPrompt,
+    messages: messages.filter(
+      (m): m is import("@earendil-works/pi-ai").Message =>
+        m.role === "user" ||
+        m.role === "assistant" ||
+        m.role === "toolResult",
+    ),
+    ...(tools.length ? { tools } : {}),
+  };
+  const result = await registry(profile).completeSimple(
+    { ...modelConfig(profile), contextWindow: runtime.config.contextBudget },
+    context,
+    {
+      apiKey,
+      // Reasoning models (Kimi K3) spend part of the limit on reasoning; 2048 cut a handoff short.
+      ...requestOptions(profile),
+      maxTokens: Math.max(8192, modelSettings(profile).maxTokens),
+      maxRetries: 0,
+      timeoutMs: requestTimeout(runtime.session.remaining()),
+      signal: runtime.session.abort.signal,
+      maxRetryDelayMs: 3000,
+      onPayload: cacheBreakpoints(profile, context.messages, runtime),
+    },
+  );
+  runtime.timing(
+    performance.now() - started,
+    result.stopReason,
+    "compaction",
+  );
+  runtime.session.check();
+  if (
+    result.stopReason === "error" ||
+    result.stopReason === "aborted" ||
+    result.stopReason === "length"
+  )
+    throw new Error(result.errorMessage || "Compaction did not complete.");
+  return {
+    text: result.content
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .join("\n"),
+    usage: result.usage,
+    stopReason: result.stopReason,
+  };
 }
 export { gameControls };

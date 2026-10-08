@@ -43,6 +43,9 @@ between September and October 2026.
 - Context compaction across many turns, stop and deadline handling, and failure
   paths, with fake models and game devices (`npm test`).
 - Removing duplicate messages that appear in several channels at once.
+- Prompt caching marks for Claude through OpenRouter, and the handoff request
+  repeating the gameplay request: checked against the request body the model
+  library builds, not yet against a live provider.
 
 ## Not verified or not built
 

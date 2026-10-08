@@ -93,7 +93,7 @@ The `stats` summary contains:
 | `population` | Current population, housing and idle peasants |
 | `popularity` | Current popularity, the upcoming change, and the nonzero factors behind it, in the game's own popularity points |
 | `tax_level` | 0 (largest bribe) to 11, with 3 meaning no tax; the same scale as `set_tax` |
-| `food` | Total food, months of food, rations (`none`, `half`, `full`, `extra`, `double`), food types eaten and available |
+| `food` | Total food, rations (`none`, `half`, `full`, `extra`, `double`), food types eaten and available |
 | `goods` | Every stored good by name, such as `wood_planks`, `stone`, `bread` |
 | `troops` | Own troops, total and by type. Only for benchmarks that allow military |
 | `placement_mode` | `none`, `placing` or `demolishing` |
@@ -132,16 +132,20 @@ writes for its future self.
   (32,000 to 200,000). It is a setting, not a check of the model's real limit; set it
   at or below what the model supports.
 - **Trigger.** Before each request the host estimates the size. It compacts when the
-  estimate passes 65% of the budget, or earlier if the summary request itself would
-  get too close to the limit.
+  estimate passes 65% of the budget, or earlier if the text-only summary request
+  (below) would get too close to the limit.
 - **Estimate.** Before any measurement the host counts text bytes (including tool
   definitions) at 2.5 bytes per token, plus a fixed allowance per image (4,096 tokens
   by default). After each reply it anchors on the token usage the provider reported
   and only estimates what was added since. Removed content is never subtracted, so
   the estimate errs high.
-- **Summary request.** With the game paused, the model gets the conversation without
-  images and no tools, and is asked for a handoff: verified progress with evidence,
-  decisions, failures, uncertainties and next steps (40 bytes to 12 KB).
+- **Summary request.** With the game paused, the model gets its next request
+  unchanged (the same system prompt, tools and conversation, screenshots included)
+  with one more message asking for a handoff: verified progress with evidence,
+  decisions, failures, uncertainties and next steps (40 bytes to 12 KB). Only that
+  message is new, so the provider's prompt cache covers the rest. If the model calls
+  a tool instead of answering, writes too little, or the request would not fit the
+  budget, the host asks once more with the conversation as text only and no tools.
 - **New conversation.** The pinned preparation message and reply; one message with
   the current plan, the notebook and the handoff; the last model reply with its tool
   results; and a fresh observation. The system prompt never changed, so the rules,
@@ -156,6 +160,13 @@ Compaction takes real time but no game time, and never resets the budget.
 
 The host adds up the token usage the provider reports for every request, including
 preparation and compaction. `npm run report` splits it into uncached input, cache
-reads and output. The harness sends no special caching options; any caching is the
-provider's own prefix caching, which the fixed system prompt and pinned opening are
-designed to benefit.
+reads and output.
+
+Most providers cache repeated prompt prefixes on their own, which the fixed system
+prompt, the pinned opening and the unchanged history are designed to benefit. Claude
+models through OpenRouter (model IDs starting `anthropic/`) cache only what the
+request marks, so for them the host marks four points: the system prompt, the tool
+definitions, the end of the pinned preparation exchange, and the conversation up to
+the oldest screenshot still shown. Every turn replaces that screenshot with a
+placeholder, so the history before it is what the next request repeats unchanged;
+a mark on the newest message would write a cache entry that no later request reads.

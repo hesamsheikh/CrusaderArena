@@ -59,7 +59,6 @@ export function observationStats(stats: Stats, { military = true } = {}) {
       ? {
           food: {
             total: s.total_food,
-            months_of_food: s.months_of_food,
             rationing: rations[s.rationing] ?? s.rationing,
             types_eaten: s.food_types_eaten,
             types_available: s.food_types_available,

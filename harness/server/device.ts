@@ -5,7 +5,8 @@ import type { Frame, GameAction, Stats } from "../shared/protocol.js";
 import { validateFrameAction } from "../shared/protocol.js";
 import { GameEvents } from "./game-events.js";
 import type { MapSummary } from "./map-view.js";
-const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
+/** Single-quoted for the remote shell. */
+export const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
 /**
  * Reader sampling interval; placement checks wait for a sample after each click. 100 ms showed
  * no measurable game CPU, memory or game-speed cost against 500 ms (live 2026-09-28).

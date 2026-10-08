@@ -3,7 +3,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { layoutNote, visualGuide } from "./visual-guide.js";
 import { atlasIndex, atlasPage, constructionAtlasInstalled } from "./visual-atlas.js";
-import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Agent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   Frame,
@@ -110,7 +110,8 @@ export class RunController {
       handoff?: (
         messages: AgentMessage[],
         system: string,
-      ) => Promise<{ text: string; usage: { totalTokens: number } }>;
+        tools: AgentTool<any>[],
+      ) => Promise<{ text: string; usage: { totalTokens: number }; stopReason?: string }>;
       prepare?: (message: AgentMessage, system: string) => Promise<AssistantMessage>;
       spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams;
     } = {},
@@ -172,6 +173,7 @@ export class RunController {
       setPaused: (paused) => this.ensurePauseState(paused),
       isPaused: () => this.pauseStartedAt !== undefined,
       pausedMilliseconds: () => this.pausedMilliseconds(),
+      pinned: () => this.pinned(),
       requestStarted: () => {
         this.requestStartedAt = performance.now();
         this.firstDeltaMs = undefined;
@@ -242,31 +244,36 @@ export class RunController {
     this.compact = async () => {
       this.runtime.phase("compacting");
       await this.runtime.beforeInference?.();
-      const messages = pruneImages(this.agent.state.messages, 0);
-      const input: AgentMessage[] = [
-        ...messages,
-        { role: "user", content: handoffInstruction, timestamp: Date.now() },
-      ];
-      // This request has no tools and all image blocks were removed above.
-      // Use its actual shape; the gameplay anchor intentionally never subtracts
-      // removed images and can vastly overcount a handoff request.
-      const handoffEstimate = contextEstimate(input, this.agent.state.systemPrompt);
-      if (handoffEstimate > this.runtime.config.contextBudget - 4096)
-        throw new Error(
-          `Context cannot fit a safe compaction request (${handoffEstimate} > ${this.runtime.config.contextBudget - 4096}); preserving previous checkpoint.`,
-        );
-      const result = await (this.dependencies.handoff
-        ? this.dependencies.handoff(input, this.agent.state.systemPrompt)
-      : compactHandoff(
-            profile,
-            key,
-            input,
-            this.agent.state.systemPrompt,
-            this.runtime,
-          ));
-      this.session.check();
-      store.event(run.id, { type: "compaction_usage", usage: result.usage });
-      store.update(run.id, { tokens: run.tokens + result.usage.totalTokens });
+      const system = this.agent.state.systemPrompt;
+      const instruction: AgentMessage = { role: "user", content: handoffInstruction, timestamp: Date.now() };
+      const limit = this.runtime.config.contextBudget - 4096;
+      const request = async (messages: AgentMessage[], tools: AgentTool<any>[]) => {
+        const result = await (this.dependencies.handoff
+          ? this.dependencies.handoff(messages, system, tools)
+          : compactHandoff(profile, key, messages, system, tools, this.runtime));
+        this.session.check();
+        store.event(run.id, { type: "compaction_usage", usage: result.usage });
+        store.update(run.id, { tokens: run.tokens + result.usage.totalTokens });
+        return result;
+      };
+      // The next gameplay request plus the instruction: the same system prompt, tools and
+      // messages, so the provider's prompt cache covers everything before the instruction.
+      const cached = [...this.agent.state.messages, instruction];
+      let result =
+        this.contextBudget.estimate(cached, system, this.contextTools(), this.runtime.config.imageTokenEstimate) <= limit
+          ? await request(cached, this.agent.state.tools)
+          : undefined;
+      // If that does not fit, or the reply calls a tool instead of writing the handoff, ask again
+      // without tools or images, which leaves the model only text to write.
+      if (!result || result.stopReason === "toolUse" || result.text.trim().length < 40) {
+        const plain = [...pruneImages(this.agent.state.messages, 0), instruction];
+        const estimate = contextEstimate(plain, system);
+        if (estimate > limit)
+          throw new Error(
+            `Context cannot fit a safe compaction request (${estimate} > ${limit}); preserving previous checkpoint.`,
+          );
+        result = await request(plain, []);
+      }
       const tail = recentExchange(this.agent.state.messages);
       const replacement: AgentMessage[] = [
         ...this.guide,
@@ -559,6 +566,7 @@ export class RunController {
           this.contextTools(),
           this.runtime.config.imageTokenEstimate,
         );
+        // Compact while the fallback handoff request (text only) still fits with room to spare.
         const handoffHeadroom = this.runtime.config.contextBudget - Math.min(30000, this.runtime.config.contextBudget * 0.25);
         const nextHandoffEstimate = contextEstimate(
           [

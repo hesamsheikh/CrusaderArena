@@ -133,7 +133,7 @@ test("observations carry game values and messages, not reader bookkeeping", asyn
     population: { current: 5, housing: 10, idle_peasants: 2 },
     popularity: { current: 60, upcoming_change: 1, factors: { food: 1 } },
     tax_level: 3,
-    food: { total: 50, months_of_food: 4, rationing: "full", types_eaten: 1, types_available: 1 },
+    food: { total: 50, rationing: "full", types_eaten: 1, types_available: 1 },
     goods: { wood_planks: 41, stone: 25, bread: 50 },
     placement_mode: "placing",
     camera: { centre_tile: [100, 120], zoom: 1 },

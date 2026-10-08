@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { gameHost } from "./device.js";
+import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
 import { renderVideo, type VideoResult } from "./video.js";
 import type { Frame, GameAction, Run, State } from "../shared/protocol.js";
@@ -63,7 +63,7 @@ function gameSession(command: "status" | "launch" | "activate" | "close", timeou
   const { host, root } = gameHost();
   return new Promise<any>((resolve, reject) => {
     const child = spawn("ssh", ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=10", host,
-      `${root}/.venv-control/bin/python ${root}/tools/ubuntu/game-session.py ${command} --timeout ${timeout}`]);
+      `${quote(`${root}/.venv-control/bin/python`)} ${quote(`${root}/tools/ubuntu/game-session.py`)} ${command} --timeout ${timeout}`]);
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.on("error", reject);

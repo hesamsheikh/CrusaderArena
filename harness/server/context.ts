@@ -36,6 +36,59 @@ export function pruneImages(
     })
     .reverse();
 }
+type PayloadMessage = { role: string; content?: unknown };
+type CacheControl = Record<string, unknown>;
+const hasImage = (message: PayloadMessage) =>
+  Array.isArray(message.content) && message.content.some((part) => part?.type === "image_url");
+/** Marks the message's last text part; false when it has none. */
+function markText(message: PayloadMessage, cacheControl: CacheControl) {
+  if (typeof message.content === "string" && message.content) {
+    message.content = [{ type: "text", text: message.content, cache_control: cacheControl }];
+    return true;
+  }
+  const text = Array.isArray(message.content)
+    ? (message.content as CacheControl[]).filter((part) => part?.type === "text").at(-1)
+    : undefined;
+  if (text) text.cache_control = cacheControl;
+  return Boolean(text);
+}
+/**
+ * Moves Anthropic cache breakpoints in an OpenAI-format request (Claude through OpenRouter) to
+ * places the next request repeats. Pi marks the system prompt, the last tool and the last
+ * message, but the last message never pays off here: every turn prunes the oldest kept
+ * screenshot, which changes the conversation before it, so each turn would write a cache entry
+ * that no later request reads. Instead mark the end of the pinned guide, unchanged for the whole
+ * run, and the last message before the oldest unpinned image; everything up to it is sent
+ * unchanged next turn. `pinned` counts the guide messages at the start of the conversation.
+ */
+export function placeCacheBreakpoints(params: { messages: PayloadMessage[] }, pinned: number) {
+  const { messages } = params;
+  const start = ["system", "developer"].includes(messages[0]?.role) ? 1 : 0;
+  let cacheControl: CacheControl | undefined;
+  for (let i = messages.length - 1; i >= start && !cacheControl; i--) {
+    const parts = Array.isArray(messages[i].content) ? (messages[i].content as CacheControl[]) : [];
+    const marked = parts.find((part) => part?.cache_control);
+    if (marked) {
+      cacheControl = marked.cache_control as CacheControl;
+      delete marked.cache_control;
+    }
+  }
+  if (!cacheControl) return;
+  const guideEnd = start + pinned - 1;
+  if (pinned > 0 && messages[guideEnd]) markText(messages[guideEnd], cacheControl);
+  const oldest = messages.findIndex((message, i) => i > guideEnd && hasImage(message));
+  if (oldest < 0) {
+    markText(messages[messages.length - 1], cacheControl);
+    return;
+  }
+  // Pi sends the images of a group of tool results in a user message after the group's tool
+  // messages; their text changes with the images, so the breakpoint goes before the group.
+  let i = oldest - 1;
+  const content = messages[oldest].content as { text?: string }[];
+  if (content[0]?.text === "Attached image(s) from tool result:")
+    while (i > guideEnd && messages[i].role === "tool") i--;
+  for (; i > guideEnd; i--) if (markText(messages[i], cacheControl)) return;
+}
 /**
  * Text tokens estimated at 2.5 UTF-8 bytes each (the harness's JSON and prose measured about
  * 3.2 bytes per provider token, 2026-09-28; one token per byte made compaction fire every few
