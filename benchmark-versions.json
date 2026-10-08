@@ -18,6 +18,12 @@
       "fingerprint": "f1be10a5cdcc2ddf4cd395c2fcd44c862449f432d60b2019a9aff554e15f2582",
       "date": "2026-10-08",
       "note": "Clearer stop reason in the series record and runner log; play and scoring are unchanged."
+    },
+    {
+      "version": "v1",
+      "fingerprint": "36d68b1aa6914a3b7218aeb83efd64a6085d058b9fcecef9e3dd31b3df44a797",
+      "date": "2026-10-08",
+      "note": "Broken provider streams (OpenRouter's \"JSON error injected into SSE stream\") and plain 429 rate limits are retried like other transient errors; what the model sees and the scoring are unchanged."
     }
   ]
 }

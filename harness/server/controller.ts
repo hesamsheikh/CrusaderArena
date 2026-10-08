@@ -57,9 +57,13 @@ const OVERVIEW_SETTLE_MS = 700;
 /** Waits before each retry of a failed model request; the game is paused while it waits. */
 const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
 
-/** Provider failures worth one more request: no content, overload, rate limit or server error. */
+/**
+ * Provider failures worth one more request: no content, overload, rate limit, server error, or a
+ * stream the provider broke off ("JSON error injected into SSE stream" from OpenRouter ended a GLM
+ * episode, 2026-10-08).
+ */
 export function isTransientProviderError(message?: string) {
-  return /empty response|overloaded|rate limit|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up/i.test(message ?? "");
+  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream/i.test(message ?? "");
 }
 
 export class RunController {
