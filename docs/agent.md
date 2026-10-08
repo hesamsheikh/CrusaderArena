@@ -25,7 +25,8 @@ A turn is one model reply plus the tool calls in it.
 4. **The host makes sure the model sees the result.** If the turn acted without
    observing afterwards, or called no tools at all, the host lets the default wait
    pass (5 game seconds) and sends a fresh screenshot. A turn that ends with a fresh
-   observation, or only read, goes straight to the next request.
+   observation, or only read, goes straight to the next request (but see the limit on
+   reading-only turns below).
 5. **A turn that runs the game lasts a minimum time**, the minimum turn length (8 game
    seconds by default, about 6 real seconds at the fixed speed), counted from the start
    of the request. `observe` and `wait_and_observe` wait until the turn has run that
@@ -35,8 +36,10 @@ A turn is one model reply plus the tool calls in it.
    lets the rest pass and sends a fresh screenshot; a turn that acted without looking
    waits for the longer of this and the default wait. This caps the number of model
    requests per game minute, and so the cost of a run: at 8 seconds, a 25-game-minute
-   run has at most 187 turns that run the game. Turns that only read stay free and are
-   limited separately (see [Stuck loops](#when-things-go-wrong)).
+   run has at most 187 turns that run the game. Turns that only read stay free, but only
+   for a while: from the 12th reading-only turn in a row, the host lets the longer of the
+   default wait and the minimum turn pass after each one and sends a screenshot, so they
+   fall under the same cap. The briefing tells the model so.
 6. **Every request shows the time left.** Screenshots carry `run_clock`; when a reply's
    last tool result has no screenshot, the host adds a line such as "Game time left:
    23 min 41 s of 25 min."
@@ -132,9 +135,11 @@ turn. The dashboard shows both to the operator live.
   is retried; after three replies the run fails with the game still paused.
 - **Failed tool calls** are not retried by the host. The model gets the error and
   decides what to do.
-- **Stuck loops.** Four replies in a row with no tool calls, or twelve in a row that
-  only read (no action, wait or screenshot), end the run with an error. Reading costs
-  no game time, so without this a model could stall the budget forever.
+- **Stuck loops.** Four replies in a row with no tool calls end the run with an error;
+  the briefing says so, and the host repeats it after each such reply. Replies that only
+  read (no action, wait or screenshot) cost no game time, so a model could otherwise
+  read forever without using the budget: from the 12th in a row, each is followed by a
+  host wait (see [A turn](#a-turn)).
 - **Host shutdown.** Stopping the host (Ctrl-C or a terminate signal) ends a run as
   `stopped` but, unlike the dashboard's Stop, still pauses the game and takes the final
   reading, waiting up to 10 seconds; a second Ctrl-C exits at once. An unexpected host

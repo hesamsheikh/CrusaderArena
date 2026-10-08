@@ -19,8 +19,10 @@ defences: they cost resources without growing the economy.
 
 Observed 2026-09-28. The game opens on "Site your granary" in July 1194 with a
 population of 1 out of 10 housing. The starting package of 1,000 gold, 50 wood, 25 stone
-and 50 bread is still being paid in: the first screenshot shows about 120 gold and 12
-wood, and the rest arrives within about 25 game seconds. The keep stands at the top
+and 50 bread is still being paid in when timed play starts, wood first, and has fully
+arrived about 25 game seconds after the save loads. Until then the stats show less than
+the package, and a message at the top left of the screen lists the amounts still to come.
+That is not a reader fault: start building at once. The keep stands at the top
 right of the opening view with its campfire below it, and a stockpile already stands
 next to it. Oasis grass with palms and a pond lies south-west of the keep and suits
 farms. A grove of trees for woodcutters stands further west, and rocky cliffs lie to the

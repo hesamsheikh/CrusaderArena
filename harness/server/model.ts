@@ -563,7 +563,7 @@ export function makeAgent(
         }));
         // Menu clicks are fixed by the harness; each agent-chosen target counts as one action.
         if (runtime && runtime.cycle.actions + plans.length > 8)
-          throw new Error("Not enough actions remain in this turn; observe before building.");
+          throw new Error("Not enough actions remain in this reply for these placements (at most 8 per reply). End this reply and place them in the next one.");
         const ageCreditMs = Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs);
         const pause = (seconds: number) =>
           runtime ? runtime.session.wait(seconds) : new Promise((r) => setTimeout(r, seconds * 1000));

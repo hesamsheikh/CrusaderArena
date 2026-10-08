@@ -76,6 +76,8 @@ between September and October 2026.
 - Tool changes made before the first 25-game-minute run, not yet used live: woodcutter
   spots ranked by nearby trees, `expand_storage` building onto the whole storage cluster,
   placement checks waiting for a valid reader sample, and `cost` in placement results.
+- Reading-only replies costing game time from the 12th in a row instead of ending the
+  run, and the warning after each reply without a tool call. Not yet run live.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.

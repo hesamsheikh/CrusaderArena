@@ -12,7 +12,7 @@ import type {
   Run,
   RuntimeProgress,
 } from "../shared/protocol.js";
-import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
+import { EMPTY_REPLY_LIMIT, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
 import { setGameSpeed, type SpeedControl } from "./game-speed.js";
 import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
@@ -811,16 +811,12 @@ export class RunController {
           progress: this.progress,
         });
         empty = this.cycle.tools === 0 ? empty + 1 : 0;
-        // Reading tools before any action keep the game paused and cost no game time, so a run of
-        // reading-only replies would never use up the budget; it ends here instead.
+        if (empty >= EMPTY_REPLY_LIMIT)
+          throw new Error(`No tool calls in ${EMPTY_REPLY_LIMIT} replies in a row.`);
         readingOnly =
           !this.cycle.acted && !this.cycle.ran && this.cycle.tools > 0
             ? readingOnly + 1
             : 0;
-        if (empty >= 4 || readingOnly >= 12)
-          throw new Error(
-            "No game action or wait across repeated turns.",
-          );
         if (this.run.maxTurns && this.run.turns >= this.run.maxTurns) {
           this.progress.stopReason = "turn_limit";
           break;
@@ -829,14 +825,27 @@ export class RunController {
         // and looks every game second cannot multiply the requests (and the cost) of a run.
         const { defaultWaitSeconds, minTurnSeconds } = this.runtime.config;
         const ranSeconds = (this.session.gameUsedTicks() - turnStartTicks) / TICKS_PER_GAME_SECOND;
-        const wait = this.cycle.hostWait(ranSeconds, defaultWaitSeconds, minTurnSeconds);
-        if (wait !== null)
+        if (readingOnly >= READING_ONLY_LIMIT) {
+          // Reading-only replies would otherwise never use up the budget: from the limit on, each
+          // costs at least a minimum turn, which caps their requests like any other turn's.
+          const seconds = Math.max(defaultWaitSeconds, minTurnSeconds);
+          this.store.event(this.run.id, { type: "reading_only_wait", replies: readingOnly, seconds });
           await this.observe(
-            wait,
-            this.cycle.observed
-              ? `This turn ran the game for ${Math.round(ranSeconds * 10) / 10} game seconds, less than the minimum of ${minTurnSeconds}, so the host let ${wait} more pass. Fresh screenshot:`
-              : undefined,
+            seconds,
+            `Your last ${readingOnly} replies only read, which keeps the game paused. From the ${READING_ONLY_LIMIT}th such reply in a row, the host lets ${seconds} game seconds pass after each one. Fresh screenshot:`,
           );
+        } else {
+          const wait = this.cycle.hostWait(ranSeconds, defaultWaitSeconds, minTurnSeconds);
+          if (wait !== null)
+            await this.observe(
+              wait,
+              this.cycle.observed
+                ? `This turn ran the game for ${Math.round(ranSeconds * 10) / 10} game seconds, less than the minimum of ${minTurnSeconds}, so the host let ${wait} more pass. Fresh screenshot:`
+                : this.cycle.tools === 0
+                  ? `Your reply called no tools, so the host let ${wait} game seconds pass. ${EMPTY_REPLY_LIMIT} replies in a row without a tool call end the run. Fresh screenshot:`
+                  : undefined,
+            );
+        }
       }
     } catch (error) {
       if (!this.session.reason) {

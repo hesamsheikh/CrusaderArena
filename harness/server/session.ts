@@ -172,7 +172,7 @@ export class ObservationCycle {
     this.acted = true;
     this.observed = false;
     if (++this.actions > 8)
-      throw new Error("At most 8 actions per turn; observe before continuing.");
+      throw new Error("At most 8 actions per reply. End this reply; the count starts again with the next one.");
   }
   observe() {
     this.observed = true;

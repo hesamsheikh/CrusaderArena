@@ -211,6 +211,13 @@ export const TICKS_PER_GAME_SECOND = 30;
  * second, so a game second takes about 0.75 real seconds.
  */
 export const GAME_SPEED = 40;
+/**
+ * Reading-only replies keep the game paused, so they cost no game time. From this many in a row,
+ * the host lets game time pass after each one, so reading stops being free (it used to end the run).
+ */
+export const READING_ONLY_LIMIT = 12;
+/** Replies in a row without any tool call that end the run: the model has stopped playing. */
+export const EMPTY_REPLY_LIMIT = 4;
 export const runConfigSchema = z
   .object({
     /** Benchmark budget in game time: 1 game minute = 60 × 30 = 1,800 game ticks. */

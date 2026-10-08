@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { GAME_SPEED, TICKS_PER_GAME_SECOND, type Run, type RunSeries, type Stats } from "../shared/protocol.js";
+import { EMPTY_REPLY_LIMIT, GAME_SPEED, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, type Run, type RunSeries, type Stats } from "../shared/protocol.js";
 import { netWorth } from "./market-prices.js";
 import { observationStats } from "./status.js";
 import { atlasIndex, constructionAtlas, exampleSettlement } from "./visual-atlas.js";
@@ -98,25 +98,29 @@ questions during the run. The run is judged by the game's state when it ends.
 - The budget is **${minutes(gameMinutes)} of game time** (${gameMinutes * 60} game seconds). The host runs
   the game at a fixed speed of ${GAME_SPEED}, where a game second takes about
   ${TICKS_PER_GAME_SECOND / GAME_SPEED} real seconds; \`+\` and \`-\` are disabled.
-- Game time passes only while the game runs: while your tools act and wait. The host
-  pauses the game during every one of your replies, so thinking costs no game time.
+- Game time passes only while the game runs. The host pauses it while you think, and it
+  stays paused through the first tools of your reply if they only read (\`status\`,
+  \`get_inventory\`, \`find_sites\`, \`map_overview\`, \`flat_view\`, references, plan and notes).
+  From the first tool that acts, waits or takes a screenshot, the game runs until your
+  reply ends. So thinking and reading first cost no game time; read before you act.
 - A real-time limit of ${minutes(wallLimitMinutes)} also ends the run. It is a safety limit; game time
   is the budget.
 - Every request shows the game time left in minutes and seconds: \`run_clock\` in each
   screenshot, and a "Game time left" line after the last tool result of each reply.
-- If you act without observing, the host lets ${defaultWaitSeconds} game seconds pass and then sends
-  a screenshot.${minTurnSeconds > 0 ? `
-- A reply whose tools run the game lasts at least ${minTurnSeconds} game seconds, counted from its
-  first tool that acts, waits or looks. \`observe\` and \`wait_and_observe\` return the game
-  only once the reply has run that long (the host lets the rest pass first), so a
-  screenshot shows the game at least ${minTurnSeconds} game seconds after your reply's first
-  action. Batch your actions before you look.` : ""}
+- If you act without observing, or call no tool, the host lets at least ${defaultWaitSeconds} game seconds
+  pass and then sends a screenshot.${minTurnSeconds > 0 ? `
+- A reply whose tools run the game lasts at least ${minTurnSeconds} game seconds, counted from when
+  the host starts pausing the game for it (the game runs on for a moment until the pause
+  takes). \`observe\` and \`wait_and_observe\` return the game only once that much has
+  passed (the host lets the rest pass first). Batch your actions before you look.` : ""}
+- Reading is free only for a while: from the ${READING_ONLY_LIMIT}th reply in a row that only reads,
+  the host lets ${Math.max(defaultWaitSeconds, minTurnSeconds)} game seconds pass after each such reply.
 
 ## Ground rules
 
 - Keep playing until the host ends the run. Never stop to summarise, ask for
   confirmation or wait for instructions: every reply should call tools that move the
-  benchmark forward.
+  benchmark forward. ${EMPTY_REPLY_LIMIT} replies in a row without any tool call end the run.
 - Stay in the loaded game: never open the game's menus to save, load, quit or restart.
   Do not press \`P\` (the host owns pause) or \`Escape\` (it opens the game menu and
   halts play).

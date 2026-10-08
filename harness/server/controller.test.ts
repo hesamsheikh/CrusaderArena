@@ -325,12 +325,39 @@ test("each run records the code, system prompt and tools it ran with", () => {
   // Same configuration, same hashes.
   assert.deepEqual(fixture(1).run.harness, harness);
 });
-test("replies that only read end the run after twelve turns instead of idling for free", async () => {
-  const f = fixture(20);
+test("from the twelfth reading-only reply in a row, each lets game time pass instead of idling for free", async () => {
+  const f = fixture(15, 5, 10, {}, undefined, 8);
+  const waits: number[] = [];
+  f.controller.session.waitGame = async (seconds) => {
+    waits.push(seconds);
+    f.advanceTicks(seconds * 30);
+    f.controller.session.check();
+    return false;
+  };
   f.provider(() => [call("status", {})], true);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.equal(f.requests.length, 15);
+  assert.deepEqual(waits, [0, 8, 8, 8]); // The first screenshot, then one wait per extra reply.
+  // Replies 1–11 stay free; after replies 12, 13 and 14 the host runs the game for the longer of
+  // the default wait and the minimum turn and sends a screenshot (reply 15 hits the turn limit).
+  const noted = f.requests.map((r) => /only read, which keeps the game paused/.test(JSON.stringify(r.messages.at(-1))));
+  assert.deepEqual(noted.map((n, i) => (n ? i + 1 : 0)).filter(Boolean), [13, 14, 15]);
+  assert.match(JSON.stringify(f.requests[12].messages.at(-1)), /Your last 12 replies only read.*host lets 8 game seconds pass/);
+  // The briefing states both limits and says when the game is paused.
+  const system = f.requests[0].systemPrompt!;
+  assert.match(system, /from the 12th reply in a row that only reads,\s+the host lets 8 game seconds pass/);
+  assert.match(system, /4 replies in a row without any tool call end the run/);
+  assert.match(system, /The host pauses it while you think/);
+  assert.doesNotMatch(system, /every one of your replies/);
+});
+
+test("replies without any tool call end the run after four in a row, and the model is warned", async () => {
+  const f = fixture(10);
+  f.provider(() => [{ type: "text", text: "Thinking about the economy." }], true);
   assert.equal(await f.controller.runSession(), "error");
-  assert.equal(f.requests.length, 12);
-  assert.ok(f.logMessages.some((m) => /No game action or wait/.test(m)), JSON.stringify(f.logMessages));
+  assert.equal(f.requests.length, 4);
+  assert.match(JSON.stringify(f.requests[1].messages.at(-1)), /called no tools.*4 replies in a row without a tool call end the run/);
+  assert.ok(f.logMessages.some((m) => /No tool calls in 4 replies in a row/.test(m)), JSON.stringify(f.logMessages));
 });
 test("brief reader freshness gaps do not end a timed run", async () => {
   const f = fixture(1);
