@@ -89,10 +89,12 @@ everything else on plain ground.
 - **Bread:** wheat farm → stockpiled wheat → mill → stockpiled flour → bakery → granary.
 - **Ale:** hops farm → stockpiled hops → brewery → stockpiled ale → inn → popularity.
 - **Stone:** quarry → ox tether transport → stockpile → walls/towers/buildings.
+<!-- military -->
 - **Leather armor:** dairy cows → tanner → armory. Tanning consumes cows and can
   compete with cheese production.
 - **Metal equipment:** iron mine → stockpile → blacksmith/armorer → armory.
 - **Wooden equipment:** woodcutter → stockpile → fletcher/poleturner → armory.
+<!-- /military -->
 
 Balance stages by observing inventories. Wheat piling up while flour is empty
 suggests milling capacity, staffing or access; flour piling up with no bread

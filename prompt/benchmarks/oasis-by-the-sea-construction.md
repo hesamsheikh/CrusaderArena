@@ -8,7 +8,7 @@ as far as you can within the game-time budget.
 
 **Score.** Your net worth when the run ends: gold plus every stored good valued at the
 marketplace sell price per unit (wood 1, stone 7, iron 23; bread, cheese, meat and
-apples 4; ale 10, flour 10; weapons 10–30, armour 12–30). The starting package is worth
+apples 4; ale 10, flour 10). The starting package is worth
 about 1,425. Population, popularity, food and buildings are reported beside the score
 but do not count; buildings count only through what they produce.
 
@@ -34,8 +34,8 @@ Choose, combine and adjust these as the game develops:
 
 - **Raw materials:** quarries (with an ox tether) and iron mines produce stone and iron,
   which are worth 7 and 23 each and can be built with or sold.
-- **Manufacturing:** workshops turn wood and iron into weapons and armour, worth more
-  than their inputs; an armoury stores them.
+- **Not weapons or armour:** their workshops deliver only to an armoury, which is not
+  part of this economic benchmark, so they add nothing to net worth.
 - **Food surplus:** food beyond what the population eats is stored value.
 - **Taxes:** taxes start at "no taxes" (`set_tax` changes them). Food variety, ale from
   an inn and religion raise popularity; high popularity lets you tax for steady gold
