@@ -459,7 +459,10 @@ test("build_structure confirms placed and silently blocked buildings from reader
   const game = simulatedGame({ blocked: (x) => x === 600 });
   const report = await game.build([{ name: "Hovel", x: 500, y: 400 }, { name: "Hovel", x: 600, y: 400, exact: true }]);
   assert.deepEqual(report.placements.map((p: any) => p.status), ["placed", "not_placed"]);
-  assert.deepEqual(report.placements[0].change, { wood: -6, gold: 0, structures: 1 });
+  // The reference cost, not the stock change around the click (arriving goods show in that too).
+  assert.equal(report.placements[0].cost, "6 wood");
+  assert.equal(report.placements[0].change, undefined);
+  assert.equal(report.placements[1].cost, undefined);
 });
 
 test("build_structure skips remaining targets when the camera moves", async () => {
@@ -483,6 +486,16 @@ test("a transient unavailable reader sample is not a camera move", async () => {
   const game = simulatedGame({ unavailableReads: [4] });
   const report = await game.build([{ name: "Hovel", x: 500, y: 400 }]);
   assert.deepEqual(report.placements.map((p: any) => p.status), ["placed"]);
+});
+
+test("an unavailable sample just before a terrain click does not leave the placement unverified", async () => {
+  // One unavailable read anywhere around the click: before waiting for a valid "before" sample,
+  // read 8 (the click's) gave `unverified`, which is never retried.
+  for (let n = 5; n <= 11; n++) {
+    const game = simulatedGame({ unavailableReads: [n] });
+    const report = await game.build([{ name: "Hovel", x: 500, y: 400 }]);
+    assert.equal(report.placements[0].status, "placed", `unavailable read ${n}`);
+  }
 });
 
 const worldClicks = (actions: any[]) => actions.filter((a) => a.button === 1 && a.y < 900);

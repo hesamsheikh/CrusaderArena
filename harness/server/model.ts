@@ -583,6 +583,8 @@ export function makeAgent(
         let tileMap: TileMap | null | undefined;
         const placedAt: { x: number; y: number; size: number }[] = [];
         const results: Record<string, unknown>[] = [];
+        // Stock and structure changes around each click, kept for the logs only (see `cost` below).
+        const stockChanges: unknown[] = [];
         try {
           for (const [index, plan] of plans.entries()) {
             runtime?.cycle.action();
@@ -681,6 +683,9 @@ export function makeAgent(
             }
             const { outcome, feedback, visible } = result;
             if (outcome.status === "placed") placedAt.push({ ...(at ?? plan), size: footprintOf(plan.name) });
+            const price = buildingCost(plan.name);
+            const cost = price && [price.wood && `${price.wood} wood`, price.gold && `${price.gold} gold`].filter(Boolean).join(", ");
+            stockChanges.push(outcome.change ?? null);
             results.push({
               building: plan.name,
               x: plan.x,
@@ -695,7 +700,10 @@ export function makeAgent(
               ...(retryMethod === "offsets" && tileMapError ? { tileMapError } : {}),
               ...(retryStopped ? { retryStopped } : {}),
               feedback,
-              ...(outcome.change ? { change: outcome.change } : {}),
+              // The building's cost from the game reference. The stock change around the click is
+              // not one: the starting goods arriving, production and food show in it too, and the
+              // agent's playbooks learned "Granary 3w+30g" from it (GLM, 2026-10-08).
+              ...(outcome.status === "placed" && cost ? { cost } : {}),
               ...(visible.length && !feedback.length ? { stillVisibleFeedback: visible } : {}),
             });
           }
@@ -724,7 +732,7 @@ export function makeAgent(
                     : "No placement error captured; see each placement's status.",
               }),
             }],
-            details: { frameId: frame.id },
+            details: { frameId: frame.id, stockChanges },
           };
         } catch (error) {
           observed = null;
@@ -843,7 +851,7 @@ export function makeAgent(
       name: "market_trade",
       label: "Buy or sell at the marketplace",
       description:
-        "Buy or sell a good at your Marketplace: 1-20 lots (5 units a lot; food sells in lots of 10). Returns the units and gold that changed, as the game reports them, with the per-unit prices; it stops early when gold, stock or storage runs out. Prices are fixed per unit (buy / sell): wood 4/1, stone 14/7, iron 45/23, pitch 20/10, hops 15/8, wheat 23/8, flour 32/10, ale 20/10, bread, cheese, meat and apples 8/4, bows 31/15, crossbows 58/30, spears 20/10, pikes 36/18, maces 58/30, swords 58/30, leather armour 25/12, metal armour 58/30. Needs a built Marketplace.",
+        "Buy or sell a good at your Marketplace: 1-20 lots (5 units a lot; food sells in lots of 10). Returns the units and gold that changed, as the game reports them, with the per-unit prices; it stops early when gold, stock or storage runs out. Prices are fixed per unit (buy / sell): wood_planks 4/1, stone 14/7, iron 45/23, pitch 20/10, hops 15/8, wheat 23/8, flour 32/10, ale 20/10, bread, cheese, meat and apples 8/4, bows 31/15, crossbows 58/30, spears 20/10, pikes 36/18, maces 58/30, swords 58/30, leather armour 25/12, metal armour 58/30. Needs a built Marketplace.",
       parameters: Type.Object({
         good: Type.Union(tradeGoods.map((name) => Type.Literal(name))),
         action: Type.Union([Type.Literal("buy"), Type.Literal("sell")]),
@@ -1101,7 +1109,7 @@ export function makeAgent(
         name: "wait_and_observe",
         label: "Wait and observe",
         description:
-          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
+          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({

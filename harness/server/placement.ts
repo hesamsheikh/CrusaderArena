@@ -63,6 +63,14 @@ export class Placer {
     return null;
   }
   /**
+   * The latest valid reader sample, waiting up to 0.3 s past an unavailable one (about 5% of live
+   * samples): a missing "before" sample left a real placement `unverified` and a blocked one
+   * unretried, and a missing selection state skipped the selection check.
+   */
+  private current() {
+    return this.sampleAfter(0, () => true, 0.3);
+  }
+  /**
    * The settle sample for a terrain click is the first captured SETTLE_MS after the ack, or an
    * earlier post-click one that already confirms the placement (a new structure or the exact cost).
    */
@@ -82,7 +90,7 @@ export class Placer {
   async select(name: string): Promise<"confirmed" | "unchecked" | "failed"> {
     const [category, button] = menuClicks(this.io.frame, name);
     for (let attempt = 0; attempt < 2; attempt++) {
-      const before = this.readerReady ? placementOf(this.device.currentStats().observation) : null;
+      const before = this.readerReady ? placementOf(await this.current()) : null;
       await this.io.send(category);
       // A newly opened tray page fades in for ~0.5–0.7 s and ignores building clicks meanwhile (live 2026-09-25).
       const categoryKey = JSON.stringify(category);
@@ -106,7 +114,7 @@ export class Placer {
   /** One terrain click in the active placement mode, classified from feedback events since `eventStart`. */
   async click(name: string, point: { x: number; y: number }, carried: string[], eventStart: number) {
     const cost = buildingCost(name);
-    const before = this.readerReady ? snapshotOf(this.device.currentStats().observation) : null;
+    const before = this.readerReady ? snapshotOf(await this.current()) : null;
     const ack = await this.io.send({ type: "click", x: point.x, y: point.y, button: 1 });
     const after = this.readerReady ? await this.settle(ack, cost, before) : await this.io.pause(0.3).then(() => null);
     const feedback = placementFeedback(this.device.events.since(eventStart));

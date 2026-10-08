@@ -52,6 +52,10 @@ Brewery, Inn. Castle and military buildings are not offered.
 | `camera_moved` | The camera moved since the screenshot, so the rest of the batch was skipped |
 | `unverified` | No confirmation either way |
 
+A `placed` building also reports `cost`, its cost from the game reference. The stock
+change around the click is kept in the run's events only, not shown to the model: the
+starting goods still arriving, production and food show in it too.
+
 **Retries.** A `not_placed` target is retried at nearby spots: up to 6 per building and
 12 per call. With the tile map, the host picks the nearest spots where the building
 fits; otherwise it steps a short distance along each axis. It stops when the camera
