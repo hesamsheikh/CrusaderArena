@@ -10,7 +10,10 @@
  * The episodes (3 by default) form a learning series: each starts from the playbook the agent
  * left at the end of the one before, and the last episode's score is the series' score.
  * --no-playbook runs them as independent runs instead. A failed episode is recorded and the
- * series goes on.
+ * series goes on; if the harness or prompt files change under the dashboard, the series stops.
+ *
+ * --idle measures the do-nothing baseline: no agent, the game runs untouched for the same play
+ * time, then the scorecard is read.
  *
  * --dry-run does everything except the agent run (no model cost); --keep-game leaves
  * the game running (paused) afterwards for manual inspection; --record records the game
@@ -43,6 +46,7 @@ const { values: opts } = parseArgs({
     episodes: { type: "string", default: "3" },
     "no-playbook": { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
+    idle: { type: "boolean", default: false },
     restart: { type: "boolean", default: false },
     "keep-game": { type: "boolean", default: false },
     record: { type: "boolean", default: false },
@@ -292,7 +296,6 @@ async function episode(
   series?: RunSeries,
   playbook?: string,
 ) {
-  if (!opts["dry-run"]) await checkDashboardFresh();
   log(`Episode ${n}/${total}: starting the game`);
   const before = await gameSession("status");
   if (before.running) {
@@ -319,7 +322,8 @@ async function episode(
     const startWorth = startingWorth[opts.save!];
     let run: Run | undefined;
     let lastGood: State | undefined;
-    if (!opts["dry-run"]) {
+    if (opts.idle) await idle(Number(opts["play-minutes"]), Number(opts["wall-limit-minutes"]));
+    else if (!opts["dry-run"]) {
       const { runId } = await api<{ runId: string }>("agent/run", {
         benchmarkType: opts.benchmark,
         modelId,
@@ -360,8 +364,11 @@ async function episode(
       ? path.join("harness/runtime/runs", run.folder)
       : path.join("harness/runtime/episodes");
     mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, run ? "episode.json" : `dry-run-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-    writeFileSync(file, JSON.stringify({ episode: n, save: opts.save, benchmark: opts.benchmark, ...(series ? { series } : {}), ...card }, null, 2));
+    const file = path.join(dir, run ? "episode.json" : `${opts.idle ? "idle" : "dry-run"}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    writeFileSync(file, JSON.stringify({
+      episode: n, save: opts.save, benchmark: opts.benchmark, ...(series ? { series } : {}),
+      ...(opts.idle ? { idle: { playMinutes: Number(opts["play-minutes"]) } } : {}), ...card,
+    }, null, 2));
     log(`Scorecard: ${file}`);
     // Renders run one at a time on this Mac, in the background of the next episode.
     if (run?.config?.recordVideo && run.progress?.recording?.frames)
@@ -377,6 +384,33 @@ async function episode(
   }
 }
 
+/**
+ * The do-nothing baseline: the game runs with no input for the play-time budget, counted like an
+ * agent run's (real time in which the game clock advanced), then it is paused for the reading.
+ */
+async function idle(playMinutes: number, wallLimitMinutes: number) {
+  log(`Idle baseline: the game runs untouched for ${playMinutes} minute(s) of play time`);
+  await setPaused(false);
+  const started = Date.now();
+  let played = 0;
+  let lastTick: number | undefined;
+  let lastAt = started;
+  while (played < playMinutes * 60_000) {
+    if (Date.now() - started > wallLimitMinutes * 60_000)
+      throw new Error(`The idle baseline passed the ${wallLimitMinutes}-minute real-time limit.`);
+    await sleep(1000);
+    const tick = (await api<State>("state")).stats?.observation?.game_time;
+    const now = Date.now();
+    if (typeof tick === "number") {
+      if (lastTick !== undefined && tick > lastTick) played += now - lastAt;
+      lastTick = tick;
+    }
+    lastAt = now;
+  }
+  await setPaused(true);
+  log(`Idle baseline: paused after ${Math.round(played / 1000)} s of play`);
+}
+
 async function main() {
   if (!opts.save) throw new Error("--save is required (the save name shown in Load Game).");
   const state = await api<State>("state").catch(() => {
@@ -385,7 +419,8 @@ async function main() {
   if (state.running || state.connected) throw new Error("The dashboard is connected or running; disconnect it first.");
   let modelId: string | undefined;
   let prompt = "";
-  if (!opts["dry-run"]) {
+  const agent = !opts["dry-run"] && !opts.idle;
+  if (agent) {
     const model = state.models.find((m) => m.id === opts.model || m.name === opts.model);
     if (!model?.keyConfigured) throw new Error("--model must name a saved model profile with an API key.");
     modelId = model.id;
@@ -394,17 +429,28 @@ async function main() {
   }
   const total = Number(opts.episodes);
   if (!Number.isInteger(total) || total < 1 || total > 20) throw new Error("--episodes must be 1 to 20.");
-  const learning = !opts["dry-run"] && !opts["no-playbook"];
+  const learning = agent && !opts["no-playbook"];
   const id = `${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "")}-${randomUUID().slice(0, 8)}`;
   const seriesDir = path.join("harness/runtime/series", id);
   const results: Record<string, unknown>[] = [];
   let playbook = "";
+  let stopped: string | undefined;
   if (learning) {
     mkdirSync(seriesDir, { recursive: true });
     log(`Learning series ${id}: ${total} episode(s); the playbook carries over between them`);
   }
   for (let n = 1; n <= total; n++) {
     const series = learning ? { id, episode: n, episodes: total } : undefined;
+    // Changed harness or prompt files would leave every later episode on older code: stop.
+    if (agent) {
+      try {
+        await checkDashboardFresh();
+      } catch (error) {
+        stopped = `Stopped before episode ${n}: ${error instanceof Error ? error.message : String(error)}`;
+        log(stopped);
+        break;
+      }
+    }
     try {
       const { card, run } = await episode(n, total, modelId, prompt, series, playbook);
       console.log(JSON.stringify(card));
@@ -419,14 +465,19 @@ async function main() {
     }
     if (learning) {
       writeFileSync(path.join(seriesDir, `playbook-after-episode-${n}.md`), playbook);
-      writeFileSync(path.join(seriesDir, "series.json"), JSON.stringify({
-        id, save: opts.save, map: opts.map, benchmark: opts.benchmark, model: opts.model, episodes: total, results,
-      }, null, 2));
+      writeSeries();
     }
   }
+  function writeSeries() {
+    writeFileSync(path.join(seriesDir, "series.json"), JSON.stringify({
+      id, save: opts.save, map: opts.map, benchmark: opts.benchmark, model: opts.model, episodes: total, results,
+      ...(stopped ? { stopped } : {}),
+    }, null, 2));
+  }
+  if (learning && stopped) writeSeries();
   const worth = results.map((r) => (typeof r.net_worth === "number" ? String(r.net_worth) : "failed"));
-  log(`Net worth by episode: ${worth.join(" → ")}`);
-  if (results.every((r) => r.error)) process.exitCode = 1;
+  if (worth.length) log(`Net worth by episode: ${worth.join(" → ")}`);
+  if (stopped || results.every((r) => r.error)) process.exitCode = 1;
   if (renders.length) {
     log(`Waiting for ${renders.length} video render(s)`);
     await Promise.all(renders);

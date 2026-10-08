@@ -76,6 +76,10 @@ the game code and spot-checked in play. They are in `harness/server/market-price
 50 bread, worth 1,425. The package arrives within about 25 game seconds of loading,
 so it is a fixed constant rather than a reading at load time.
 
+**Baseline.** `npm run episodes -- --idle` measures what doing nothing scores: it loads
+the save, lets the game run untouched for the same play time an agent gets, counted
+the same way, and writes the scorecard to `harness/runtime/episodes/idle-<time>.json`.
+
 Population, popularity, food and buildings are reported beside the score but do not
 count. Buildings matter only through what they produce. Buying at the marketplace
 lowers net worth (the buy price is higher than the sell price); selling leaves it
@@ -94,7 +98,9 @@ operator. For each episode it:
    `episode.json`, into the run's folder.
 5. Disconnects and closes the game. With `--record`, renders the run video.
 
-A failed episode is recorded and the series goes on with the next.
+A failed episode is recorded and the series goes on with the next. If harness or prompt
+files change while a series runs, the series stops before the next episode: the
+dashboard would otherwise run every later episode on the older code.
 
 ```bash
 npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
@@ -108,7 +114,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--map` | none | Map name the reader must report after loading |
 | `--benchmark` | `Custom` | Benchmark name (selects the rules file) |
 | `--model` | | Name of a saved model profile with a key |
-| `--prompt`, `--prompt-file` | | The operator instruction (one is required unless `--dry-run`) |
+| `--prompt`, `--prompt-file` | | The operator instruction (one is required unless `--dry-run` or `--idle`) |
 | `--play-minutes` | 10 | Play-time budget: minutes of real time while the game runs |
 | `--wall-limit-minutes` | 60 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
@@ -118,6 +124,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--no-playbook` | off | Run the episodes as independent runs, with no playbook and no series |
 | `--record` | off | Record the run and render a video |
 | `--dry-run` | off | Everything except the agent run; no model cost |
+| `--idle` | off | The do-nothing baseline: no agent; the game runs untouched for the play-time budget |
 | `--restart` | off | Close a game that is already running instead of stopping |
 | `--keep-game` | off | Leave the game running and paused afterwards |
 | `--port` | 4317 | Dashboard port |
