@@ -83,6 +83,9 @@ between September and October 2026.
   body the model library builds, not yet against a live provider.
 - Host shutdown ending a run with the final pause, and the host staying ready when a
   run cannot be set up.
+- Publishing runs ([Publishing](publishing.md)): packaging, scrubbing, the tables and the
+  upload checks are tested in code; packaging and the scrub also ran on the 2026-10-08 runs
+  without any upload. Nothing has been uploaded to Hugging Face yet.
 
 ## Not verified or not built
 

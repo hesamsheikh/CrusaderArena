@@ -12,6 +12,7 @@ Start with **How it works**, then read whichever part you need.
 | [Context](context.md) | Exactly what the model is sent, and how the context stays within budget |
 | [Tool reference](tools.md) | Every tool: parameters, behaviour and results |
 | [The harness](harness.md) | Using the dashboard, model profiles, run files, videos, safety boundaries |
+| [Publishing runs](publishing.md) | Packaging runs, scrubbing them and uploading them to the Hugging Face dataset |
 | [Setup](setup.md) | Installing the game machine and the host |
 | [The reader](reader.md) | How game state is read, what it contains and its limits |
 | [Status](status.md) | What is verified, what is not, and known issues |
