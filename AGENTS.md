@@ -26,7 +26,6 @@ and the contents, and keep out:
   text or decompiled code. Facts learned from the game, such as prices, footprints or
   field names, are fine in your own words. `.internal/` holds private images made
   from game screenshots.
-- **Private notes:** `analysis/` is gitignored and stays local.
 - **Third-party mod code**, unless its license has been reviewed.
 
 Push only `main`. Other local branches can hold private history. Do not change the
@@ -58,7 +57,7 @@ git identity or other git configuration.
   provider caching; per-turn information travels in observations and tool results.
 - **Restart the host after editing `prompt/` or `harness/`**: it loads them once at
   startup, and `npm run episodes` refuses a stale host.
-- **Work without private files.** Public clones have no `.internal/` or `analysis/`.
+- **Work without private files.** A fresh clone has no `.internal/` guide images.
   Code and tests must not depend on them.
 - **Check before finishing:** `npm test` and `npm run build`; for the video renderer,
   `python3 -m unittest discover -s tools/video`. Tests in `tools/ubuntu/` and
@@ -75,10 +74,3 @@ git identity or other git configuration.
 - Never modify installed game files. Restarting the game and loading benchmark saves
   for testing is fine.
 - Single-player only. Do not work around the multiplayer refusal.
-
-## Private local material
-
-When present, `analysis/` holds research notes and investigation history, including
-static analysis behind the reader and placement rules. It is useful background but
-may be out of date; the code and docs are the source of truth. It is not in public
-clones.
