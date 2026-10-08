@@ -18,7 +18,9 @@ game accepts, keep workers fed and housed, and grow.
   reads, so a slow model is not penalised in game time. A real-time limit (60 minutes by default) stops runs
   that take too long; the record shows when that limit ended a run.
 - **Same tools and prompt.** Every model gets the same system prompt, tools and guide
-  for a given benchmark and harness version.
+  for a given benchmark and harness version. Each run records the harness commit and
+  hashes of its prompt and tools, plus the model's settings, so a comparison can
+  check it is like for like.
 
 ## Scenarios
 
@@ -145,8 +147,9 @@ Columns: run, start time, model, benchmark, map, how it ended, game seconds, wal
 seconds, turns, tokens (total, uncached input, cache reads, output, tokens per game
 minute), population, housing, popularity, net worth, growth, gold, food, structures,
 troops, where the score came from, building placements attempted / placed / failed,
-anchor-tool calls / placed / failed, retries, peak game memory, tool errors and tool
-usage.
+anchor-tool calls / placed / failed, retries, peak game memory, tool errors, tool
+usage, model settings (reasoning, output limit, providers) and the harness version
+(commit, uncommitted-change hash, and prompt and tool hashes).
 
 "How it ended" is one of: `game_time` (budget used), `wall_limit`, `turn_limit`,
 `memory_guard`, `error: <last error>`, `stopped`, `interrupted`, `running` or
@@ -163,8 +166,8 @@ reader ticks and `*` marks an unfinished run.
   checked twice but are not atomic snapshots.
 - **No control of randomness.** Neither the game's nor the model's randomness is
   fixed. Run several episodes.
-- **Harness versions.** Prompt and tool changes affect results. Compare runs from the
-  same version.
+- **Harness versions.** Prompt and tool changes affect results. Compare runs with the
+  same Harness value in `npm run report`.
 - **The memory guard can end a run early** (see [Status](status.md#known-issues));
   the scorecard then uses the last valid reading.
 - **Not built yet:** scores for the diagnostic benchmarks, military or defence

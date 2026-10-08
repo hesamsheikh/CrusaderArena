@@ -1,7 +1,13 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { Play, Settings2, X } from "lucide-react";
-import type { ModelProfile } from "../shared/protocol";
-import { runNameFor } from "../shared/protocol";
+import type { ModelProfile, ReasoningLevel } from "../shared/protocol";
+import {
+  isMoonshot,
+  isOpenRouter,
+  modelSettings,
+  reasoningLevels,
+  runNameFor,
+} from "../shared/protocol";
 import { request } from "./api";
 
 function Dialog({
@@ -68,6 +74,24 @@ export function ModelForm({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState("");
+  const initial = modelSettings({ ...model, baseUrl: model?.baseUrl || baseUrl });
+  const [reasoning, setReasoning] = useState<ReasoningLevel>(initial.reasoning);
+  const [maxTokens, setMaxTokens] = useState(initial.maxTokens);
+  const [providers, setProviders] = useState(initial.providers.join(", "));
+  const [allowFallbacks, setAllowFallbacks] = useState(initial.allowFallbacks);
+  const endpoint = (() => {
+    try {
+      return { openRouter: isOpenRouter(baseUrl), moonshot: isMoonshot(baseUrl) };
+    } catch {
+      return { openRouter: false, moonshot: false };
+    }
+  })();
+  // Moonshot takes no reasoning setting; "off" exists only on OpenRouter.
+  const levels = reasoningLevels.filter((level) =>
+    endpoint.moonshot ? level === "default" : level !== "off" || endpoint.openRouter,
+  );
+  const effectiveReasoning = levels.includes(reasoning) ? reasoning : "default";
+  const providerList = providers.split(",").map((p) => p.trim()).filter(Boolean);
   return (
     <Dialog
       id="model-title"
@@ -88,6 +112,10 @@ export function ModelForm({
               modelId,
               baseUrl,
               apiKey: key,
+              reasoning: effectiveReasoning,
+              maxTokens,
+              providers: endpoint.openRouter ? providerList : [],
+              allowFallbacks,
             });
             setKey("");
             saved(m);
@@ -149,6 +177,65 @@ export function ModelForm({
             available for Kimi K3.
           </small>
         </label>
+        <div className="field-row">
+          <label className="field">
+            <span>Reasoning</span>
+            <select
+              value={effectiveReasoning}
+              disabled={levels.length === 1}
+              onChange={(e) => setReasoning(e.target.value as ReasoningLevel)}
+            >
+              {levels.map((level) => (
+                <option key={level} value={level}>
+                  {level === "default" ? "Endpoint default" : level[0].toUpperCase() + level.slice(1)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Max output tokens</span>
+            <input
+              type="number"
+              required
+              min={1024}
+              max={131072}
+              step={1024}
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(Number(e.target.value))}
+            />
+          </label>
+        </div>
+        {endpoint.openRouter && (
+          <>
+            <label className="field">
+              <span>OpenRouter providers</span>
+              <input
+                value={providers}
+                onChange={(e) => setProviders(e.target.value)}
+                placeholder="z-ai, deepinfra/fp8"
+              />
+              <small>
+                Provider slugs in order of preference. Blank lets OpenRouter choose
+                per request, which can change the serving deployment between turns.
+              </small>
+            </label>
+            {providerList.length > 0 && (
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={allowFallbacks}
+                  onChange={() => setAllowFallbacks(!allowFallbacks)}
+                />
+                <span aria-hidden />
+                Allow other providers when these are unavailable
+              </label>
+            )}
+          </>
+        )}
+        <p className="muted small">
+          Reasoning and output limit apply to every request in a run, and each run
+          records the settings it used.
+        </p>
         {error && (
           <p role="alert" className="form-error">
             {error}

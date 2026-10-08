@@ -141,13 +141,64 @@ export type Stats = {
     [key: string]: unknown;
   } | null;
 };
+/**
+ * Reasoning effort sent with every request. "default" sends no setting and leaves it to the
+ * endpoint; "off" (OpenRouter only) asks for none.
+ */
+export const reasoningLevels = ["default", "off", "minimal", "low", "medium", "high"] as const;
+export type ReasoningLevel = (typeof reasoningLevels)[number];
+/** How a profile's requests are made; part of every run's model snapshot. */
+export type ModelSettings = {
+  reasoning: ReasoningLevel;
+  /** Output tokens per reply, reasoning included. */
+  maxTokens: number;
+  /** OpenRouter only: upstream providers in order of preference; empty lets OpenRouter choose. */
+  providers: string[];
+  /** OpenRouter only: whether providers outside the list may serve a request. */
+  allowFallbacks: boolean;
+};
 export type ModelProfile = {
   id: string;
   name: string;
   modelId: string;
   baseUrl: string;
   keyConfigured: boolean;
-};
+} & Partial<ModelSettings>;
+export const isOpenRouter = (baseUrl: string) => new URL(baseUrl).hostname === "openrouter.ai";
+export const isMoonshot = (baseUrl: string) => /^api\.moonshot\./.test(new URL(baseUrl).hostname);
+/**
+ * A profile's settings with defaults. Missing values are what the harness sent before they were
+ * settings (2026-10-08): low reasoning on OpenRouter, the endpoint's default elsewhere, 8192 tokens.
+ */
+export function modelSettings(profile: { baseUrl: string } & Partial<ModelSettings>): ModelSettings {
+  return {
+    reasoning: profile.reasoning ?? (isOpenRouter(profile.baseUrl) ? "low" : "default"),
+    maxTokens: profile.maxTokens ?? 8192,
+    providers: profile.providers ?? [],
+    allowFallbacks: profile.allowFallbacks ?? true,
+  };
+}
+/** Recorded settings in one line; null for runs that recorded none. */
+export function settingsLabel(model: Partial<ModelSettings>) {
+  if (model.reasoning === undefined) return null;
+  return [
+    `reasoning ${model.reasoning}`,
+    `${model.maxTokens} max tokens`,
+    ...(model.providers?.length
+      ? [`providers ${model.providers.join(", ")}${model.allowFallbacks ? " (fallbacks allowed)" : " only"}`]
+      : []),
+  ].join(" · ");
+}
+/** Settings the endpoint cannot honour; null when they are all usable. */
+export function settingsProblem(baseUrl: string, settings: ModelSettings) {
+  if (isMoonshot(baseUrl) && settings.reasoning !== "default")
+    return "Moonshot's endpoint takes no reasoning setting through this harness; choose Default.";
+  if (!isOpenRouter(baseUrl) && settings.reasoning === "off")
+    return "Reasoning off is only available on OpenRouter; choose Default or a level.";
+  if (!isOpenRouter(baseUrl) && settings.providers.length)
+    return "Provider routing applies only to OpenRouter endpoints.";
+  return null;
+}
 /**
  * Game ticks per game second. The reader's game_time advances at the speed
  * setting per real second (30.3/s at 30, 45.5/s at 45; live 2026-09-28), so a
@@ -199,6 +250,17 @@ export type RuntimeProgress = {
   /** Frames saved under recording/ when the run config asked for a video. */
   recording?: { frames: number; bytes: number; lastError?: string };
 };
+/** Enough to tell whether two runs used the same harness, prompt and tools. */
+export type HarnessVersion = {
+  /** Git commit the host process started from; null when git was unavailable. */
+  commit: string | null;
+  /** Whether the run-relevant files (harness, prompt, src, tools, package files) differed from it. */
+  dirty: boolean | null;
+  /** SHA-256 of those differences (tracked diff plus new files), when dirty. */
+  diffSha256?: string;
+  systemPromptSha256: string;
+  toolsSha256: string;
+};
 export type Run = {
   config?: RunConfig;
   progress?: RuntimeProgress;
@@ -206,7 +268,10 @@ export type Run = {
   id: string;
   name: string;
   modelId: string;
-  model: Pick<ModelProfile, "name" | "modelId" | "baseUrl">;
+  /** The profile when the run started; runs before 2026-10-08 have no settings recorded. */
+  model: Pick<ModelProfile, "name" | "modelId" | "baseUrl"> & Partial<ModelSettings>;
+  /** The harness that ran it; runs before 2026-10-08 have none. */
+  harness?: HarnessVersion;
   prompt: string;
   maxTurns: number | null;
   folder: string;

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Store } from "./store.js";
@@ -171,4 +172,45 @@ test("runs keep their model snapshot and cannot be reassigned by editing a profi
       }),
     /already exists/,
   );
+});
+test("model settings: older profiles keep their old behaviour, endpoints refuse what they cannot honour, runs record them", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "arena-store-"));
+  mkdirSync(path.join(root, "config"), { recursive: true });
+  writeFileSync(path.join(root, "config/models.json"), JSON.stringify([
+    { id: randomUUID(), name: "Old OpenRouter", modelId: "z-ai/glm", baseUrl: "https://openrouter.ai/api/v1", envKey: "OPENROUTER_API_KEY" },
+    { id: randomUUID(), name: "Old Kimi", modelId: "kimi-k3", baseUrl: "https://api.moonshot.ai/v1", envKey: "MOONSHOT_API_KEY" },
+  ]));
+  const store = new Store(root, {});
+  const [openRouter, kimi] = store.models();
+  assert.deepEqual(
+    [openRouter, kimi].map(({ reasoning, maxTokens, providers, allowFallbacks }) => ({ reasoning, maxTokens, providers, allowFallbacks })),
+    [
+      { reasoning: "low", maxTokens: 8192, providers: [], allowFallbacks: true },
+      { reasoning: "default", maxTokens: 8192, providers: [], allowFallbacks: true },
+    ],
+  );
+  // The defaults are written out, so the file says what every profile sends.
+  assert.equal(JSON.parse(readFileSync(path.join(root, "config/models.json"), "utf8"))[0].reasoning, "low");
+  const { keyConfigured, ...kimiInput } = kimi;
+  assert.throws(() => store.saveModel({ ...kimiInput, reasoning: "high" }), /Moonshot/);
+  const other = { name: "Other", modelId: "x", baseUrl: "https://example.com/v1", apiKey: "k" };
+  assert.throws(() => store.saveModel({ ...other, providers: ["z-ai"] }), /only to OpenRouter/);
+  assert.throws(() => store.saveModel({ ...other, reasoning: "off" }), /only available on OpenRouter/);
+  assert.throws(() => store.saveModel({ ...other, providers: ["z-ai; rm"] }));
+  // Omitted settings keep their values; a run records what it used.
+  const pinned = store.saveModel({
+    id: openRouter.id, name: openRouter.name, modelId: openRouter.modelId, baseUrl: openRouter.baseUrl,
+    reasoning: "medium", providers: ["z-ai"], allowFallbacks: false,
+  });
+  assert.equal(pinned.maxTokens, 8192);
+  const run = store.create("Pinned run", pinned.id, "Play.", null);
+  assert.deepEqual(run.model, {
+    name: "Old OpenRouter", modelId: "z-ai/glm", baseUrl: "https://openrouter.ai/api/v1",
+    reasoning: "medium", maxTokens: 8192, providers: ["z-ai"], allowFallbacks: false,
+  });
+  // Changing endpoint drops settings that belonged to the old one.
+  const fresh = store.saveModel({ name: "Fresh", modelId: "y", baseUrl: "https://openrouter.ai/api/v1", apiKey: "k", reasoning: "high", providers: ["z-ai"] });
+  const moved = store.saveModel({ id: fresh.id, name: "Moved", modelId: "kimi-k3b", baseUrl: "https://api.moonshot.ai/v1", apiKey: "k2" });
+  assert.equal(moved.reasoning, "default");
+  assert.deepEqual(moved.providers, []);
 });

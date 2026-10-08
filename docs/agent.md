@@ -102,10 +102,11 @@ turn. The dashboard shows both to the operator live.
 - **Provider errors.** Timeouts, rate limits, overloads, server errors and empty
   replies are retried up to 5 times, waiting 2, 4, 8, 16 and 30 seconds. Other errors
   end the run.
-- **Cut-off replies.** A reply that hits the output limit (8,192 tokens) is discarded
-  and retried up to twice per turn with a reminder to think briefly.
-- **No `BEGIN`.** A preparation reply without `BEGIN` is retried; after three replies
-  the run fails with the game still paused.
+- **Cut-off replies.** A reply that hits the profile's output limit (8,192 tokens by
+  default) is discarded and retried up to twice per turn with a reminder to think
+  briefly.
+- **No `BEGIN`.** A preparation reply without `BEGIN`, or cut off at the output limit,
+  is retried; after three replies the run fails with the game still paused.
 - **Failed tool calls** are not retried by the host. The model gets the error and
   decides what to do.
 - **Stuck loops.** Four replies in a row with no tool calls, or twelve in a row that
@@ -116,7 +117,8 @@ turn. The dashboard shows both to the operator live.
 
 The model must accept images and tool calls through an OpenAI-compatible chat
 completions endpoint. The default profile is Moonshot's Kimi K3. Moonshot and
-OpenRouter endpoints are tested; OpenRouter requests use low reasoning effort, which
-the tested OpenRouter endpoint required. Other endpoints are handled like Moonshot's
-and are untested. Each request allows up to 8,192 output tokens and times out after
-90 seconds. See [the harness](harness.md#model-profiles) for adding models.
+OpenRouter endpoints are tested; other endpoints are handled like Moonshot's and are
+untested. Each profile sets its reasoning level, its output limit per reply (8,192
+tokens by default) and, on OpenRouter, which upstream providers may serve it; every
+run records these. Requests time out after 90 seconds. See
+[the harness](harness.md#model-profiles) for adding and configuring models.

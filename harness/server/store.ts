@@ -11,7 +11,15 @@ import {
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
-import type { ModelProfile, Run, LogEntry } from "../shared/protocol.js";
+import {
+  modelSettings,
+  reasoningLevels,
+  settingsProblem,
+  type ModelProfile,
+  type ModelSettings,
+  type Run,
+  type LogEntry,
+} from "../shared/protocol.js";
 const endpoint = z
   .string()
   .url()
@@ -35,9 +43,14 @@ export const profileSchema = z
     baseUrl: endpoint,
     apiKey: z.string().trim().max(4096).optional(),
     envKey: z.enum(["MOONSHOT_API_KEY", "OPENROUTER_API_KEY"]).optional(),
+    reasoning: z.enum(reasoningLevels).optional(),
+    maxTokens: z.number().int().min(1024).max(131072).optional(),
+    // OpenRouter provider slugs, e.g. "z-ai" or "deepinfra/fp8".
+    providers: z.array(z.string().trim().min(1).max(80).regex(/^[A-Za-z0-9._/-]+$/)).max(8).optional(),
+    allowFallbacks: z.boolean().optional(),
   })
   .strict();
-type PrivateProfile = Omit<ModelProfile, "keyConfigured"> & {
+type PrivateProfile = Omit<ModelProfile, "keyConfigured"> & ModelSettings & {
   apiKey?: string;
   envKey?: string;
 };
@@ -52,7 +65,7 @@ export class Store {
     mkdirSync(path.join(root, "config"), { recursive: true, mode: 0o700 });
     chmodSync(root, 0o700);
     const config = path.join(root, "config/models.json");
-    this.profiles = existsSync(config)
+    const saved: Omit<PrivateProfile, keyof ModelSettings>[] = existsSync(config)
       ? JSON.parse(readFileSync(config, "utf8"))
       : [
           {
@@ -63,6 +76,8 @@ export class Store {
             envKey: "MOONSHOT_API_KEY",
           },
         ];
+    // Older profiles get the settings the harness used to apply, written out explicitly.
+    this.profiles = saved.map((p) => ({ ...p, ...modelSettings(p) }));
     this.saveConfig();
     for (const dir of readdirSync(path.join(root, "runs"), {
       withFileTypes: true,
@@ -108,6 +123,7 @@ export class Store {
       modelId: p.modelId,
       baseUrl: p.baseUrl,
       keyConfigured: !!this.key(p.id),
+      ...modelSettings(p),
     }));
   }
   model(id: string) {
@@ -152,11 +168,26 @@ export class Store {
     // A stored credential must never silently follow a changed destination.
     if (old && old.baseUrl !== data.baseUrl && !data.apiKey && !data.envKey)
       throw new Error("Enter an API key when changing the endpoint.");
+    // Omitted settings keep the profile's current ones (new profiles: the defaults). Runs record
+    // the settings they used, so editing them does not change what earlier runs report.
+    const given = Object.fromEntries(
+      (["reasoning", "maxTokens", "providers", "allowFallbacks"] as const)
+        .filter((k) => data[k] !== undefined)
+        .map((k) => [k, data[k]]),
+    );
+    const settings = modelSettings({
+      ...(old && old.baseUrl === data.baseUrl ? old : {}),
+      ...given,
+      baseUrl: data.baseUrl,
+    });
+    const problem = settingsProblem(data.baseUrl, settings);
+    if (problem) throw new Error(problem);
     const profile: PrivateProfile = {
       id: old?.id || randomUUID(),
       name: data.name,
       modelId: data.modelId,
       baseUrl: data.baseUrl,
+      ...settings,
       ...(data.apiKey
         ? { apiKey: data.apiKey }
         : data.envKey
@@ -228,6 +259,7 @@ export class Store {
         name: model.name,
         modelId: model.modelId,
         baseUrl: model.baseUrl,
+        ...modelSettings(model),
       },
       prompt: this.redact(prompt),
       maxTurns,
@@ -254,7 +286,7 @@ export class Store {
   }
   update(
     id: string,
-    patch: Partial<Pick<Run, "turns" | "tokens" | "config" | "progress">>,
+    patch: Partial<Pick<Run, "turns" | "tokens" | "config" | "progress" | "harness">>,
   ) {
     Object.assign(this.get(id), patch);
     this.atomic(this.file(id, "run.json"), this.get(id));

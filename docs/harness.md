@@ -51,6 +51,17 @@ lists them; **+ Add** creates one.
   key again.
 - A profile with saved runs keeps its model ID and endpoint, so its runs stay
   attributable. Create a new profile for a different model.
+- **Model settings** (Configure → model settings), recorded in every run:
+
+  | Setting | Values | Meaning |
+  | --- | --- | --- |
+  | Reasoning | `default`, `off`, `minimal`, `low`, `medium`, `high` | `default` sends no reasoning setting and lets the endpoint decide. `off` is OpenRouter only. Moonshot accepts only `default` |
+  | Max tokens | 1,024 to 131,072 (default 8,192) | Output tokens per reply, reasoning included. Used for gameplay, preparation and compaction (compaction never below 8,192) |
+  | Providers, allow fallbacks | Provider names in order of preference | OpenRouter only: which upstream providers may serve the model. Empty lets OpenRouter choose for each request |
+
+  Profiles created before these settings existed keep what the harness used to send:
+  low reasoning on OpenRouter, the endpoint's default elsewhere, 8,192 tokens, no
+  provider preference.
 - A profile can instead read `OPENROUTER_API_KEY` from `.env`, by creating it through
   the API with `envKey: "OPENROUTER_API_KEY"`.
 - **Configure → Test saved model** sends one short, billed request.
@@ -107,7 +118,7 @@ logs. **Export logs** and **Download full events** download them.
 
 | File | Contents |
 | --- | --- |
-| `run.json` | Name, model, instruction, benchmark, settings, status, timestamps, turns, tokens, and progress: budget used, which limit ended the run, plan, notebook, compactions, timings, memory, recording summary |
+| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, and progress: budget used, which limit ended the run, plan, notebook, compactions, timings, memory, recording summary. Also the harness version (see below) |
 | `inputs.json` | Exactly what the agent was given: system prompt, benchmark rules, controls, settings, model |
 | `logs.jsonl` | Readable log of messages, actions and errors, written live |
 | `events.jsonl` | Every model stream event and tool result, including screenshots and the full reader sample behind each observation, plus host events. Can reach hundreds of MB |
@@ -117,6 +128,13 @@ logs. **Export logs** and **Download full events** download them.
 | `controls-guide.html` | The first screenshot annotated with the construction controls |
 | `recording/`, `video.mp4` | Recorded frames and the rendered video (recorded runs only) |
 | `episode.json` | The scorecard (`npm run episodes` only; see [The benchmark](benchmark.md#the-scorecard)) |
+
+**Harness version.** Every run records which code produced it, in `run.json` under
+`harness`: the git commit the host started from, whether `harness/`, `prompt/`,
+`src/`, `tools/` or the package files had uncommitted changes (and a hash of those
+changes), and hashes of the exact system prompt and tool definitions. The run page
+shows it, and `npm run report` has a Harness column, so runs made with different code
+are easy to tell apart.
 
 Known API keys and fields named like keys are replaced with `[redacted]` before
 anything is logged. Treat the runs folder as private anyway: it holds full screenshots

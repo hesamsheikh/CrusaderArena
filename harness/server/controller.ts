@@ -38,6 +38,7 @@ import {
 } from "./preparation.js";
 import type { GameDevice } from "./device.js";
 import type { Store } from "./store.js";
+import { codeVersion, sha256 } from "./version.js";
 
 /** Provider failures worth one more request: no content, overload, rate limit or server error. */
 export function isTransientProviderError(message?: string) {
@@ -282,6 +283,14 @@ export class RunController {
       this.publish();
     };
     this.systemPromptText = runSystemPrompt(run);
+    // Runs are comparable only under the same code, prompt and tool definitions.
+    store.update(run.id, {
+      harness: {
+        ...codeVersion,
+        systemPromptSha256: sha256(this.systemPromptText),
+        toolsSha256: sha256(JSON.stringify(this.contextTools())),
+      },
+    });
     this.memory.write("inputs.json", {
       version: 2,
       objective: run.prompt,
@@ -413,9 +422,10 @@ export class RunController {
       text = reply.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
       if (isPreparedReply(text)) break;
       this.store.event(this.run.id, { type: "preparation_rejected", reply });
+      const cutOff = reply.stopReason === "length" ? " (cut off at the output-token limit)" : "";
       if (++missing > 2)
-        throw new Error(`Agent did not finish its preparation reply with BEGIN; game remains paused. Last reply: ${JSON.stringify(text.slice(-300))}`);
-      this.log("error", "Preparation reply did not end with BEGIN; retrying.");
+        throw new Error(`Agent did not finish its preparation reply with BEGIN${cutOff}; game remains paused. Last reply: ${JSON.stringify(text.slice(-300))}`);
+      this.log("error", `Preparation reply did not end with BEGIN${cutOff}; retrying.`);
       reply = undefined;
     }
     this.store.event(this.run.id, { type: "preparation_reply", reply, durationMs: performance.now() - started });

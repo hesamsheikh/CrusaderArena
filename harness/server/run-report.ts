@@ -17,6 +17,15 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { netWorth } from "./market-prices.js";
+import { settingsLabel } from "../shared/protocol.js";
+
+/** "abc1234+def5678 p:0123abc t:4567def": commit (+ uncommitted changes), prompt and tool hashes. */
+function harnessLabel(harness: Obj | undefined) {
+  if (!harness || typeof harness.systemPromptSha256 !== "string") return null;
+  const short = (value: unknown) => (typeof value === "string" ? value.slice(0, 7) : "?");
+  const code = `${short(harness.commit)}${harness.dirty ? `+${short(harness.diffSha256)}` : ""}`;
+  return `${code} p:${short(harness.systemPromptSha256)} t:${short(harness.toolsSha256)}`;
+}
 
 type Obj = Record<string, any>;
 
@@ -72,6 +81,10 @@ export type RunRow = {
   id: string;
   started: string | null;
   model: string | null;
+  /** Reasoning, output limit and providers the run recorded (newer runs only). */
+  modelSettings: string | null;
+  /** Short commit, "+" and the change hash when the code was uncommitted; prompt and tool hashes. */
+  harness: string | null;
   benchmark: string | null;
   map: string | null;
   status: string | null;
@@ -377,6 +390,8 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
     id: typeof run?.id === "string" ? run.id.slice(0, 8) : fromFolder.id,
     started,
     model: typeof run?.model?.name === "string" ? run.model.name : null,
+    modelSettings: run?.model ? settingsLabel(run.model) : null,
+    harness: harnessLabel(run?.harness),
     benchmark: typeof run?.benchmarkType === "string" ? run.benchmarkType : typeof episode?.benchmark === "string" ? episode.benchmark : null,
     map: typeof episode?.map === "string" ? episode.map : typeof observed?.map_name === "string" ? observed.map_name : null,
     status: typeof run?.status === "string" ? run.status : null,
@@ -464,6 +479,8 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Run", (r) => r.id + (r.incomplete ? "*" : "")],
   ["Started (UTC)", (r) => (r.started ? r.started.slice(0, 16).replace("T", " ") : "")],
   ["Model", (r) => r.model ?? ""],
+  ["Model settings", (r) => r.modelSettings ?? ""],
+  ["Harness", (r) => r.harness ?? ""],
   ["Benchmark", (r) => r.benchmark ?? ""],
   ["Map", (r) => r.map ?? ""],
   ["Ended", (r) => (r.ended === "error" && r.endDetail ? `error: ${r.endDetail.slice(0, 48)}${r.endDetail.length > 48 ? "…" : ""}` : r.ended)],

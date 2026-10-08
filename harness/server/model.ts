@@ -97,6 +97,8 @@ import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
   allowedKeys,
+  isOpenRouter,
+  modelSettings,
   type Frame,
   type GameAction,
   type ModelProfile,
@@ -109,32 +111,41 @@ const gameControls = readFileSync(
 export function modelConfig(
   profile?: ModelProfile,
 ): Model<"openai-completions"> {
-  const isOpenRouter = profile && new URL(profile.baseUrl).hostname === "openrouter.ai";
+  const baseUrl = profile?.baseUrl || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1";
+  const settings = modelSettings({ ...profile, baseUrl });
+  const openRouter = isOpenRouter(baseUrl);
   return {
     id: profile?.modelId || process.env.MOONSHOT_MODEL || "kimi-k3",
     name: profile?.name || "Kimi K3",
     provider: profile?.id || "moonshotai",
     api: "openai-completions",
-    baseUrl:
-      profile?.baseUrl ||
-      process.env.MOONSHOT_BASE_URL ||
-      "https://api.moonshot.ai/v1",
+    baseUrl,
     reasoning: true,
+    // Pi sends `effort: "none"` to OpenRouter when no level is given; "default" sends nothing.
+    ...(openRouter && settings.reasoning === "default" ? { thinkingLevelMap: { off: null } } : {}),
     input: ["text", "image"],
     contextWindow: 1048576,
-    maxTokens: 8192,
+    maxTokens: settings.maxTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     compat: {
       supportsDeveloperRole: false,
       maxTokensField: "max_tokens",
-      ...(isOpenRouter ? { thinkingFormat: "openrouter" as const } : {}),
+      ...(openRouter ? { thinkingFormat: "openrouter" as const } : {}),
+      // Pin the upstream provider so a run is served by one deployment (and its prompt cache).
+      ...(openRouter && settings.providers.length
+        ? { openRouterRouting: { order: settings.providers, allow_fallbacks: settings.allowFallbacks } }
+        : {}),
     },
   };
 }
-const reasoningOptions = (profile: ModelProfile) =>
-  new URL(profile.baseUrl).hostname === "openrouter.ai"
-    ? { reasoning: "low" as const }
-    : {};
+/** Request options from the profile's settings: its reasoning level and output limit. */
+export const requestOptions = (profile: ModelProfile) => {
+  const { reasoning, maxTokens } = modelSettings(profile);
+  return {
+    maxTokens,
+    ...(reasoning === "default" || reasoning === "off" ? {} : { reasoning }),
+  };
+};
 function registry(profile: ModelProfile) {
   const models = createModels();
   models.setProvider({
@@ -1126,8 +1137,7 @@ export function makeAgent(
       runtime?.requestStarted?.();
       const stream = models.streamSimple(m, c, {
         ...o,
-        ...reasoningOptions(profile),
-        maxTokens: 8192,
+        ...requestOptions(profile),
         maxRetries: 0,
         timeoutMs: runtime
           ? requestTimeout(runtime.session.remaining())
@@ -1165,8 +1175,9 @@ export async function testModel(profile: ModelProfile, apiKey: string) {
     },
     {
       apiKey,
-      maxTokens: 128,
-      ...reasoningOptions(profile),
+      ...requestOptions(profile),
+      // Enough for a short reasoning phase before the one-line answer.
+      maxTokens: 1024,
       signal: AbortSignal.timeout(30000),
     },
   );
@@ -1190,14 +1201,15 @@ export async function prepareModel(
     { systemPrompt, messages: [message] },
     {
       apiKey,
-      maxTokens: 512,
-      ...reasoningOptions(profile),
+      // The same output limit as gameplay: reasoning counts toward it (512 cut reasoning models off).
+      ...requestOptions(profile),
       maxRetries: 0,
       timeoutMs: 90000,
       signal,
     },
   );
-  if (["error", "aborted", "length"].includes(result.stopReason))
+  // A reply cut off at the limit comes back like one without BEGIN, and is retried the same way.
+  if (["error", "aborted"].includes(result.stopReason))
     throw new Error(result.errorMessage || `Preparation stopped: ${result.stopReason}`);
   return result;
 }
@@ -1225,9 +1237,9 @@ export async function compactHandoff(
       },
       {
         apiKey,
-        // Reasoning models (Kimi K3) spend part of this on reasoning; 2048 cut a handoff short.
-        maxTokens: 8192,
-        ...reasoningOptions(profile),
+        // Reasoning models (Kimi K3) spend part of the limit on reasoning; 2048 cut a handoff short.
+        ...requestOptions(profile),
+        maxTokens: Math.max(8192, modelSettings(profile).maxTokens),
         maxRetries: 0,
         timeoutMs: requestTimeout(runtime.session.remaining()),
         signal: runtime.session.abort.signal,

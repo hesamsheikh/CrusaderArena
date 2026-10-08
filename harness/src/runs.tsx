@@ -12,6 +12,7 @@ import {
   Square,
 } from "lucide-react";
 import type { LogEntry, ModelProfile, Run } from "../shared/protocol";
+import { settingsLabel } from "../shared/protocol";
 import { Card, Meter, Metric, StatusBadge } from "./ui";
 import { Logs } from "./Logs";
 import {
@@ -518,6 +519,18 @@ export function RunDetail({
                 <div>
                   <dt>Model ID</dt>
                   <dd className="mono">{run.model.modelId}</dd>
+                </div>
+                <div>
+                  <dt>Model settings</dt>
+                  <dd>{settingsLabel(run.model) ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Harness</dt>
+                  <dd className="mono">
+                    {run.harness
+                      ? `${run.harness.commit?.slice(0, 7) ?? "unknown"}${run.harness.dirty ? ` + changes ${run.harness.diffSha256?.slice(0, 7) ?? ""}` : ""} · prompt ${run.harness.systemPromptSha256.slice(0, 7)} · tools ${run.harness.toolsSha256.slice(0, 7)}`
+                      : "Not recorded"}
+                  </dd>
                 </div>
               </dl>
             </Card>

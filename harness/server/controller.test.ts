@@ -267,6 +267,16 @@ test("reading tools before any action leave the game paused; the first action un
   assert.deepEqual(f.actions.map((a) => (a as { key?: string }).key), ["P", "P", "Z", "P"]);
   assert.equal(f.isPaused(), true);
 });
+test("each run records the code, system prompt and tools it ran with", () => {
+  const f = fixture(1);
+  const harness = f.run.harness!;
+  assert.ok(harness.commit === null || /^[0-9a-f]{40}$/.test(harness.commit));
+  assert.match(harness.systemPromptSha256, /^[0-9a-f]{64}$/);
+  assert.match(harness.toolsSha256, /^[0-9a-f]{64}$/);
+  if (harness.dirty === false) assert.equal(harness.diffSha256, undefined);
+  // Same configuration, same hashes.
+  assert.deepEqual(fixture(1).run.harness, harness);
+});
 test("replies that only read end the run after twelve turns instead of idling for free", async () => {
   const f = fixture(20);
   f.provider(() => [call("status", {})], true);
