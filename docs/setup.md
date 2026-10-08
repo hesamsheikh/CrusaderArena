@@ -103,12 +103,15 @@ included**. The files live in `.internal/ui-reference/`, which git ignores:
 | `trays/<page>.png` | Single pages for `guide_page` | `guide_page` reports the page unavailable |
 | `example-settlement.jpg` | A developed settlement shown once for scale | Skipped |
 
-To make them, create one source image per menu page in
-`.internal/ui-reference/legends/`, named after the `file` of each page in
-`harness/server/visual-atlas.ts` (ten pages). Each source is 2620 × 1080: a
-1920 × 1080 game screenshot with that menu page open, at the left, with red boxes
-numbered in the order of that page's `labels`, at their `box` positions. The rest of
-the width is ignored. Then run, on macOS:
+To make them, put one source PNG per menu page in `.internal/ui-reference/legends/`,
+named after the `file` of each of the ten pages in `harness/server/visual-atlas.ts`.
+Each source must be exactly 2620 × 1080 pixels, or the script stops. Put a 1920 × 1080
+game screenshot with that menu page open at its left edge; the remaining 700 pixels
+of width are not used. The script draws no boxes or numbers itself, and the finished
+guide says its numbers match red boxes on the crops. So draw a red box for each of
+the page's `labels`, numbered in their order, at its `box` position (x, y, width and
+height in screenshot pixels). Then run, on macOS with the Xcode command-line tools
+(the script compiles a small AppKit program with `clang`):
 
 ```bash
 node --import tsx tools/make-construction-trays.mjs
@@ -116,7 +119,7 @@ node --import tsx tools/make-construction-trays.mjs
 
 It crops the menu tray (the bottom 230 pixels from x 795 to 1575) from each source
 into `trays/`, and lays out all ten crops with their labels in
-`construction-trays.png`.
+`construction-trays.png`. Only the tray is used, so the boxes must lie inside it.
 
 ## 4. First run
 

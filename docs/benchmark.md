@@ -35,11 +35,17 @@ the operator's instruction alone defines the task.
 | Cactus Valley construction | `Cactus Valley-1` | Build a basic working settlement: granary, stockpile, wood, housing, food | No (diagnostic) |
 | Free build construction | `A Mightier Oasis-1` | Make visible construction progress | No (diagnostic) |
 
-All three are Free Build maps saved at the start of play, with soldiers and defences
-not allowed. The saves are not included: create each by starting a Free Build game on
-that map and saving it under that name before doing anything else. The Oasis rules
-describe the start as July 1194 with about 1,000 gold, 41 wood, 25 stone and 50
-bread.
+All three are Free Build games saved at the very start of play, with soldiers and
+defences not allowed. The starting goods are still arriving when a save loads:
+`Oasis by the Sea-1` shows 120 gold and 12 wood, and the rest of the package arrives
+during the first game minute (see [Scoring](#scoring-net-worth)). The Oasis rules
+describe the start as July 1194 with about 1,000 gold, 41 wood, 25 stone and 50 bread.
+
+The saves are not included. To make one, start a Free Build game on that map and save
+it straight away under the exact name in the table. A save made later starts from a
+different position, so its runs are not comparable. `npm run episodes` loads a save
+by typing its name into the game's Load Game search box, so names may contain only
+letters, digits, spaces and hyphens.
 
 The no-military rule is an instruction in the prompt. The harness does not offer
 military buildings in its placement tools, but it does not block a model that clicks
