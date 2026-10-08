@@ -17,14 +17,16 @@ defences: they cost resources without growing the economy.
 
 ## The map
 
-Observed 2026-09-28. The game opens on "Site your granary" in July 1194 with about
-1,000 gold, 41 wood, 25 stone, 50 bread and a population of 1 out of 10 housing. The
-keep stands at the top right of the opening view with its campfire below it, and a
-stockpile already stands next to it. Oasis grass with palms and a pond lies south-west
-of the keep and suits farms. A grove of trees for woodcutters stands further west, and
-rocky cliffs lie to the north. An iron ore strip lies just north of the keep and a stone
-deposit about 50 tiles west of it; `map_overview` shows them on the whole map and
-`find_sites` finds quarry and iron mine spots in the current view.
+Observed 2026-09-28. The game opens on "Site your granary" in July 1194 with a
+population of 1 out of 10 housing. The starting package of 1,000 gold, 50 wood, 25 stone
+and 50 bread is still being paid in: the first screenshot shows about 120 gold and 12
+wood, and the rest arrives within about 25 game seconds. The keep stands at the top
+right of the opening view with its campfire below it, and a stockpile already stands
+next to it. Oasis grass with palms and a pond lies south-west of the keep and suits
+farms. A grove of trees for woodcutters stands further west, and rocky cliffs lie to the
+north. An iron ore strip lies just north of the keep and a stone deposit about 50 tiles
+west of it; `map_overview` shows them on the whole map and `find_sites` finds quarry and
+iron mine spots in the current view.
 
 ## Ways to grow net worth
 
@@ -47,6 +49,9 @@ sell price, which is lower than the buy price, so buying lowers net worth by the
 difference. Selling turns goods into the same value in gold, so it leaves net worth
 unchanged. Net worth rises through taxes, produced goods and turning goods into goods
 worth more than their inputs; it falls through buying, construction costs and bribes.
+Early on, gold can also buy materials such as wood to put up more buildings sooner and
+start the economy faster. That is one option among others: it pays off only if those
+buildings go on to produce more than the buying cost.
 
 ## Start
 

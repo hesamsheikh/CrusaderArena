@@ -38,8 +38,9 @@ the operator's instruction alone defines the task.
 All three are Free Build games saved at the very start of play, with soldiers and
 defences not allowed. The starting goods are still arriving when a save loads:
 `Oasis by the Sea-1` shows 120 gold and 12 wood, and the rest of the package arrives
-during the first game minute (see [Scoring](#scoring-net-worth)). The Oasis rules
-describe the start as July 1194 with about 1,000 gold, 41 wood, 25 stone and 50 bread.
+within about 25 game seconds: wood first, then stone, bread and the last of the gold
+(see [Scoring](#scoring-net-worth)). The Oasis rules tell the model this, and the game
+reference tells it that starting goods rise at first.
 
 The saves are not included. To make one, start a Free Build game on that map and save
 it straight away under the exact name in the table. A save made later starts from a
@@ -70,7 +71,7 @@ The prices are a fixed table in the game (no difficulty or demand effects), read
 the game code and spot-checked in play. They are in `harness/server/market-prices.ts`.
 
 **Growth** is net worth minus the starting package: 1,000 gold, 50 wood, 25 stone and
-50 bread, worth 1,425. The package arrives over the first game minute after loading,
+50 bread, worth 1,425. The package arrives within about 25 game seconds of loading,
 so it is a fixed constant rather than a reading at load time.
 
 Population, popularity, food and buildings are reported beside the score but do not

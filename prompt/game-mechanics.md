@@ -17,6 +17,9 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
 - **Victory:** Skirmishes usually require killing enemy lords. Protect your own
   lord; losing him loses the game. Read mission-specific objectives first.
 <!-- /military -->
+- **Starting goods:** A new game's starting gold and goods are paid in over the first
+  half minute or so of play, so gold, wood, stone and food keep rising at the start
+  until the package is complete. That is the start, not income.
 - **Keep:** The administrative centre. Select it to adjust taxes. Idle peasants
   gather at its campfire.
 - **Population:** Hovels add housing, but do not instantly create workers.
@@ -45,6 +48,12 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
 
 Farms, mines, quarries and pitch rigs need matching terrain (see the placement rules).
 Leave walking access between buildings and their storage.
+
+Where to build: workers walk, so woodcutters, quarries, mines, farms and hunters work
+best close to their resource and to the stockpile or granary they deliver to. Hovels
+and the marketplace work the same anywhere; put them out of the way. Oasis grass is the
+only land farms can use and there is little of it: keep it for farms and build
+everything else on plain ground.
 
 | Building | Build cost; workers | Function and requirements |
 |---|---|---|
