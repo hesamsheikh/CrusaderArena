@@ -37,6 +37,11 @@ between September and October 2026.
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
 - Run recording and video rendering, with scripted inputs.
+- The current harness and prompt, in one 5-game-minute GLM 5.3 Flash episode on
+  2026-10-08 that completed: the compact observation summary, reading tools at the
+  start of a reply running while the game stays paused, the dashboard fetching a
+  screenshot only when the run has a new one, and the model settings and harness
+  version recorded in `run.json`. The run did not reach compaction.
 
 ## Tested in code only
 
@@ -56,9 +61,8 @@ between September and October 2026.
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
 - **Long runs:** runs longer than the default 10 game minutes have not been shown to
   be stable, because of the memory issue below.
-- **The current prompt** (rebuilt on 2026-10-08 to keep it identical through a run)
-  has not yet been used in a billed run, and no model has yet played with the
-  text-only menu guide.
+- **The current prompt** has been used in only one short run, and no model has yet
+  played with the text-only menu guide.
 - **Benchmark:** scoring exists only for Oasis by the Sea; there is no military
   scoring, no ranking across runs and no published comparison of models. Early
   single-model pilots used older harness versions and are not comparable.
