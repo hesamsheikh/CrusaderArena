@@ -30,6 +30,8 @@ import { footprintOf } from "./footprints.js";
  */
 const LAND = 0x8000;
 const TREE_RING = 0x2000;
+/** A tree's own tile: an organism on a trunk tile (the map summary's "T"). */
+const TRUNK = 0x1000;
 const STONE = 0x20000;
 const ORE = 0x80000;
 const OIL = 0x80000000;
@@ -55,7 +57,9 @@ type Camera = TileCamera;
 type Size = { width: number; height: number };
 export type Tile = { x: number; y: number };
 export type Rect = { x1: number; y1: number; x2: number; y2: number };
-export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number };
+export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number };
+/** Tiles around a woodcutter site in which find_sites counts trees. */
+export const WOODCUTTER_REACH = 12;
 
 export function footprintRect(centre: Tile, size: number): Rect {
   const a = Math.floor(size / 2);
@@ -82,6 +86,7 @@ export function onScreen(frame: Size, p: { x: number; y: number }) {
 export class TileMap {
   private claimed: Rect[] = [];
   private signposts?: Tile[];
+  private trees?: Tile[];
   constructor(
     readonly region: TileRegion,
     readonly camera: Camera,
@@ -216,6 +221,35 @@ export class TileMap {
    * mutually non-overlapping. Farms prefer the most fertile squares among close ones.
    */
   sitesNear(building: string, near?: Tile, count = 3, radius = 20, avoid: Rect[] = []): Site[] {
+    const found = this.candidates(building, near, radius, avoid);
+    // Farms: nearest first but by 2-tile distance bands, most fertile within a band.
+    found.sort((a, b) => farmNames.has(building)
+      ? Math.floor(a.d / 2) - Math.floor(b.d / 2) || (b.oasisShare ?? 0) - (a.oasisShare ?? 0)
+      : a.d - b.d);
+    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count);
+  }
+  /**
+   * Woodcutter sites closest to trees (in 4-tile bands of the distance to the nearest tree), the
+   * nearest to `near` within a band, each with the trees within WOODCUTTER_REACH tiles. Ranked by
+   * distance alone, find_sites put woodcutters on bare ground and their wood stayed flat for 1.5 to
+   * 2.5 game minutes (three GLM runs, 2026-10-08).
+   */
+  woodcutterSites(near?: Tile, count = 3, radius = 20): Site[] {
+    const trees = this.treeTiles();
+    const found = this.candidates("Woodcutter", near, radius).map((s) => {
+      let nearest = Infinity, within = 0;
+      for (const t of trees) {
+        const d = Math.max(Math.abs(t.x - s.tile.x), Math.abs(t.y - s.tile.y));
+        nearest = Math.min(nearest, d);
+        if (d <= WOODCUTTER_REACH) within++;
+      }
+      return { ...s, trees: within, band: within ? Math.floor(nearest / 4) : Infinity };
+    });
+    found.sort((a, b) => a.band - b.band || a.d - b.d);
+    return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count);
+  }
+  /** Every site within `radius` tiles of `near` (default: the camera centre), with its distance. */
+  private candidates(building: string, near?: Tile, radius = 20, avoid: Rect[] = []) {
     const c = near ?? { x: this.camera.centre_tile_x, y: this.camera.centre_tile_y };
     const size = footprintOf(building);
     const found: (Site & { d: number })[] = [];
@@ -226,11 +260,17 @@ export class TileMap {
         const s = this.site(building, t);
         if (s) found.push({ ...s, d: Math.max(Math.abs(dx), Math.abs(dy)) });
       }
-    // Farms: nearest first but by 2-tile distance bands, most fertile within a band.
-    found.sort((a, b) => farmNames.has(building)
-      ? Math.floor(a.d / 2) - Math.floor(b.d / 2) || (b.oasisShare ?? 0) - (a.oasisShare ?? 0)
-      : a.d - b.d);
-    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count);
+    return found;
+  }
+  /** Tree tiles in the read region. */
+  private treeTiles() {
+    if (this.trees) return this.trees;
+    const { x0, y0, w, layers } = this.region;
+    this.trees = [];
+    layers.logic.forEach((logic, i) => {
+      if (layers.organism[i] && logic & TRUNK) this.trees!.push({ x: x0 + (i % w), y: y0 + Math.floor(i / w) });
+    });
+    return this.trees;
   }
   /**
    * Sites whose footprint touches `anchor` along a side (flush), then with a growing gap

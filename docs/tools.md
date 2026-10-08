@@ -38,7 +38,7 @@ Brewery, Inn. Castle and military buildings are not offered.
 | `build_structure` | `placements`: 1–4 of `{name, x, y, exact?}` | For each placement: opens the menu, selects the building, clicks the target pixel, then checks with the reader whether it was placed. Retries a silently blocked spot nearby unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement |
 | `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries next to the existing one | As `place_near` | Yes, one |
-| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Reads the tile map for the current view and lists free spots where the building fits, as screen pixels. Farms report their share of oasis ground | Spots as pixels | No |
+| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Reads the tile map for the current view and lists free spots where the building fits, as screen pixels. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots as pixels | No |
 
 **Placement statuses** returned by `build_structure`:
 

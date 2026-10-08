@@ -135,3 +135,24 @@ test("the signpost zone refuses generic buildings by the footprint's top-left ti
   assert.deepEqual(map.fits("Stockpile", { x: 105, y: 100 }), { ok: true }, "stockpiles are exempt");
   assert.equal(new TileMap(region((set) => fill(set, "structure", 100, 100, 101, 101, 5)), camera, frame).fits("Hovel", { x: 90, y: 102 }).ok, true, "no probe data: no zone");
 });
+
+test("woodcutter sites come closest to trees first, with the trees within reach", () => {
+  // Ten trees (organism on a trunk tile) 15 tiles down-right of the centre; open land elsewhere.
+  const trees = (set: Parameters<Parameters<typeof region>[0] & {}>[0]) => {
+    for (let i = 0; i < 10; i++) {
+      set("organism", 115 + (i % 5), 100 + Math.floor(i / 5), 300);
+      set("logic", 115 + (i % 5), 100 + Math.floor(i / 5), 0x8000 | 0x1000);
+    }
+  };
+  const map = new TileMap(region(trees), camera, frame);
+  // Ranked by distance alone the centre comes first, 15 tiles from any tree.
+  assert.deepEqual(map.sitesNear("Woodcutter", undefined, 1)[0].tile, { x: 100, y: 100 });
+  const [first, ...rest] = map.woodcutterSites(undefined, 3);
+  assert.ok(Math.max(Math.abs(first.tile.x - 115), Math.abs(first.tile.y - 100)) <= 3, JSON.stringify(first));
+  assert.equal(first.trees, 10);
+  assert.ok(rest.every((s) => (s.trees ?? 0) > 0));
+  // Without trees in view, the nearest spots come back with no trees counted.
+  const bare = new TileMap(region(), camera, frame).woodcutterSites(undefined, 2);
+  assert.deepEqual(bare.map((s) => s.trees), [0, 0]);
+  assert.deepEqual(bare[0].tile, { x: 100, y: 100 });
+});

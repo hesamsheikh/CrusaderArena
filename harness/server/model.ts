@@ -111,7 +111,7 @@ export interface AgentRuntime {
 
 import { footprintOf } from "./footprints.js";
 import { shortfall } from "./building-info.js";
-import { TileMap, farmNames, footprintRect, onScreen, tilePixel, type TileCamera } from "./tile-map.js";
+import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, onScreen, tilePixel, type TileCamera } from "./tile-map.js";
 import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
@@ -908,7 +908,7 @@ export function makeAgent(
       name: "find_sites",
       label: "Find free building spots",
       description:
-        "List up to `count` non-overlapping spots in the latest observed view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns image pixels to pass to build_structure, nearest to near_x/near_y if given (else the view centre), with each farm's oasis share. Takes about 2 s (no game time before any action in your reply) and no screenshot. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
+        "List up to `count` non-overlapping spots in the latest observed view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns image pixels to pass to build_structure, nearest to near_x/near_y if given (else the view centre), with each farm's oasis share. Woodcutter spots come closest to trees first, each with the trees within " + WOODCUTTER_REACH + " tiles (in this view): a woodcutter far from trees walks a long way for each log. Takes about 2 s (no game time before any action in your reply) and no screenshot. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
       parameters: Type.Object({
         building: Type.Union(buildableNames.map((name) => Type.Literal(name))),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
@@ -926,12 +926,20 @@ export function makeAgent(
         const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: {} });
         if (!map) return text({ status: "unavailable", error: tileMapError ?? "No reader camera for the observed view." });
         const near = args.near_x !== undefined && args.near_y !== undefined ? map.tileAt({ x: args.near_x, y: args.near_y }) : undefined;
-        const sites = map.sitesNear(args.building, near, args.count ?? 3, 25);
+        const sites = args.building === "Woodcutter"
+          ? map.woodcutterSites(near, args.count ?? 3, 25)
+          : map.sitesNear(args.building, near, args.count ?? 3, 25);
         return text({
           building: args.building,
           footprintTiles: footprintOf(args.building),
-          sites: sites.map((site) => ({ x: site.x, y: site.y, ...(site.oasisShare !== undefined ? { oasisShare: site.oasisShare } : {}) })),
-          note: sites.length
+          sites: sites.map((site) => ({
+            x: site.x, y: site.y,
+            ...(site.oasisShare !== undefined ? { oasisShare: site.oasisShare } : {}),
+            ...(site.trees !== undefined ? { trees: site.trees } : {}),
+          })),
+          note: sites.length && args.building === "Woodcutter" && sites.every((site) => !site.trees)
+            ? `No trees within ${WOODCUTTER_REACH} tiles of these spots in this view. map_overview lists tree groves; go_to_tile moves there.`
+            : sites.length
             ? "Pixels in the latest observation. Pass them to build_structure; several sites do not overlap each other."
             : args.building === "Quarry" || args.building === "Iron Mine" || args.building === "Pitch Rig"
               ? "Nothing fits in this view: it needs stone, iron ore or oil under its square. map_overview lists the deposits; go_to_tile moves there."

@@ -63,7 +63,8 @@ take targets only from a new screenshot.
   "Site your granary" tray with the name `Granary`). `place_near` puts 1–3 buildings
   flush against an anchor such as the keep or granary. `expand_storage` adds 1–3
   stockpiles or granaries touching the existing ones. `find_sites` lists spots in the
-  current view where a building fits. `flat_view` shows free and occupied ground.
+  current view where a building fits; for a woodcutter, those closest to trees first.
+  `flat_view` shows free and occupied ground.
 - **Find your way:** `center_on` jumps to your keep, granary, stockpile, market and
   other key buildings. `map_overview` shows the whole map with its stone, iron, oil,
   farmland and trees; `go_to_tile` moves the camera to a tile it names.
