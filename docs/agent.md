@@ -14,7 +14,7 @@ A turn is one model reply plus the tool calls in it.
 
 1. **The game is paused while the model thinks.** Before every model request the host
    pauses the game and waits for the reader to confirm the pause. Thinking costs no
-   game time.
+   play time.
 2. **The model replies** with text and tool calls.
 3. **Tools run one at a time, in order.** Reading tools (`status`, `get_inventory`,
    `find_sites`, `map_overview`, `flat_view`, the lookup tools and the memory tools)
@@ -123,7 +123,7 @@ turn. The dashboard shows both to the operator live.
   decides what to do.
 - **Stuck loops.** Four replies in a row with no tool calls, or twelve in a row that
   only read (no action, wait or screenshot), end the run with an error. Reading costs
-  no game time, so without this a model could stall the budget forever.
+  no play time, so without this a model could stall the budget forever.
 - **Host shutdown.** Stopping the host (Ctrl-C or a terminate signal) ends a run as
   `stopped` but, unlike the dashboard's Stop, still pauses the game and takes the final
   reading, waiting up to 10 seconds; a second Ctrl-C exits at once. An unexpected host

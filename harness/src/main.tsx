@@ -96,7 +96,7 @@ function App() {
     [draft, setDraft] = useState<RunDraft>({
       benchmarkType: "Custom",
       prompt: "",
-      gameMinutes: 10,
+      playMinutes: 10,
       wallLimitMinutes: 60,
       waitSeconds: 5,
       minTurnSeconds: 8,
@@ -278,7 +278,7 @@ function App() {
       modelId: run.modelId,
       prompt: run.prompt,
       benchmarkType: run.benchmarkType || "Custom",
-      gameMinutes: run.config?.gameMinutes || 10,
+      playMinutes: run.config?.playMinutes ?? run.config?.gameMinutes ?? 10,
       wallLimitMinutes: run.config?.wallLimitMinutes || 60,
       waitSeconds: run.config?.defaultWaitSeconds ?? 5,
       minTurnSeconds: run.config?.minTurnSeconds ?? 8,
@@ -681,7 +681,7 @@ function App() {
                 benchmarkType: draft.benchmarkType,
                 prompt: draft.prompt,
                 config: {
-                  gameMinutes: draft.gameMinutes,
+                  playMinutes: draft.playMinutes,
                   wallLimitMinutes: draft.wallLimitMinutes,
                   defaultWaitSeconds: draft.waitSeconds,
                   minTurnSeconds: draft.minTurnSeconds,

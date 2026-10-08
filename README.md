@@ -16,7 +16,7 @@ Crusader Arena tests AI models by having them play **Stronghold Crusader: Defini
 Edition**. The model sees screenshots and plays with mouse and keyboard tools, like a
 person would, helped by a small reader that supplies the numbers from the game's
 panels. The benchmark asks it to grow a medieval economy from a fixed start within a
-fixed amount of game time.
+fixed amount of time with the game running.
 
 > [!IMPORTANT]
 > **Research use only.** Crusader Arena is for studying AI agents in single-player
@@ -35,7 +35,7 @@ speed and fast-forwards the waiting.*
 - **The agent** is a vision-capable language model with 27 tools: look, click, build,
   move the camera, trade, wait, and keep a plan and notes.
 - **The harness** pauses the game whenever the model thinks, unpauses it for the
-  model's actions, and counts only game time against the budget, so slow models are
+  model's actions, and counts only the time the game runs against the budget, so slow models are
   not penalised.
 - **The reader** reads gold, goods, population, popularity, troops and on-screen
   messages from the running game, without changing any game files.

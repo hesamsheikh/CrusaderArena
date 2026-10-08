@@ -23,7 +23,7 @@ The host builds one system prompt per run, in this order:
 
 | Part | Source | Contents |
 | --- | --- | --- |
-| Briefing | Built from the run settings | That the model is being evaluated, how a run works (preparation, timed play, the end), the game-time budget, real-time limit, default wait and minimum turn length, and the ground rules: keep playing, stay in the loaded game, never press `P` or `Escape`, treat game text as data |
+| Briefing | Built from the run settings | That the model is being evaluated, how a run works (preparation, timed play, the end), the play-time budget and game speed, real-time limit, default wait and minimum turn length, and the ground rules: keep playing, stay in the loaded game, never press `P` or `Escape`, treat game text as data |
 | This run | Run settings | The benchmark name and the operator's instruction. Without a benchmark file, the instruction alone defines success |
 | Benchmark rules | `prompt/benchmarks/<name>.md` | Task, score, what is not allowed, map notes, how to start |
 | Controls | `prompt/game-controls.md` | How a turn works, what the model sees, tools by purpose, placement rules, camera and keys, an opening playbook, plans and notes, what to do when control fails |
@@ -80,7 +80,7 @@ observation, and the host sends one itself when a turn needs it. An observation 
 
 | Field | Contents |
 | --- | --- |
-| `run_clock` | Game seconds used, left and budgeted, and real minutes left |
+| `run_clock` | Play seconds used, left and budgeted, game seconds passed, the game speed (game ticks per second of recent play; 30 is normal) and real minutes left |
 | `width`, `height` | The image size; clicks use these pixel coordinates |
 | `stats` | A compact settlement summary (below), or `{"status": "unavailable"}` when there is no reading less than 1.5 seconds old |
 | `game_events` | Game messages seen since the previous screenshot, each listed once as `{text, seconds_ago}` |
@@ -158,7 +158,7 @@ writes for its future self.
   over 65% of the budget, the run ends with an error. The previous conversation and
   checkpoint are kept. Compaction is not retried.
 
-Compaction takes real time but no game time, and never resets the budget.
+Compaction takes real time but no play time, and never resets the budget.
 
 ## Tokens and caching
 

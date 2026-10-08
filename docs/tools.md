@@ -8,7 +8,7 @@ has none. All are defined in `harness/server/model.ts`. Tool calls run one at a 
 **Reading tools keep the game paused.** `status`, `get_inventory`, `find_sites`,
 `map_overview`, `flat_view`, `building_info`, `list_buildings`, `guide_page` and the
 memory tools run with the game still paused from the model's thinking, so they cost no
-game time. Any other tool unpauses the game, which then runs for the rest of that
+play time. Any other tool unpauses the game, which then runs for the rest of that
 reply. `observe` unpauses too, because a paused game shows a "Game Paused" overlay.
 
 **Action** marks tools that count toward the limit of 8 actions per reply. **Obs**
@@ -108,7 +108,8 @@ current game's tooltips win if they differ.
 
 Allowed keys: letters, digits, arrows, `Enter`, `Tab`, `Backspace`, `+` and `-`.
 `P` and `Escape` are refused, and `Space` is not offered. Useful ones: arrows move
-the camera, `Z` zooms out and `X` zooms in, `+` and `-` change game speed, and a right
+the camera, `Z` zooms out and `X` zooms in, `+` and `-` change game speed (more game
+time per second of play), and a right
 click cancels placement or selection. Mouse-wheel zoom does not work through the
 bridge.
 

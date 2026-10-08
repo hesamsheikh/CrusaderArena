@@ -207,8 +207,11 @@ export function settingsProblem(baseUrl: string, settings: ModelSettings) {
 export const TICKS_PER_GAME_SECOND = 30;
 export const runConfigSchema = z
   .object({
-    /** Benchmark budget in game time: 1 game minute = 60 × 30 = 1,800 game ticks. */
-    gameMinutes: z.number().min(0.5).max(120).default(10),
+    /**
+     * Benchmark budget in play time: minutes of real time while the game runs. Paused time (model
+     * thinking, reading tools) does not count, and a faster game speed fits more game time in.
+     */
+    playMinutes: z.number().min(0.5).max(120).default(10),
     /** Real-time safety limit covering model thinking while the game is paused. */
     wallLimitMinutes: z.number().min(0.5).max(240).default(60),
     /** Fallback wait after an action turn, in game seconds. */
@@ -225,17 +228,24 @@ export const runConfigSchema = z
   })
   .strict();
 export type RunConfig = z.infer<typeof runConfigSchema>;
+/** A stored run's settings: runs before 2026-10-08 had a game-time budget instead of play time. */
+export type StoredRunConfig = Omit<RunConfig, "playMinutes"> & { playMinutes?: number; gameMinutes?: number };
 export type RuntimeProgress = {
   phase: string;
-  /** Game seconds left in the budget (runs before 2026-09-28: wall seconds). */
+  /** Play seconds left in the budget (before 2026-10-08: game seconds; before 2026-09-28: wall seconds). */
   remainingSeconds: number;
   budget?: {
-    gameSeconds: number;
+    /** The play-time budget and its use, in real seconds while the game ran (from 2026-10-08). */
+    playSeconds?: number;
+    usedPlaySeconds?: number;
+    /** The game-time budget of runs before 2026-10-08. */
+    gameSeconds?: number;
+    /** Game time that passed. */
     usedGameSeconds: number;
     wallLimitSeconds: number;
     wallUsedSeconds: number;
-    /** Which limit ended the run, if one did. */
-    endedBy?: "game_time" | "wall_limit";
+    /** Which limit ended the run, if one did (game_time: runs before 2026-10-08). */
+    endedBy?: "play_time" | "game_time" | "wall_limit";
   };
   stopReason?: string;
   plan: { step: string; status: "pending" | "in_progress" | "completed" }[];
@@ -269,7 +279,7 @@ export type HarnessVersion = {
   toolsSha256: string;
 };
 export type Run = {
-  config?: RunConfig;
+  config?: StoredRunConfig;
   progress?: RuntimeProgress;
   benchmarkType?: string;
   id: string;

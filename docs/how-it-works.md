@@ -61,7 +61,7 @@ machine listens on the network.
    lets 5 game seconds pass and sends a new screenshot. A turn that ran the game for
    less than the minimum turn length (8 game seconds by default) is topped up the same
    way, which caps how many requests, and so how much cost, a run can take.
-5. **Finish.** The run ends when the game-time budget is used up (10 game minutes by
+5. **Finish.** The run ends when the play-time budget is used up (10 minutes by
    default), the real-time safety limit is reached (60 minutes), the operator stops
    it, or something fails. The host pauses the game, confirms the pause and saves a
    final screenshot and reading. It then centres the camera on the keep, zooms all the
@@ -70,16 +70,23 @@ machine listens on the network.
    recorded run can be rendered into a video. Unattended episodes
    (`npm run episodes`) also write a scorecard.
 
-## Time is game time
+## Time is play time
 
-Models think at very different speeds, so the budget is measured in **game time**, not
-wall-clock time. The game is paused whenever the model is thinking, and stays paused
-while it only reads, so thinking and reading cost no game time. Only the game's own clock counts: 30 game ticks per game second, and at
-the default speed setting one game second takes about one real second.
+Models think at very different speeds, so the budget is **play time**: real time while
+the game is running, not wall-clock time. The game is paused whenever the model is
+thinking, and stays paused while it only reads, so thinking and reading cost nothing.
+The host measures play time from the reader: the real time between samples in which the
+game's clock advanced. A pause from any cause, including a game menu, does not count.
+
+Game speed matters. At the normal speed setting (30) the game advances 30 ticks a
+second and one game second takes one real second; a faster setting fits more game time,
+and so more production and income, into the same play time. The model changes it with
+`+` and `-` and sees the current speed in every observation. Waits, the default wait and
+the minimum turn length are measured in game seconds.
 
 A separate real-time limit (60 minutes by default) stops runs that would otherwise
 take too long. It does include thinking time, so a very slow model can be cut off
-before its game time is used up. The run record says which limit ended the run.
+before its play time is used up. The run record says which limit ended the run.
 
 ## What the model can and cannot do
 

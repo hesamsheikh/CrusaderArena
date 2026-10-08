@@ -194,6 +194,22 @@ test("an old-format run shows blanks instead of failing and derives what it can"
   assert.doesNotMatch(markdown, /undefined|NaN|null/);
 });
 
+test("a play-time run reports its play seconds beside the game time that passed", async () => {
+  const dir = root();
+  writeRun(dir, "Play-Bench-20261008-150000Z-2026-10-08T15-00-00-000Z-eeeeeeee", {
+    "run.json": {
+      id: "eeeeeeee-1111-2222-3333-444444444444", model: { name: "Model A", modelId: "vendor/model-a" },
+      benchmarkType: "Oasis construction", startedAt: Date.parse("2026-10-08T15:00:00Z"), status: "completed", turns: 2, tokens: 900,
+      progress: { budget: { playSeconds: 120, usedPlaySeconds: 120.2, usedGameSeconds: 180.6, wallUsedSeconds: 300, endedBy: "play_time" } },
+    },
+    "events.jsonl": "",
+  });
+  const [row] = await buildReport(dir);
+  assert.equal(row.ended, "play_time");
+  assert.deepEqual([row.playSeconds, row.budgetPlaySeconds, row.gameSeconds], [120.2, 120, 180.6]);
+  assert.match(renderMarkdown([row]), /\| play_time \| 120 \| 181 \| 300 \|/);
+});
+
 test("an incomplete run survives a half-written events line and a missing run.json", async () => {
   const dir = root();
   incompleteRun(dir);

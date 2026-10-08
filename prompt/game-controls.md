@@ -25,7 +25,7 @@ Reading tools (`observe`, `status`, `get_inventory`, `find_sites`, `flat_view`,
 
 The game is paused while you think and stays paused until the first tool in your reply
 that acts, waits or observes; from then on it runs for the rest of the reply. Other
-reading tools therefore cost no game time when they come first: call them before your
+reading tools therefore cost no play time when they come first: call them before your
 actions, or in a reply of their own.
 
 ## What you see
@@ -36,7 +36,8 @@ actions, or in a reply of their own.
   targets the ground behind it. A screenshot older than 30 seconds cannot be used for
   clicks.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
-  `run_clock` gives the game time used and left. `stats` has the date, gold, population
+  `run_clock` gives the play time used and left, the game time that has passed and the
+  game speed. `stats` has the date, gold, population
   (with housing and idle peasants), popularity (with its upcoming change and factors, in
   the game's popularity points), `tax_level`, food, stored `goods` by name, the
   placement mode and the camera's centre tile. `status: "unavailable"` or a missing
@@ -123,8 +124,9 @@ Game rules for placement:
 
 - `Z` zooms out and `X` zooms in (via `game_action` key). Arrow keys move the camera.
   Re-observe after each step: world positions move, the interface does not.
-- `+` and `-` change the game speed. The budget is game time, so speed does not give you
-  more of it; a higher speed only makes waits take less real time.
+- `+` and `-` change the game speed (30 is normal; `run_clock` shows `game_speed`). The
+  budget is play time, so a faster game fits more game time, and with it more production
+  and income, into the run; but the game also moves further while your tools act.
 - Never press `P` (the host owns pause), `Escape` (it opens the game menu and halts
   play) or `Space` (it toggles the flattened view; use `flat_view`). The keys available
   through `game_action` are Enter, Tab, Backspace, the arrows, A–Z, 0–9, `+` and `-`.

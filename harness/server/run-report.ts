@@ -98,6 +98,9 @@ export type RunRow = {
   /** "budget": the host's game-time meter; "observed": last minus first reader tick in the tool results. */
   gameSecondsSource: "budget" | "observed" | null;
   budgetGameSeconds: number | null;
+  /** Play time: real seconds while the game ran (runs from 2026-10-08, which budget it). */
+  playSeconds: number | null;
+  budgetPlaySeconds: number | null;
   wallSeconds: number | null;
   inferenceSeconds: number | null;
   turns: number | null;
@@ -422,6 +425,8 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
     gameSeconds,
     gameSecondsSource,
     budgetGameSeconds: num(budget.gameSeconds),
+    playSeconds: num(budget.usedPlaySeconds),
+    budgetPlaySeconds: num(budget.playSeconds),
     wallSeconds,
     inferenceSeconds: num(progress.inference?.totalMs) !== null ? progress.inference.totalMs / 1000 : null,
     turns: num(run?.turns) ?? (events ? events.turnStarts : null),
@@ -511,6 +516,7 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Benchmark", (r) => r.benchmark ?? ""],
   ["Map", (r) => r.map ?? ""],
   ["Ended", (r) => (r.ended === "error" && r.endDetail ? `error: ${r.endDetail.slice(0, 48)}${r.endDetail.length > 48 ? "…" : ""}` : r.ended)],
+  ["Play s", (r) => whole(r.playSeconds)],
   ["Game s", (r) => (r.gameSeconds === null ? "" : (r.gameSecondsSource === "observed" ? "~" : "") + whole(r.gameSeconds))],
   ["Wall s", (r) => whole(r.wallSeconds)],
   ["Turns", (r) => whole(r.turns)],

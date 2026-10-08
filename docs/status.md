@@ -60,6 +60,9 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The play-time budget: real time counted from reader samples in which the game clock
+  advanced, the game speed in `run_clock`, and play time in the dashboard, report and
+  video. Not yet run in the live game; every live run so far had a game-time budget.
 - Context compaction across many turns, stop and deadline handling, and failure
   paths, with fake models and game devices (`npm test`).
 - Removing duplicate messages that appear in several channels at once.
@@ -75,7 +78,7 @@ between September and October 2026.
 - **Mouse-wheel camera zoom** does not work through the bridge (use `Z` and `X`).
 - **Other setups:** other Linux distributions and desktops, native Wayland, Windows
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
-- **Long runs:** runs longer than the default 10 game minutes have not been shown to
+- **Long runs:** runs longer than 10 game minutes have not been shown to
   be stable, because of the memory issue below.
 - **The current prompt** has been used only in runs of up to 5 game minutes, and no
   model has yet played with the text-only menu guide.

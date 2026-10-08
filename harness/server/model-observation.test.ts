@@ -99,7 +99,7 @@ test("observations carry game values and messages, not reader bookkeeping", asyn
   // One agent per benchmark kind; each keeps its own event cursor from creation.
   const agentFor = (military: boolean) => makeAgent(device, () => {}, () => {}, 1,
     { id: "t", name: "t", modelId: "t", baseUrl: "https://example.invalid", keyConfigured: false }, "", {
-      session: { check() {}, gameBudgetSeconds: 600, gameRemainingSeconds: () => 590, remaining: () => 60000 },
+      session: { check() {}, playBudgetSeconds: 600, playUsedSeconds: () => 10, playRemainingSeconds: () => 590, gameUsedTicks: () => 450, gameSpeed: () => 45, remaining: () => 60000 },
       cycle: { observe() {} },
       memory: { delivery() {} },
       config: { contextBudget: 120000 },
@@ -636,7 +636,7 @@ test("timed runs refuse Escape and P before sending input", async () => {
     currentStats: () => ({ status: "unavailable", observation: null }),
   } as unknown as GameDevice;
   const runtime = {
-    session: { check() {}, wait: async () => {}, gameBudgetSeconds: 600, gameRemainingSeconds: () => 600, remaining: () => 60000 },
+    session: { check() {}, wait: async () => {}, playBudgetSeconds: 600, playUsedSeconds: () => 0, playRemainingSeconds: () => 600, gameUsedTicks: () => 0, gameSpeed: () => null, remaining: () => 60000 },
     cycle: { observe() {}, action() {}, actions: 0 },
     memory: { delivery() {} },
     config: { contextBudget: 120000 },

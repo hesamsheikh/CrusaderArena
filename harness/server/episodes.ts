@@ -1,11 +1,11 @@
 /**
  * Unattended benchmark episodes through the running dashboard (npm run dev or start):
  * start the game through Steam on the Ubuntu host, load a save by name, pause,
- * run the agent with a game-time budget, record a scorecard, close the game.
+ * run the agent with a play-time budget, record a scorecard, close the game.
  *
  *   npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
  *     --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
- *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 10
+ *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --play-minutes 10
  *
  * The episodes (3 by default) form a learning series: each starts from the playbook the agent
  * left at the end of the one before, and the last episode's score is the series' score.
@@ -35,7 +35,7 @@ const { values: opts } = parseArgs({
     model: { type: "string" },
     prompt: { type: "string" },
     "prompt-file": { type: "string" },
-    "game-minutes": { type: "string", default: "10" },
+    "play-minutes": { type: "string", default: "10" },
     "wall-limit-minutes": { type: "string", default: "60" },
     "default-wait": { type: "string", default: "5" },
     "min-turn-seconds": { type: "string", default: "8" },
@@ -325,7 +325,7 @@ async function episode(
         modelId,
         prompt,
         config: {
-          gameMinutes: Number(opts["game-minutes"]),
+          playMinutes: Number(opts["play-minutes"]),
           wallLimitMinutes: Number(opts["wall-limit-minutes"]),
           defaultWaitSeconds: Number(opts["default-wait"]),
           minTurnSeconds: Number(opts["min-turn-seconds"]),

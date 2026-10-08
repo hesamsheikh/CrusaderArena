@@ -21,6 +21,7 @@ import {
   duration,
   elapsed,
   integer,
+  runBudget,
   runTitle,
   secondsLeft,
   span,
@@ -33,12 +34,13 @@ export function RunVitals({ run, now }: { run: Run; now: number }) {
   const p = run.progress,
     b = p?.budget,
     legacy = !!run.legacySource;
-  const gameTotal = b?.gameSeconds ?? (run.config?.gameMinutes ?? 0) * 60;
-  const gameUsed = b
-    ? b.usedGameSeconds
-    : p
-      ? Math.max(0, gameTotal - secondsLeft(run, now))
-      : 0;
+  const budget = runBudget(run);
+  const budgetTotal = budget.total;
+  const budgetUsed =
+    budget.used ?? (p ? Math.max(0, budgetTotal - secondsLeft(run, now)) : 0);
+  // Play-time runs also show how much game time passed (more at a faster game speed).
+  const gamePassed =
+    b && budget.label === "Play time" ? ` · ${duration(b.usedGameSeconds)} game time` : "";
   const wallTotal =
     b?.wallLimitSeconds ?? (run.config?.wallLimitMinutes ?? 0) * 60;
   const wallUsed =
@@ -52,19 +54,19 @@ export function RunVitals({ run, now }: { run: Run; now: number }) {
   return (
     <div className="vitals">
       <Metric
-        label="Game time"
-        value={gameTotal ? duration(gameUsed) : "—"}
-        unit={gameTotal ? `/ ${span(gameTotal)}` : undefined}
+        label={budget.label}
+        value={budgetTotal ? duration(budgetUsed) : "—"}
+        unit={budgetTotal ? `/ ${span(budgetTotal)}` : undefined}
         note={
-          b?.endedBy === "game_time"
+          (b?.endedBy === "play_time" || b?.endedBy === "game_time"
             ? "Budget reached"
-            : gameTotal
-              ? `${duration(Math.max(0, gameTotal - gameUsed))} left`
-              : "No game budget recorded"
+            : budgetTotal
+              ? `${duration(Math.max(0, budgetTotal - budgetUsed))} left`
+              : "No budget recorded") + gamePassed
         }
       >
-        {gameTotal > 0 && (
-          <Meter value={gameUsed} max={gameTotal} label="Game time used" />
+        {budgetTotal > 0 && (
+          <Meter value={budgetUsed} max={budgetTotal} label={`${budget.label} used`} />
         )}
       </Metric>
       <Metric
@@ -219,7 +221,7 @@ export function RunsView({
       case "tokens":
         return r.legacySource ? -1 : r.tokens;
       case "game":
-        return r.progress?.budget?.usedGameSeconds ?? -1;
+        return runBudget(r).used ?? -1;
       case "inference":
         return averageInference(r) ?? -1;
       default:
@@ -305,7 +307,7 @@ export function RunsView({
                 <th>Status</th>
                 {header("startedAt", "Started", false)}
                 {header("duration", "Duration")}
-                {header("game", "Game time")}
+                {header("game", "Budget")}
                 {header("turns", "Turns")}
                 {header("tokens", "Tokens")}
                 {header("inference", "Avg inference")}
@@ -338,12 +340,12 @@ export function RunsView({
                       {b ? (
                         <span className="cell-meter">
                           <Meter
-                            value={b.usedGameSeconds}
-                            max={b.gameSeconds}
+                            value={runBudget(r).used ?? 0}
+                            max={runBudget(r).total}
                             warnAt={2}
-                            label="Game time used"
+                            label={`${runBudget(r).label} used`}
                           />
-                          {duration(b.usedGameSeconds)}
+                          {duration(runBudget(r).used ?? 0)}
                         </span>
                       ) : (
                         <span className="muted">—</span>
@@ -501,8 +503,11 @@ export function RunDetail({
             <Card title="Configuration">
               <dl className="facts">
                 <div>
-                  <dt>Game-time budget</dt>
-                  <dd>{run.config.gameMinutes} game min</dd>
+                  <dt>{runBudget(run).label} budget</dt>
+                  <dd>
+                    {run.config.playMinutes ?? run.config.gameMinutes}{" "}
+                    {run.config.playMinutes !== undefined ? "min of play" : "game min"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Real-time limit</dt>

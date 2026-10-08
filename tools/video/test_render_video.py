@@ -6,6 +6,7 @@ import argparse
 import base64
 import io
 import json
+import math
 from pathlib import Path
 from runpy import run_path
 import shutil
@@ -130,6 +131,19 @@ class RenderVideoTests(unittest.TestCase):
         self.assertEqual(run.inputs[4].text, 'Centre on keep')
         # The host's zoomed-out view after the final reading ends the video.
         self.assertIsNotNone(run.overview_image)
+
+    def test_play_time_runs_count_play_from_the_frames(self):
+        write_run(self.dir)
+        meta = json.loads((self.dir / 'run.json').read_text())
+        meta['config'] = {k: v for k, v in meta['config'].items() if k != 'gameMinutes'} | {'playMinutes': 2}
+        (self.dir / 'run.json').write_text(json.dumps(meta))
+        frames, inputs = video['load_recording'](self.dir)
+        run = video['Run'](self.dir, video['load_events'](self.dir), frames, inputs)
+        self.assertEqual((run.budget_label, run.budget), ('Play time', 120))
+        # Real time between frames while the game clock advanced: 1.5 + 18.25 + 5 s; the gaps
+        # between the recorded segments are holds while the agent thought.
+        self.assertAlmostEqual(run.used_at(math.inf), 24.75)
+        self.assertEqual(run.used_at(T0 + 1540), 1.5)
 
     def test_spans_play_actions_fast_forward_idle_and_cut_stale_pauses(self):
         run = self.load()

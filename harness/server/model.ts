@@ -56,13 +56,19 @@ import { marketTrade, setTax, taxLevels, tradeGoods } from "./economy.js";
 import { describeBuilding, observationStats, statusReport } from "./status.js";
 import type { GameHotkey } from "./device.js";
 import type { RunConfig } from "../shared/protocol.js";
-/** Game time used and left, for each observation (kept out of the system prompt for caching). */
+/**
+ * Play time used and left, the game time that has passed and the current game speed, for each
+ * observation (kept out of the system prompt for caching).
+ */
 export function runClock(session: Session) {
   const tenths = (value: number) => Math.round(value * 10) / 10;
+  const speed = session.gameSpeed();
   return {
-    game_seconds_used: tenths(session.gameBudgetSeconds - session.gameRemainingSeconds()),
-    game_seconds_left: tenths(session.gameRemainingSeconds()),
-    game_seconds_budget: session.gameBudgetSeconds,
+    play_seconds_used: tenths(session.playUsedSeconds()),
+    play_seconds_left: tenths(session.playRemainingSeconds()),
+    play_seconds_budget: session.playBudgetSeconds,
+    game_seconds_passed: tenths(session.gameUsedTicks() / TICKS_PER_GAME_SECOND),
+    ...(speed !== null ? { game_speed: Math.round(speed) } : {}),
     real_minutes_left: Math.floor(session.remaining() / 60000),
   };
 }
@@ -105,6 +111,7 @@ import {
   allowedKeys,
   isOpenRouter,
   modelSettings,
+  TICKS_PER_GAME_SECOND,
   type Frame,
   type GameAction,
   type ModelProfile,
@@ -368,7 +375,7 @@ export function makeAgent(
       name: "observe",
       label: "Observe game",
       description:
-        "Take an immediate screenshot of the game window with its stats, buffered game events and run_clock (game time used and left). Coordinates are image pixels; a screenshot older than thirty seconds cannot be used for clicks.",
+        "Take an immediate screenshot of the game window with its stats, buffered game events and run_clock (play time used and left, game time passed, game speed). Coordinates are image pixels; a screenshot older than thirty seconds cannot be used for clicks.",
       parameters: Type.Object({}),
       execute: async () => observe(),
     },
@@ -988,16 +995,10 @@ export function makeAgent(
       name: "status",
       label: "Settlement status",
       description:
-        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, placement mode, open building panel, camera and saved views. No screenshot and no game input.",
+        "Text-only settlement summary from the read-only game reader: play-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, placement mode, open building panel, camera and saved views. No screenshot and no game input.",
       parameters: Type.Object({}),
       execute: async () => {
-        const budget = runtime
-          ? {
-              game_seconds_left: Math.round(runtime.session.gameRemainingSeconds()),
-              game_seconds_total: Math.round(runtime.session.gameBudgetSeconds),
-              real_minutes_left: Math.round(runtime.session.remaining() / 6000) / 10,
-            }
-          : undefined;
+        const budget = runtime ? runClock(runtime.session) : undefined;
         const report = statusReport(device.currentStats(), { budget, views: [...views.keys()] });
         return { content: [{ type: "text" as const, text: JSON.stringify(report) }], details: { readOnly: true } };
       },
@@ -1059,7 +1060,7 @@ export function makeAgent(
         name: "wait_and_observe",
         label: "Wait and observe",
         description:
-          "Let N game seconds pass (30 game ticks each; a faster game speed finishes sooner in real time), then capture the game, stats and accumulated events. Zero means immediate. Replaces the default wait. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
+          "Let N game seconds pass (30 game ticks each; a faster game speed finishes sooner in real time), then capture the game, stats and accumulated events. Zero means immediate. Replaces the default wait. The wait ends early if the play-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({

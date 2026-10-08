@@ -79,7 +79,27 @@ const months = [
 ];
 export const monthName = (m: number) => months[m] ?? `Month ${m + 1}`;
 
-/** Game seconds left for game-time runs; runs saved before 2026-09-28 used a wall-clock duration. */
+/**
+ * A run's budget: play time (real time while the game ran) from 2026-10-08, game time before.
+ * `used` is null while the run has recorded no usage.
+ */
+export function runBudget(run: Run) {
+  const b = run.progress?.budget,
+    c = run.config;
+  if (b?.playSeconds !== undefined || c?.playMinutes !== undefined)
+    return {
+      label: "Play time",
+      total: b?.playSeconds ?? (c?.playMinutes ?? 0) * 60,
+      used: b ? (b.usedPlaySeconds ?? 0) : null,
+    };
+  return {
+    label: "Game time",
+    total: b?.gameSeconds ?? (c?.gameMinutes ?? 0) * 60,
+    used: b ? b.usedGameSeconds : null,
+  };
+}
+
+/** Budget seconds left (play or game time); runs saved before 2026-09-28 used a wall-clock duration. */
 export function secondsLeft(run: Run, now: number) {
   const legacy = (run.config as { durationSeconds?: number } | undefined)
     ?.durationSeconds;

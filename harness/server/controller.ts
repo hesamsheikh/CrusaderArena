@@ -9,6 +9,7 @@ import type {
   Frame,
   ModelProfile,
   Run,
+  RunConfig,
   RuntimeProgress,
 } from "../shared/protocol.js";
 import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
@@ -134,14 +135,15 @@ export class RunController {
       playbook?: string;
     } = {},
   ) {
-    if (!run.config) throw new Error("Missing run configuration");
+    if (run.config?.playMinutes === undefined) throw new Error("Missing run configuration");
+    const config = run.config as RunConfig;
     this.memory = new RunMemory(
       path.dirname(store.file(run.id, "run.json")),
       (event) => store.event(run.id, event),
     );
     // Before the agent is made: its playbook tools exist only in learning episodes.
     if (run.series) this.memory.startPlaybook(dependencies.playbook ?? "");
-    if (run.config.recordVideo)
+    if (config.recordVideo)
       this.recorder = new RunRecorder(
         path.dirname(store.file(run.id, "run.json")),
         () => device.currentStats(),
@@ -151,20 +153,20 @@ export class RunController {
         dependencies.spawnRecorder,
       );
     this.session = new Session(
-      run.config.wallLimitMinutes * 60,
+      config.wallLimitMinutes * 60,
       () => {
         this.agent?.abort();
         device.cancelQueued();
       },
       dependencies.now,
       {
-        budgetTicks: Math.round(run.config.gameMinutes * 60 * TICKS_PER_GAME_SECOND),
+        budgetMs: config.playMinutes * 60000,
         clock: () => {
           const stats = device.currentStats();
           const tick = stats.observation?.game_time;
           const map = stats.observation?.map_name;
           return stats.status === "ok" && typeof tick === "number" && typeof map === "string"
-            ? { tick, map }
+            ? { tick, map, at: stats.captured_unix_ms ?? (dependencies.now ?? Date.now)() }
             : null;
         },
       },
@@ -173,7 +175,7 @@ export class RunController {
       session: this.session,
       cycle: this.cycle,
       memory: this.memory,
-      config: run.config,
+      config,
       military: benchmarkSpec(run.benchmarkType || "")?.military ?? true,
       phase: (phase) => {
         this.progress.phase = phase;
@@ -334,9 +336,10 @@ export class RunController {
   }
   private compact: () => Promise<void>;
   publish() {
-    this.progress.remainingSeconds = this.session.gameRemainingSeconds();
+    this.progress.remainingSeconds = this.session.playRemainingSeconds();
     this.progress.budget = {
-      gameSeconds: this.session.gameBudgetSeconds,
+      playSeconds: this.session.playBudgetSeconds,
+      usedPlaySeconds: this.session.playUsedSeconds(),
       usedGameSeconds: this.session.gameUsedTicks() / TICKS_PER_GAME_SECOND,
       wallLimitSeconds: this.session.seconds,
       wallUsedSeconds: this.session.wallUsedSeconds(),

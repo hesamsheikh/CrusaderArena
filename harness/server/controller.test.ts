@@ -50,7 +50,7 @@ const message = (content: AssistantMessage["content"]): AssistantMessage => ({
 function fixture(
   turns: number | null = 3,
   defaultWait = 0,
-  gameMinutes = 10,
+  playMinutes = 10,
   recording: { spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams } = {},
   learning?: { series: RunSeries; playbook: string },
   /** Off unless a test sets it, so the other tests count only the waits they cause. */
@@ -69,7 +69,7 @@ function fixture(
   );
   store.update(run.id, {
     config: runConfigSchema.parse({
-      gameMinutes,
+      playMinutes,
       wallLimitMinutes: 0.5,
       defaultWaitSeconds: defaultWait,
       minTurnSeconds,
@@ -850,22 +850,27 @@ test("request timing logs first content once and resets it before the next reque
   assert.equal(timings[1].afterFirstDeltaMs, null);
 });
 
-test("the game-time budget ends the run and blocks further game actions", async () => {
-  const f = fixture(null, 0, 0.5); // 0.5 game minutes = 900 ticks
+test("the play-time budget ends the run and blocks further game actions", async () => {
+  // Samples without a capture time are timed by the test clock: 31 s pass while the game runs
+  // (the play-time check comes before the 30-second wall limit's).
+  const f = fixture(null, 0, 0.5);
   f.provider(() => {
-    f.advanceTicks(1000);
+    f.advanceTicks(930);
+    f.advance(31000);
     return [call("game_action", { type: "key", key: "X" })];
   });
   assert.equal(await f.controller.runSession(), "completed");
   assert.equal(f.run.progress?.stopReason, "deadline");
-  assert.equal(f.run.progress?.budget?.endedBy, "game_time");
+  assert.equal(f.run.progress?.budget?.endedBy, "play_time");
   assert.deepEqual(f.actions, [{ type: "key", key: "P" }]);
-  assert.match(f.requests[0].systemPrompt!, /The budget is \*\*0\.5 minutes of game time\*\* \(30 game seconds/);
+  assert.match(f.requests[0].systemPrompt!, /The budget is \*\*0\.5 minutes of play\*\*: real time while the game runs/);
   const observation = f.requests[0].messages
     .flatMap((m) => (Array.isArray(m.content) ? m.content : []) as { type: string; text?: string }[])
     .find((part) => part.type === "text" && part.text?.includes("run_clock"));
   assert.ok(observation?.text);
-  assert.deepEqual(JSON.parse(observation.text).run_clock, { game_seconds_used: 0, game_seconds_left: 30, game_seconds_budget: 30, real_minutes_left: 0 });
+  assert.deepEqual(JSON.parse(observation.text).run_clock, {
+    play_seconds_used: 0, play_seconds_left: 30, play_seconds_budget: 30, game_seconds_passed: 0, real_minutes_left: 0,
+  });
 });
 
 test("a game clock reset (reload or map change) ends the run with an error", async () => {
@@ -881,7 +886,7 @@ test("a game clock reset (reload or map change) ends the run with an error", asy
 
 test("game-time waits end when the ticks advance, and a stalled clock is bounded", async () => {
   let tick = 0;
-  const session = new Session(60, () => {}, undefined, { budgetTicks: 100000, clock: () => ({ tick, map: "m" }) });
+  const session = new Session(60, () => {}, undefined, { budgetMs: 1e9, clock: () => ({ tick, map: "m", at: Date.now() }) });
   session.start();
   const timer = setInterval(() => { tick += 30; }, 20);
   const started = performance.now();
@@ -891,7 +896,7 @@ test("game-time waits end when the ticks advance, and a stalled clock is bounded
   assert.ok(tick >= 60);
   // A stalled clock ends the wait after about three real seconds per game second.
   let now = 0;
-  const stalled = new Session(60, () => {}, () => (now += 500), { budgetTicks: 100000, clock: () => ({ tick: 5, map: "m" }) });
+  const stalled = new Session(60, () => {}, () => (now += 500), { budgetMs: 1e9, clock: () => ({ tick: 5, map: "m", at: now }) });
   stalled.start();
   await stalled.waitGame(1);
   assert.equal(stalled.gameUsedTicks(), 0);

@@ -4,7 +4,7 @@ military: false
 # Benchmark: Cactus Valley settlement (diagnostic)
 
 **Task.** Establish a basic working settlement on the freshly loaded **Cactus Valley-1**
-Free Build save within the game-time budget: a granary, stockpile, wood production,
+Free Build save within the play-time budget: a granary, stockpile, wood production,
 housing and food production, as resources and terrain permit.
 
 **Not allowed.** Recruiting soldiers or building defences.

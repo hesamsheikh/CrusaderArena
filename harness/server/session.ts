@@ -1,54 +1,67 @@
 import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
 
 /**
- * One reader game-clock sample: ticks and the map they belong to. The stream's
- * generation is not used: it also advances after every transient unavailable sample.
+ * One reader game-clock sample: ticks, the map they belong to and when it was taken (ms).
+ * The stream's generation is not used: it also advances after every transient unavailable sample.
  */
-export type GameClockSample = { tick: number; map: string } | null;
+export type GameClockSample = { tick: number; map: string; at: number } | null;
+
+/** Play time over which the game speed is estimated. */
+const SPEED_WINDOW_MS = 3000;
 
 /**
- * One owner for inference, tools and waits. The benchmark budget is game time
- * (reader ticks), which only advances while the game runs; a separate wall-clock
- * limit bounds real time, including model thinking while the host pauses the game.
+ * One owner for inference, tools and waits. The benchmark budget is play time: real time
+ * while the game runs, measured as the time between reader samples in which the game clock
+ * advanced. Paused time (model thinking, reading tools, menus) does not count, and a faster
+ * game speed fits more game time into it. A separate wall-clock limit bounds all real time.
  */
 export class Session {
   readonly abort = new AbortController();
   private startedAt?: number;
   reason: "deadline" | "stopped" | "error" | null = null;
   /** Which limit ended the session when reason is "deadline". */
-  deadlineKind?: "game_time" | "wall_limit";
+  deadlineKind?: "play_time" | "wall_limit";
   errorDetail?: string;
   private timer?: ReturnType<typeof setTimeout>;
   private gameTimer?: ReturnType<typeof setInterval>;
   private startTick?: number;
   private lastTick?: number;
+  private lastAt?: number;
+  private playMs = 0;
+  /** Recent running intervals, for the speed estimate. */
+  private recent: { ticks: number; ms: number }[] = [];
   private map?: string;
   constructor(
     /** Wall-clock limit in seconds. */
     readonly seconds: number,
     private cancel: () => void,
     readonly now: () => number = () => performance.now(),
-    private game?: { budgetTicks: number; clock: () => GameClockSample },
+    private game?: { budgetMs: number; clock: () => GameClockSample },
   ) {}
   start() {
     if (this.startedAt !== undefined) throw new Error("Session already started.");
     if (this.reason) throw new Error(`Session ${this.reason}`);
     if (this.game) {
       const sample = this.game.clock();
-      if (!sample) throw new Error("Game clock unavailable; cannot start a game-time budget.");
+      if (!sample) throw new Error("Game clock unavailable; cannot start a play-time budget.");
       this.startTick = this.lastTick = sample.tick;
+      this.lastAt = sample.at;
       this.map = sample.map;
       this.gameTimer = setInterval(() => this.gameCheck(), 100);
     }
     this.startedAt = this.now();
     this.timer = setTimeout(() => this.stopAt("wall_limit"), this.seconds * 1000);
   }
-  private stopAt(kind: "game_time" | "wall_limit") {
+  private stopAt(kind: "play_time" | "wall_limit") {
     if (this.reason) return;
     this.deadlineKind = kind;
     this.stop("deadline");
   }
-  /** Advance the game clock from the reader; a reset or new map ends the run. */
+  /**
+   * Advance the clocks from the reader; a reset or new map ends the run. The real time from the
+   * previous sample counts as play when the game clock advanced since it (a reader gap the game
+   * ran through counts too), so each pause or unpause adds at most one sample interval.
+   */
   private gameCheck() {
     if (!this.game || this.startTick === undefined || this.reason) return;
     const sample = this.game.clock();
@@ -58,19 +71,39 @@ export class Session {
       this.stop("error");
       return;
     }
+    if (sample.at > this.lastAt!) {
+      const ticks = sample.tick - this.lastTick!;
+      const ms = sample.at - this.lastAt!;
+      if (ticks > 0) {
+        this.playMs += ms;
+        this.recent.push({ ticks, ms });
+        let window = this.recent.reduce((sum, r) => sum + r.ms, 0);
+        while (this.recent.length > 1 && window - this.recent[0].ms >= SPEED_WINDOW_MS) window -= this.recent.shift()!.ms;
+      }
+      this.lastAt = sample.at;
+    }
     this.lastTick = sample.tick;
-    if (this.lastTick - this.startTick >= this.game.budgetTicks) this.stopAt("game_time");
+    if (this.playMs >= this.game.budgetMs) this.stopAt("play_time");
   }
   gameUsedTicks() {
     return this.startTick === undefined ? 0 : this.lastTick! - this.startTick;
   }
-  gameRemainingSeconds() {
-    return this.game
-      ? Math.max(0, this.game.budgetTicks - this.gameUsedTicks()) / TICKS_PER_GAME_SECOND
-      : this.remaining() / 1000;
+  playUsedSeconds() {
+    return this.game ? this.playMs / 1000 : this.wallUsedSeconds();
   }
-  get gameBudgetSeconds() {
-    return this.game ? this.game.budgetTicks / TICKS_PER_GAME_SECOND : this.seconds;
+  playRemainingSeconds() {
+    return this.game ? Math.max(0, this.game.budgetMs - this.playMs) / 1000 : this.remaining() / 1000;
+  }
+  get playBudgetSeconds() {
+    return this.game ? this.game.budgetMs / 1000 : this.seconds;
+  }
+  /**
+   * Game ticks per second of recent play: the game speed setting (30 is normal; the reader runs
+   * 30.3 ticks/s at 30 and 45.5 at 45), or null before the game has run.
+   */
+  gameSpeed() {
+    const ms = this.recent.reduce((sum, r) => sum + r.ms, 0);
+    return ms > 0 ? (this.recent.reduce((sum, r) => sum + r.ticks, 0) * 1000) / ms : null;
   }
   /** Wall-clock milliseconds left (request timeouts and the safety limit). */
   remaining() {
