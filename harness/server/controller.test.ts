@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isPreparedReply } from "./preparation.js";
+import { isPreparedReply, runSystemPrompt } from "./preparation.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -53,6 +53,8 @@ function fixture(
   gameMinutes = 10,
   recording: { spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams } = {},
   learning?: { series: RunSeries; playbook: string },
+  /** Off unless a test sets it, so the other tests count only the waits they cause. */
+  minTurnSeconds = 0,
 ) {
   const store = new Store(
     mkdtempSync(path.join(tmpdir(), "arena-controller-")),
@@ -70,6 +72,7 @@ function fixture(
       gameMinutes,
       wallLimitMinutes: 0.5,
       defaultWaitSeconds: defaultWait,
+      minTurnSeconds,
       recordVideo: !!recording.spawnRecorder,
     }),
     ...(learning ? { series: learning.series } : {}),
@@ -752,6 +755,33 @@ test("provider timeout clamps fractional remaining time to a positive integer", 
   assert.equal(requestTimeout(54321.987), 54321);
   assert.equal(requestTimeout(180000), 90000);
   assert.equal(requestTimeout(0.5), 1);
+});
+
+test("a turn that ran the game for less than the minimum is topped up; longer and reading-only turns are not", async () => {
+  const f = fixture(4, 5, 10, {}, undefined, 8);
+  const waits: number[] = [];
+  // Game waits advance the reader clock by the waited game seconds.
+  f.controller.session.waitGame = async (seconds) => {
+    waits.push(seconds);
+    f.advanceTicks(seconds * 30);
+    f.controller.session.check();
+    return false;
+  };
+  f.provider((n) => {
+    if (n === 1) {
+      f.advanceTicks(60); // The turn's tools run the game for 2 game seconds.
+      return [call("game_action", { type: "key", key: "Z" }), call("observe", {})];
+    }
+    if (n === 2) return [call("game_action", { type: "key", key: "X" }), call("wait_and_observe", { seconds: 10 })];
+    return [call("status", {})];
+  });
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  // The first screenshot, the top-up after turn 1, then turn 2's own wait; turn 3 only read.
+  assert.deepEqual(waits, [0, 6, 10]);
+  const topUp = JSON.stringify(f.requests[1].messages.at(-1));
+  assert.match(topUp, /ran the game for 2 game seconds, less than the minimum of 8, so the host let 6 more pass/);
+  assert.match(f.requests[0].systemPrompt!, /A reply whose tools run the game takes at least 8 game seconds/);
+  assert.doesNotMatch(runSystemPrompt(fixture(1).run), /takes at least/);
 });
 
 test("explicit N-second observation replaces the configured default exactly once", async () => {

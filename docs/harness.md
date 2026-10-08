@@ -85,6 +85,7 @@ On **Home**, fill in:
 | Game minutes | 10 | Game-time budget (0.5 to 120) |
 | Wall limit | 60 minutes | Real-time limit, including thinking time (up to 240) |
 | Default wait | 5 game seconds | How long the host waits after a turn that acted without looking (0 to 300) |
+| Minimum turn | 8 game seconds | Least game time a turn that runs the game takes; the host waits out the rest (0 to 60, 0 turns it off). See [the agent](agent.md#a-turn) |
 | Context budget | 120,000 tokens | When to compact the conversation (32,000 to 200,000; see [Context](context.md#compaction)) |
 | Record video | on | Record the game while the agent acts |
 

@@ -99,6 +99,7 @@ function App() {
       gameMinutes: 10,
       wallLimitMinutes: 60,
       waitSeconds: 5,
+      minTurnSeconds: 8,
       contextBudget: 120000,
       recordVideo: true,
       modelId: "",
@@ -280,6 +281,7 @@ function App() {
       gameMinutes: run.config?.gameMinutes || 10,
       wallLimitMinutes: run.config?.wallLimitMinutes || 60,
       waitSeconds: run.config?.defaultWaitSeconds ?? 5,
+      minTurnSeconds: run.config?.minTurnSeconds ?? 8,
       contextBudget: run.config?.contextBudget || 120000,
       recordVideo: run.config?.recordVideo ?? true,
     });
@@ -682,6 +684,7 @@ function App() {
                   gameMinutes: draft.gameMinutes,
                   wallLimitMinutes: draft.wallLimitMinutes,
                   defaultWaitSeconds: draft.waitSeconds,
+                  minTurnSeconds: draft.minTurnSeconds,
                   contextBudget: draft.contextBudget,
                   imageTokenEstimate: 4096,
                   recordVideo: draft.recordVideo,

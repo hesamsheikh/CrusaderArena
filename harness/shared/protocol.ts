@@ -213,6 +213,11 @@ export const runConfigSchema = z
     wallLimitMinutes: z.number().min(0.5).max(240).default(60),
     /** Fallback wait after an action turn, in game seconds. */
     defaultWaitSeconds: z.number().min(0).max(300).default(5),
+    /**
+     * Least game time a turn that runs the game takes, in game seconds; the host lets the rest
+     * pass after a shorter one. It bounds model requests per game minute, so cost. 0 turns it off.
+     */
+    minTurnSeconds: z.number().min(0).max(60).default(8),
     contextBudget: z.number().int().min(32000).max(200000).default(120000),
     imageTokenEstimate: z.number().int().min(1024).max(16384).default(4096),
     /** Record the game window while the agent acts (not while it thinks) for tools/video/render-video.py. */

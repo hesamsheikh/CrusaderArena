@@ -482,7 +482,8 @@ export class RunController {
     this.log("agent", text);
     this.runtime.phase("ready");
   }
-  private async observe(seconds: number) {
+  /** Let `seconds` of game time pass, then send a screenshot; `note` says why the host waited. */
+  private async observe(seconds: number, note?: string) {
     this.recorder?.setActive(true);
     await this.ensurePauseState(false);
     this.runtime.phase("waiting");
@@ -503,9 +504,10 @@ export class RunController {
           type: "text",
           text: firstObservation
             ? "Timed play has started: the game is running and the budget is counting. Here is the first screenshot."
-            : seconds > 0
-              ? `You acted without requesting a screenshot, so the host let ${seconds} game seconds pass. Fresh screenshot:`
-              : "Fresh screenshot from the host.",
+            : note
+              ?? (seconds > 0
+                ? `You acted without requesting a screenshot, so the host let ${seconds} game seconds pass. Fresh screenshot:`
+                : "Fresh screenshot from the host."),
         },
         ...(firstObservation && this.device.latest && layoutNote(this.device.latest)
           ? [{ type: "text" as const, text: layoutNote(this.device.latest)! }]
@@ -522,7 +524,7 @@ export class RunController {
       ],
       timestamp: Date.now(),
     };
-    this.store.event(this.run.id, { type: "host_observation", message });
+    this.store.event(this.run.id, { type: "host_observation", message, waitSeconds: seconds });
     this.agent.state.messages = [...this.agent.state.messages, message];
   }
   async runSession() {
@@ -645,6 +647,7 @@ export class RunController {
           compactions: this.memory.compactions,
         });
         this.cycle.begin();
+        const turnStartTicks = this.session.gameUsedTicks();
         this.runtime.phase("thinking");
         // A complete single Pi turn settles all its tool results before this loop continues.
         // A transient provider failure (empty response, overload, 5xx) on the model reply is retried up
@@ -732,8 +735,18 @@ export class RunController {
           this.progress.stopReason = "turn_limit";
           break;
         }
-        if (this.cycle.needsFallback())
-          await this.observe(this.runtime.config.defaultWaitSeconds);
+        // A turn that ran the game lasts at least minTurnSeconds of game time, so a model that acts
+        // and looks every game second cannot multiply the requests (and the cost) of a run.
+        const { defaultWaitSeconds, minTurnSeconds } = this.runtime.config;
+        const ranSeconds = (this.session.gameUsedTicks() - turnStartTicks) / TICKS_PER_GAME_SECOND;
+        const wait = this.cycle.hostWait(ranSeconds, defaultWaitSeconds, minTurnSeconds);
+        if (wait !== null)
+          await this.observe(
+            wait,
+            this.cycle.observed
+              ? `This turn ran the game for ${Math.round(ranSeconds * 10) / 10} game seconds, less than the minimum of ${minTurnSeconds}, so the host let ${wait} more pass. Fresh screenshot:`
+              : undefined,
+          );
       }
     } catch (error) {
       if (!this.session.reason) {

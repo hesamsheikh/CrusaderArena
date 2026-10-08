@@ -14,7 +14,8 @@ system prompt stays identical for the whole run (prompt caching).
    work across replies only when the next choice truly depends on a result.
 3. End the reply with `observe` (an immediate screenshot) or `wait_and_observe(seconds)`
    (let that much game time pass first). If you acted and requested neither, the host
-   lets its default wait pass and then sends a screenshot.
+   lets its default wait pass and then sends a screenshot. A reply that ran the game for
+   less than the minimum turn length in your briefing is topped up the same way.
 
 At most 8 actions per reply. Each `build_structure` placement counts as one, as does
 each `game_action`, `place_near`, `expand_storage`, `center_on`, `go_to_tile`,

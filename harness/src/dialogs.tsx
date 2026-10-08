@@ -283,6 +283,7 @@ export type RunDraft = {
   gameMinutes: number;
   wallLimitMinutes: number;
   waitSeconds: number;
+  minTurnSeconds: number;
   contextBudget: number;
   recordVideo: boolean;
   modelId: string;
@@ -418,6 +419,20 @@ export function NewRunDialog({
             </div>
           </label>
           <label className="field">
+            <span>Context budget</span>
+            <div className="input-unit">
+              <input
+                type="number"
+                min={32000}
+                max={200000}
+                step={1000}
+                value={draft.contextBudget}
+                onChange={number("contextBudget")}
+              />
+              <em>tokens</em>
+            </div>
+          </label>
+          <label className="field">
             <span>Screenshot wait</span>
             <div className="input-unit">
               <input
@@ -431,17 +446,16 @@ export function NewRunDialog({
             </div>
           </label>
           <label className="field">
-            <span>Context budget</span>
+            <span>Minimum turn</span>
             <div className="input-unit">
               <input
                 type="number"
-                min={32000}
-                max={200000}
-                step={1000}
-                value={draft.contextBudget}
-                onChange={number("contextBudget")}
+                min={0}
+                max={60}
+                value={draft.minTurnSeconds}
+                onChange={number("minTurnSeconds")}
               />
-              <em>tokens</em>
+              <em>game s</em>
             </div>
           </label>
         </fieldset>

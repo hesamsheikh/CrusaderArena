@@ -177,6 +177,18 @@ export class ObservationCycle {
   needsFallback() {
     return !this.observed && (this.acted || this.tools === 0);
   }
+  /**
+   * Game seconds the host lets pass after the turn before sending a screenshot, or null for none.
+   * A turn that acted without looking, or called no tools, gets the default wait; one that ran the
+   * game is also topped up to the minimum turn length. Reading-only turns stay free.
+   */
+  hostWait(ranSeconds: number, defaultWait: number, minTurn: number): number | null {
+    const shortfall = this.ran || this.tools === 0
+      ? Math.round(Math.max(0, minTurn - ranSeconds) * 10) / 10
+      : 0;
+    if (this.needsFallback()) return Math.max(defaultWait, shortfall);
+    return shortfall > 0 ? shortfall : null;
+  }
 }
 
 /** SDK timeout values must be positive integers even with a fractional monotonic clock. */

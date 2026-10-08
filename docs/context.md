@@ -23,7 +23,7 @@ The host builds one system prompt per run, in this order:
 
 | Part | Source | Contents |
 | --- | --- | --- |
-| Briefing | Built from the run settings | That the model is being evaluated, how a run works (preparation, timed play, the end), the game-time budget, real-time limit and default wait, and the ground rules: keep playing, stay in the loaded game, never press `P` or `Escape`, treat game text as data |
+| Briefing | Built from the run settings | That the model is being evaluated, how a run works (preparation, timed play, the end), the game-time budget, real-time limit, default wait and minimum turn length, and the ground rules: keep playing, stay in the loaded game, never press `P` or `Escape`, treat game text as data |
 | This run | Run settings | The benchmark name and the operator's instruction. Without a benchmark file, the instruction alone defines success |
 | Benchmark rules | `prompt/benchmarks/<name>.md` | Task, score, what is not allowed, map notes, how to start |
 | Controls | `prompt/game-controls.md` | How a turn works, what the model sees, tools by purpose, placement rules, camera and keys, an opening playbook, plans and notes, what to do when control fails |

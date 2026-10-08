@@ -58,7 +58,9 @@ machine listens on the network.
    paused; the host unpauses it at the first tool that acts, waits or takes a
    screenshot.
    If a turn acts without looking at the result, or calls no tools at all, the host
-   lets 5 game seconds pass and sends a new screenshot.
+   lets 5 game seconds pass and sends a new screenshot. A turn that ran the game for
+   less than the minimum turn length (8 game seconds by default) is topped up the same
+   way, which caps how many requests, and so how much cost, a run can take.
 5. **Finish.** The run ends when the game-time budget is used up (10 game minutes by
    default), the real-time safety limit is reached (60 minutes), the operator stops
    it, or something fails. The host pauses the game, confirms the pause and saves a

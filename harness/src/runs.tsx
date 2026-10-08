@@ -512,6 +512,12 @@ export function RunDetail({
                   <dt>Screenshot wait</dt>
                   <dd>{run.config.defaultWaitSeconds} game s</dd>
                 </div>
+                {run.config.minTurnSeconds !== undefined && (
+                  <div>
+                    <dt>Minimum turn</dt>
+                    <dd>{run.config.minTurnSeconds} game s</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Context budget</dt>
                   <dd>{integer(run.config.contextBudget)} tokens</dd>

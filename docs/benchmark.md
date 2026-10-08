@@ -109,6 +109,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--game-minutes` | 10 | Game-time budget |
 | `--wall-limit-minutes` | 60 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
+| `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
 | `--context-budget` | 120000 | Working context budget in tokens |
 | `--episodes` | 3 | Episodes in the series, one after another, each with a fresh game launch |
 | `--no-playbook` | off | Run the episodes as independent runs, with no playbook and no series |

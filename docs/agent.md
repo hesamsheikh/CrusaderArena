@@ -26,6 +26,13 @@ A turn is one model reply plus the tool calls in it.
    observing afterwards, or called no tools at all, the host lets the default wait
    pass (5 game seconds) and sends a fresh screenshot. A turn that ends with a fresh
    observation, or only read, goes straight to the next request.
+5. **A turn that runs the game lasts a minimum time.** If the game ran for less than
+   the minimum turn length (8 game seconds by default) between the start of the
+   request and the end of the turn's tools, the host lets the rest pass and sends a
+   fresh screenshot; a turn that acted without looking waits for the longer of the two.
+   This caps the number of model requests per game minute, and so the cost of a run:
+   at 8 seconds, a 20-game-minute run has at most 150 turns that run the game. Turns
+   that only read stay free and are limited separately (see [Stuck loops](#when-things-go-wrong)).
 
 Each reply can take **at most 8 actions**. An action is anything that sends input to
 the game: a click or key (`game_action`), each building placed by `build_structure`,

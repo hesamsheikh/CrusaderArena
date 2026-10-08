@@ -49,6 +49,9 @@ between September and October 2026.
   version recorded in `run.json`. The second ran with a 60,000-token budget and
   compacted twice; each handoff request repeated the gameplay request and was
   served about three-quarters from the provider's cache.
+- The minimum turn length (8 game seconds), in a 2-game-minute GLM 5.3 Flash episode
+  on 2026-10-08: every turn that ran the game took at least 8 game seconds, short
+  turns were topped up with the model told why, and reading-only turns stayed free.
 
 ## Tested in code only
 

@@ -70,7 +70,7 @@ const minutes = (value: number) => `${value} ${value === 1 ? "minute" : "minutes
  */
 export function runSystemPrompt(run: Run) {
   if (!run.config) throw new Error("Missing run configuration");
-  const { gameMinutes, wallLimitMinutes, defaultWaitSeconds } = run.config;
+  const { gameMinutes, wallLimitMinutes, defaultWaitSeconds, minTurnSeconds } = run.config;
   const benchmark = benchmarkSpec(run.benchmarkType || "Custom");
   const briefing = `# Crusader Arena: you are being evaluated
 
@@ -102,7 +102,10 @@ questions during the run. The run is judged by the game's state when it ends.
 - A real-time limit of ${minutes(wallLimitMinutes)} also ends the run. Every reply takes real time,
   so do several useful things per reply.
 - Every observation has \`run_clock\` with the game time used and left. If you act without
-  observing, the host lets ${defaultWaitSeconds} game seconds pass and then sends a screenshot.
+  observing, the host lets ${defaultWaitSeconds} game seconds pass and then sends a screenshot.${minTurnSeconds > 0 ? `
+- A reply whose tools run the game takes at least ${minTurnSeconds} game seconds. If they finish
+  sooner, the host lets the rest pass and then sends a screenshot, so batch your actions or
+  wait at least that long.` : ""}
 
 ## Ground rules
 
