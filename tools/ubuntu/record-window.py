@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--fps', type=float, default=4, help='idle capture rate')
 parser.add_argument('--burst-fps', type=float, default=10, help='capture rate right after an input')
 parser.add_argument('--burst-seconds', type=float, default=2.5)
-parser.add_argument('--width', type=int, default=1440, help='downscale to this width (0 keeps the window size)')
+parser.add_argument('--width', type=int, default=1600, help='downscale to this width (0 keeps the window size)')
 parser.add_argument('--quality', type=int, default=78)
 args = parser.parse_args()
 if not (0.5 <= args.fps <= args.burst_fps <= 30 and 0 <= args.burst_seconds <= 30

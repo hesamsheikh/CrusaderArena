@@ -82,6 +82,9 @@ function fixture(
   let gameTick = 1000,
     generation = 1,
     mapName = "map-1";
+  // Reader camera, off by default. With it the window is 16:9, a minimap click moves the camera
+  // to the keep at tile (50, 60) and Z zooms out up to 40 tiles wide.
+  let camera: Record<string, number> | null = null;
   let handoffHook = () => {};
   const handoffs: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
   let handoffReply = (_call: number): { text: string; stopReason?: string } => ({
@@ -103,8 +106,8 @@ function fixture(
         id: "frame",
         image: "test",
         mimeType: "image/jpeg",
-        width: 100,
-        height: 100,
+        width: camera ? 1920 : 100,
+        height: camera ? 1080 : 100,
         receivedAt: Date.now(),
         capturedAt: Date.now(),
         pid: 1,
@@ -119,15 +122,26 @@ function fixture(
           status: "ok",
           generation,
           valid_until_unix_ms: statsExpiry,
-          observation: { paused, game_time: gameTick, map_name: mapName },
+          observation: { paused, game_time: gameTick, map_name: mapName, ...(camera ? { camera } : {}) },
+          ...(camera ? { captured_unix_ms: Date.now() } : {}),
         },
     action: async (action: unknown, _id: string, guard?: () => void, ageCreditMs = 0) => {
       guard?.();
       actions.push(action);
       ageCredits.push(ageCreditMs);
       paused = (action as { key?: string }).key === "P" ? !paused : paused;
+      const input = action as { type?: string; key?: string; button?: number };
+      if (camera && input.key === "Z" && camera.tiles_wide < 40)
+        camera = { ...camera, tiles_wide: camera.tiles_wide + 10, tiles_high: camera.tiles_high + 10 };
+      if (camera && input.type === "click" && input.button === 1) camera = { ...camera, centre_tile_x: 50, centre_tile_y: 60 };
       statsExpiry += 2000;
     },
+    // A 100×100 map with the keep's 3×3 tiles around (50, 60).
+    mapSummary: async () => ({
+      size: 100,
+      rows: Array.from({ length: 100 }, (_, y) => (y >= 59 && y <= 61 ? ".49K3.48" : ".100")),
+      bounds: { x0: 0, y0: 0, x1: 99, y1: 99 },
+    }),
     cancelQueued: () => {},
     status: () => {},
     onGuard: (listener: (record: Record<string, unknown>) => void) => {
@@ -200,6 +214,7 @@ function fixture(
     isPaused: () => paused,
     guard: (record: Record<string, unknown>) => guardListeners.forEach((l) => l(record)),
     setUnavailableSamples: (n: number) => { unavailableSamples = n; },
+    setCamera: (value: Record<string, number>) => { camera = value; },
     logMessages,
     captures: () => captures,
     setHandoffHook: (fn: () => void) => {
@@ -457,6 +472,29 @@ test("deadline reached during inference blocks all subsequent game actions", asy
   assert.deepEqual(f.actions, [{ type: "key", key: "P" }]);
   assert.equal(f.run.progress?.stopReason, "deadline");
   assert.match(f.run.progress?.finalPause || "", /Confirmed paused/);
+});
+test("after the final pause the host centres on the keep, zooms out and saves an overview", async () => {
+  const f = fixture(null);
+  f.setCamera({ centre_tile_x: 10, centre_tile_y: 10, tiles_wide: 20, tiles_high: 20, pixels_per_unit_scale: 1 });
+  f.provider(() => {
+    f.advance(30001);
+    return [call("game_action", { type: "key", key: "X" })];
+  });
+  assert.equal(await f.controller.runSession(), "completed");
+  // After the pause: a minimap click to the keep's tile, then Z until the view stops widening.
+  assert.deepEqual(
+    f.actions.map((a) => (a as { key?: string }).key ?? `click ${(a as { button?: number }).button}`),
+    ["P", "click 1", "Z", "Z", "Z"],
+  );
+  assert.equal(f.isPaused(), true);
+  assert.match(f.run.progress?.finalPause || "", /Confirmed paused/);
+  assert.equal(readFileSync(path.join(f.controller.memory.directory, "final-overview.jpg"), "base64"), "test");
+  const overview = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8")
+    .trim().split("\n").map((line) => JSON.parse(line).event).find((e) => e?.type === "final_overview");
+  assert.deepEqual([overview.keep, overview.centre], [{ x: 50, y: 60 }, "arrived"]);
+  assert.equal(overview.zoomOutSteps, 2);
+  assert.equal(overview.camera.tiles_wide, 40);
+  assert.ok(f.logMessages.some((m) => /Final overview saved/.test(m)));
 });
 test("operator stop overrides continuation and never toggles pause", async () => {
   const f = fixture(null);

@@ -62,7 +62,8 @@ machine listens on the network.
 5. **Finish.** The run ends when the game-time budget is used up (10 game minutes by
    default), the real-time safety limit is reached (60 minutes), the operator stops
    it, or something fails. The host pauses the game, confirms the pause and saves a
-   final screenshot and reading.
+   final screenshot and reading. It then centres the camera on the keep, zooms all the
+   way out and saves that view too, as a picture of what the agent built.
 6. **Afterwards.** Every message, tool call, screenshot and reading is on disk. A
    recorded run can be rendered into a video. Unattended episodes
    (`npm run episodes`) also write a scorecard.

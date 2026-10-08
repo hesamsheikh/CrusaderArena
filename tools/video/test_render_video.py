@@ -3,6 +3,7 @@
   python3 -m unittest discover -s tools/video
 """
 import argparse
+import base64
 import io
 import json
 from pathlib import Path
@@ -37,6 +38,8 @@ def write_run(directory, recording=True):
            'turns': 2, 'tokens': 300, 'startedAt': T0, 'status': 'completed'}
     (directory / 'run.json').write_text(json.dumps(run))
     placements = [{'name': 'Granary', 'x': 960, 'y': 540}]
+    overview = io.BytesIO()
+    Image.new('RGB', (1920, 1080), (90, 120, 70)).save(overview, format='JPEG')
     events = [
         (0, {'type': 'recording_state', 'state': 'run'}),
         (1000, {'type': 'host_observation', 'message': {'content': []}}),
@@ -66,6 +69,7 @@ def write_run(directory, recording=True):
         (36100, {'type': 'recording_state', 'state': 'run'}),
         (41200, {'type': 'host_observation', 'message': {'content': []}}),
         (41300, {'type': 'recording_state', 'state': 'hold'}),
+        (42000, {'type': 'final_overview', 'frame': {'image': base64.b64encode(overview.getvalue()).decode()}}),
     ]
     with open(directory / 'events.jsonl', 'w') as handle:
         for at, event in events:
@@ -80,11 +84,11 @@ def write_run(directory, recording=True):
     rows = []
     for i, at in enumerate(times, 1):
         buffer = io.BytesIO()
-        Image.new('RGB', (1440, 810), (40 + i % 100, 90, 60)).save(buffer, format='JPEG')
+        Image.new('RGB', (1600, 900), (40 + i % 100, 90, 60)).save(buffer, format='JPEG')
         name = f'{i:06d}.jpg'
         (folder / 'frames' / name).write_bytes(buffer.getvalue())
         # The game host's clock runs 7 s behind; delivery takes 40 ms.
-        rows.append({'i': i, 'file': name, 'at': T0 + at + 40, 't': T0 + at - 7000, 'w': 1440, 'h': 810, 'sw': 1920, 'sh': 1080,
+        rows.append({'i': i, 'file': name, 'at': T0 + at + 40, 't': T0 + at - 7000, 'w': 1600, 'h': 900, 'sw': 1920, 'sh': 1080,
                      'stats': {'gameTime': 1000 + at * 30 // 1000, 'paused': at in paused, 'gold': 1000 - i, 'population': 4}})
     (folder / 'frames.jsonl').write_text('\n'.join(json.dumps(r) for r in rows) + '\n')
     inputs = [(100, {'type': 'key', 'key': 'P'}), (11700, {'type': 'key', 'key': 'P'}),
@@ -122,8 +126,10 @@ class RenderVideoTests(unittest.TestCase):
         # The host's pause key is not an agent action; the terrain click names its building.
         self.assertEqual([i.at - T0 for i in run.inputs], [12200, 12400, 12600, 13000, 29000])
         self.assertEqual([i.label for i in run.inputs], ['', '', 'Granary', 'Granary', ''])
-        self.assertEqual(run.inputs[2].pos, (720.0, 405.0))
+        self.assertEqual(run.inputs[2].pos, (800.0, 450.0))
         self.assertEqual(run.inputs[4].text, 'Centre on keep')
+        # The host's zoomed-out view after the final reading ends the video.
+        self.assertIsNotNone(run.overview_image)
 
     def test_spans_play_actions_fast_forward_idle_and_cut_stale_pauses(self):
         run = self.load()
@@ -161,13 +167,13 @@ class RenderVideoTests(unittest.TestCase):
         at = lambda ms: (T0 + ms - action.data['start']) / 1000
         overlay = lambda clip, ms: renderer.overlay(T0 + ms, clip)
         # The two menu clicks before it are still fading out.
-        self.assertEqual([item[:3] for item in overlay(action, 12600)[:2]], [('ripple', 630, 780), ('ripple', 675, 750)])
-        self.assertEqual(overlay(action, 12600)[2:], (('ripple', 720, 405, False, 0.0), ('label', 720, 405, 'Granary'),
-                                                      ('cursor', 720, 405, True)))
+        self.assertEqual([item[:3] for item in overlay(action, 12600)[:2]], [('ripple', 700, 867), ('ripple', 750, 833)])
+        self.assertEqual(overlay(action, 12600)[2:], (('ripple', 800, 450, False, 0.0), ('label', 800, 450, 'Granary'),
+                                                      ('cursor', 800, 450, True)))
         # 100 ms before the terrain click the pointer is 60% of the way from the building button.
-        self.assertEqual(overlay(action, 12500)[-1], ('cursor', 702, 543, False))
+        self.assertEqual(overlay(action, 12500)[-1], ('cursor', 780, 603, False))
         right = [item for item in overlay(action, 13100) if item[0] == 'ripple' and item[3]]
-        self.assertEqual(right, [('ripple', 720, 405, True, 2 / 12)])
+        self.assertEqual(right, [('ripple', 800, 450, True, 2 / 12)])
         # A hotkey has no position, so this span shows the key but no pointer.
         self.assertEqual(overlay(tail, 29300), (('key', 'Centre on keep'),))
         key, build = renderer.frame(action, at(12600))
@@ -180,6 +186,10 @@ class RenderVideoTests(unittest.TestCase):
         self.assertEqual((think_start[2], think_end[2]), (0.0, 1.0))
         key, _ = renderer.frame(clips[6], 0.2)
         self.assertIn('no tool called', key[6][1])
+        key, build = renderer.frame(clips[7], 1.0)
+        self.assertEqual((key, build().size), (('outro',), (1920, 1080)))
+        # The overview fills the game area: its colour, not the recorded frames'.
+        self.assertLess(abs(build().getpixel((800, 600))[1] - 120), 6)
 
     def test_unrecorded_runs_are_refused(self):
         write_run(self.dir, recording=False)

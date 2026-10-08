@@ -25,22 +25,22 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
 TICKS_PER_GAME_SECOND = 30
 W, H = 1920, 1080
-GAME_W, GAME_H = 1440, 810
+GAME_W, GAME_H = 1600, 900
 PANEL_W = W - GAME_W
 STRIP_H = H - GAME_H
-PAD = 24
+PAD = 20
 # Real speed from just before each input until the game has visibly responded.
 INPUT_LEAD_MS = 500
 INPUT_TAIL_MS = 1500
 # Idle shorter than this between two actions plays at real speed instead of flickering.
 MIN_IDLE_MS = 1200
 
-# The dashboard's warm ink, ivory and clay accent, set on dark for video.
+# Warm ink and ivory on dark, with an orange accent; pauses are amber.
 BG = (22, 21, 19)
 PANEL = (30, 29, 26)
 RAISED = (40, 38, 34)
@@ -49,10 +49,10 @@ INK = (246, 243, 235)
 INK2 = (206, 201, 190)
 MUTED = (156, 151, 140)
 FAINT = (112, 108, 100)
-ACCENT = (222, 124, 90)
+ACCENT = (245, 140, 30)
 GOOD = (116, 178, 130)
 BAD = (230, 110, 98)
-WARN = (220, 168, 84)
+WARN = (232, 192, 80)
 
 # ---------------------------------------------------------------- text
 
@@ -142,7 +142,7 @@ def ellipsize(text, fnt, width):
 
 
 class Lru(OrderedDict):
-    """Small bounded cache: composed images are large (a 1440×810 frame is 3.5 MB)."""
+    """Small bounded cache: composed images are large (a 1600×900 frame is 4.3 MB)."""
 
     def __init__(self, size):
         super().__init__()
@@ -220,7 +220,7 @@ HOTKEYS = {'HomeKeep': 'Centre on keep', 'Granary': 'Centre on granary', 'Market
 
 
 class Input:
-    """One click, drag, scroll, key or hotkey the harness sent, in 1440 × 810 video pixels."""
+    """One click, drag, scroll, key or hotkey the harness sent, in game-area video pixels."""
 
     def __init__(self, row):
         self.at, self.type, self.row = row['at'], row.get('type'), row
@@ -323,7 +323,7 @@ class Run:
         self.budget = (config.get('gameMinutes') or 0) * 60
         self.default_wait = config.get('defaultWaitSeconds', 5)
         self.turns, self.plans, self.compactions, self.observations, self.marks = [], [], [], [], []
-        self.final = None
+        self.final = self.overview = None
         calls = {}
         pause_at = None
         retries = 0
@@ -356,7 +356,8 @@ class Run:
                     call.end, call.error = at, bool(ev.get('isError'))
                     call.summary = summarize_result(call.name, result_texts(ev.get('result')), call.error)
             elif kind == 'host_observation':
-                self.observations.append(at)
+                # The wait before it: the default wait, or more to reach the minimum turn length.
+                self.observations.append((at, ev.get('waitSeconds', self.default_wait)))
             elif kind == 'plan':
                 self.plans.append((at, ev.get('plan') or []))
             elif kind == 'compaction_checkpoint':
@@ -365,8 +366,12 @@ class Run:
                 self.marks.append((at, ev.get('state')))
             elif kind == 'final_observation':
                 self.final = ev
+            elif kind == 'final_overview':
+                self.overview = ev
         self.final_stats = observation_stats(((self.final or {}).get('stats') or {}).get('observation'))
         self.final_image = ((self.final or {}).get('frame') or {}).get('image')
+        # The host's zoomed-out view of the keep after the final reading, when it took one.
+        self.overview_image = ((self.overview or {}).get('frame') or {}).get('image')
         self.frames, self.inputs = frames, inputs
         self.frame_times = [f.time for f in frames]
         self.input_times = [i.at for i in inputs]
@@ -677,13 +682,6 @@ class Renderer:
                 return Image.new('RGB', (GAME_W, GAME_H), BG)
         return self.decoded.get_or(index, decode)
 
-    def backdrop(self, image):
-        key = ('backdrop', id(image))
-        if key not in self.cache:
-            im = image.resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(14))
-            self.cache[key] = ImageEnhance.Brightness(im).enhance(0.32)
-        return self.cache[key]
-
     # -- panel
 
     def panel(self, turn, reveal, at, plan):
@@ -691,44 +689,46 @@ class Renderer:
         d = ImageDraw.Draw(im)
         d.line([(0, 0), (0, H)], fill=LINE, width=2)
         x, width = PAD, PANEL_W - 2 * PAD
-        d.text((x, 20), ellipsize(self.model, condensed(34), width), font=condensed(34), fill=INK)
-        d.text((x, 62), ellipsize(self.subtitle, sans(15), width), font=sans(15), fill=MUTED)
-        y = 96
-        d.line([(x, y), (x + width, y)], fill=LINE)
-        y += 14
+        self.header(d, x, width)
+        y = 98
         if turn:
-            label(d, f'Turn {turn.number} of {len(self.run.turns)}', x, y, ACCENT, 17)
+            label(d, f'Turn {turn.number} of {len(self.run.turns)}', x, y, ACCENT, 16)
             note = f'thought {turn.seconds:.1f} s' + (f', {turn.retries} retr{"y" if turn.retries == 1 else "ies"}' if turn.retries else '')
-            f = sans(14)
+            f = sans(13)
             d.text((x + width - f.getlength(note), y + 2), note, font=f, fill=MUTED)
         else:
-            label(d, 'Starting', x, y, ACCENT, 17)
-        y += 34
+            label(d, 'Starting', x, y, ACCENT, 16)
+        y += 30
         if plan:
-            label(d, 'Plan', x, y)
-            y += 24
-            f = sans(15)
+            label(d, 'Plan', x, y, size=14)
+            y += 22
+            f = sans(14)
             for step in plan[:6]:
                 status = step.get('status', 'pending')
-                icon(d, status, x, y + 3, 13)
+                icon(d, status, x, y + 3, 12)
                 color = MUTED if status == 'completed' else INK if status == 'in_progress' else INK2
-                d.text((x + 22, y), ellipsize(step.get('step', ''), f, width - 22), font=f, fill=color)
-                y += 23
-            y += 12
+                d.text((x + 20, y), ellipsize(step.get('step', ''), f, width - 20), font=f, fill=color)
+                y += 21
+            y += 10
         # Tool list first (bottom), reasoning fills the space between.
         calls = turn.calls if turn else []
         tools_top = self.tool_list(d, calls, reveal, at, x, width)
-        label(d, 'Reasoning', x, y)
-        y += 26
-        self.reasoning(d, turn, reveal, x, y, width, tools_top - 18)
+        label(d, 'Reasoning', x, y, size=14)
+        y += 24
+        self.reasoning(d, turn, reveal, x, y, width, tools_top - 16)
         return im
+
+    def header(self, d, x, width):
+        d.text((x, 18), ellipsize(self.model, condensed(30), width), font=condensed(30), fill=INK)
+        d.text((x, 55), ellipsize(self.subtitle, sans(14), width), font=sans(14), fill=MUTED)
+        d.line([(x, 84), (x + width, 84)], fill=LINE)
 
     def reasoning(self, d, turn, reveal, x, top, width, bottom):
         if not turn:
             return
         thinking, text = turn.thinking, turn.text
         rows = []
-        f_think, f_text = sans(16, 400, True), sans(16)
+        f_think, f_text = sans(15, 400, True), sans(15)
         for line in wrap(thinking, f_think, width) if thinking else []:
             rows.append((line, f_think, INK2))
         if thinking and text:
@@ -745,7 +745,7 @@ class Renderer:
                 break
             visible.append((line[:shown], fnt, color))
             shown -= len(line) + 1
-        line_h = 23
+        line_h = 21
         capacity = max(1, (bottom - top) // line_h)
         if len(visible) > capacity:
             visible = visible[-capacity:]
@@ -765,35 +765,37 @@ class Renderer:
         bottom = H - 22
         if not calls:
             return bottom
-        f_name, f_args, f_res = condensed(21, 600), sans(14), sans(14)
+        f_name, f_args, f_res = condensed(19, 600), sans(13), sans(13)
+        name_h, line_h, gap = 25, 18, 8
         rows = []
         for i, call in enumerate(calls):
             status = call.status(at) if reveal >= 1 else 'pending'
-            args_line = ellipsize(summarize_call(call.name, call.args), f_args, width - 24)
+            args_line = ellipsize(summarize_call(call.name, call.args), f_args, width - 22)
             result = ''
             if status in ('done', 'error') and call.summary:
-                result = ellipsize(call.summary, f_res, width - 24)
+                result = ellipsize(call.summary, f_res, width - 22)
             rows.append((call, status, args_line, result))
         # Keep the running call visible when the list is long: show a window of up to 7 rows.
         limit = 7
         current = next((i for i, r in enumerate(rows) if r[1] in ('running', 'pending')), len(rows) - 1)
         first = max(0, min(current - 2, len(rows) - limit))
         window = rows[first:first + limit]
-        height = sum(28 + 19 + (19 if r[3] else 0) + 8 for r in window)
-        top = bottom - height - 30
+        row_h = lambda result: name_h + line_h + (line_h if result else 0) + gap
+        height = sum(row_h(r[3]) for r in window)
+        top = bottom - height - 28
         d.line([(x, top - 6), (x + width, top - 6)], fill=LINE)
         count = f'{len(calls)} call{"s" if len(calls) != 1 else ""}' + (f', showing {first + 1}–{first + len(window)}' if len(rows) > limit else '')
-        label(d, f'Actions · {count}', x, top + 4)
-        y = top + 30
+        label(d, f'Actions · {count}', x, top + 4, size=14)
+        y = top + 28
         for call, status, args_line, result in window:
             if status == 'running':
-                d.rounded_rectangle([x - 8, y - 4, x + width + 8, y + 28 + 19 + (19 if result else 0) + 2], radius=6, fill=RAISED)
-            icon(d, status, x, y + 6, 14)
-            d.text((x + 24, y), clean(call.name), font=f_name, fill=ACCENT if status == 'running' else INK)
-            d.text((x + 24, y + 28), args_line, font=f_args, fill=INK2 if status != 'pending' else MUTED)
+                d.rounded_rectangle([x - 8, y - 4, x + width + 8, y + row_h(result) - gap + 2], radius=6, fill=RAISED)
+            icon(d, status, x, y + 5, 13)
+            d.text((x + 22, y), clean(call.name), font=f_name, fill=ACCENT if status == 'running' else INK)
+            d.text((x + 22, y + name_h), args_line, font=f_args, fill=INK2 if status != 'pending' else MUTED)
             if result:
-                d.text((x + 24, y + 47), result, font=f_res, fill=BAD if status == 'error' else GOOD)
-            y += 28 + 19 + (19 if result else 0) + 8
+                d.text((x + 22, y + name_h + line_h), result, font=f_res, fill=BAD if status == 'error' else GOOD)
+            y += row_h(result)
         return top
 
     # -- bottom strip
@@ -818,30 +820,30 @@ class Renderer:
                  ('Popularity', value('popularity')), ('Food', value('food')), ('Wood', value('wood')),
                  ('Stone', value('stone')), ('Iron', value('iron'))]
         x = PAD
-        widths = [220, 150, 190, 150, 120, 120, 120, 120]
+        widths = [170, 120, 150, 120, 100, 100, 100, 100]
         for (name, text), w in zip(items, widths):
-            label(d, name, x, 16, MUTED, 15)
-            d.text((x, 36), text, font=condensed(36, 600), fill=INK)
+            label(d, name, x, 14, MUTED, 13)
+            d.text((x, 31), text, font=condensed(28, 600), fill=INK)
             x += w
         # Game-time progress with a tick per model turn.
-        bar_y, bar_x0, bar_x1 = 98, PAD, GAME_W - PAD
-        d.rounded_rectangle([bar_x0, bar_y, bar_x1, bar_y + 6], radius=3, fill=RAISED)
+        bar_y, bar_x0, bar_x1 = 76, PAD, GAME_W - PAD
+        d.rounded_rectangle([bar_x0, bar_y, bar_x1, bar_y + 5], radius=2, fill=RAISED)
         if progress is not None:
-            d.rounded_rectangle([bar_x0, bar_y, bar_x0 + (bar_x1 - bar_x0) * min(1, progress), bar_y + 6], radius=3, fill=ACCENT)
+            d.rounded_rectangle([bar_x0, bar_y, bar_x0 + (bar_x1 - bar_x0) * min(1, progress), bar_y + 5], radius=2, fill=ACCENT)
         for tick in self.turn_ticks:
             tx = bar_x0 + (bar_x1 - bar_x0) * tick
-            d.line([(tx, bar_y - 4), (tx, bar_y + 10)], fill=FAINT, width=1)
+            d.line([(tx, bar_y - 3), (tx, bar_y + 8)], fill=FAINT, width=1)
         # Current action and its outcome.
-        y = 128
-        icon(d, mode, PAD, y + 9, 22)
+        y = 94
+        icon(d, mode, PAD, y + 6, 18)
         name, rest = action
-        f_name = condensed(38, 600)
-        d.text((PAD + 36, y), clean(name), font=f_name, fill=WARN if mode == 'pause' else ACCENT if mode in ('running', 'fast') else INK)
-        nx = PAD + 36 + f_name.getlength(clean(name)) + 16
+        f_name = condensed(28, 600)
+        d.text((PAD + 28, y), clean(name), font=f_name, fill=WARN if mode == 'pause' else ACCENT if mode in ('running', 'fast') else INK)
+        nx = PAD + 28 + f_name.getlength(clean(name)) + 12
         if rest:
-            d.text((nx, y + 8), ellipsize(rest, sans(24), GAME_W - PAD - nx), font=sans(24), fill=INK)
-        for i, line in enumerate(wrap(detail, sans(21), GAME_W - 2 * PAD - 36)[:3] if detail else []):
-            d.text((PAD + 36, y + 56 + i * 28), line, font=sans(21), fill=detail_color)
+            d.text((nx, y + 6), ellipsize(rest, sans(19), GAME_W - PAD - nx), font=sans(19), fill=INK)
+        for i, line in enumerate(wrap(detail, sans(16), GAME_W - 2 * PAD - 28)[:2] if detail else []):
+            d.text((PAD + 28, y + 40 + i * 21), line, font=sans(16), fill=detail_color)
         return im
 
 
@@ -897,14 +899,12 @@ class Renderer:
             return None
         return ('cursor', round(x), round(y), pressed)
 
-    def game(self, index, dim=False, overlay=(), badge=None, badge_color=ACCENT, fast=False):
-        return self.games.get_or((index, dim, overlay, badge, fast),
-                                 lambda: self.draw_game(index, dim, overlay, badge, badge_color, fast))
+    def game(self, index, overlay=(), badge=None, badge_color=ACCENT, fast=False):
+        return self.games.get_or((index, overlay, badge, fast),
+                                 lambda: self.draw_game(index, overlay, badge, badge_color, fast))
 
-    def draw_game(self, index, dim, overlay, badge, badge_color, fast):
+    def draw_game(self, index, overlay, badge, badge_color, fast):
         im = self.game_image(index).copy()
-        if dim:
-            im = ImageEnhance.Brightness(ImageEnhance.Color(im).enhance(0.35)).enhance(0.45)
         d = ImageDraw.Draw(im)
         for item in overlay:
             kind = item[0]
@@ -935,16 +935,19 @@ class Renderer:
                 arrow = [(0, 0), (0, 28), (7, 21), (12, 32), (17, 30), (12, 19), (21, 19)]
                 d.polygon([(x + ax, y + ay) for ax, ay in arrow], fill=ACCENT if pressed else INK, outline=BG, width=2)
         if badge:
-            f = condensed(22, 600)
-            tw = f.getlength(badge)
-            left = 44 if not fast else 50
-            d.rounded_rectangle([16, 16, left + tw + 12, 50], radius=17, fill=BG)
-            if fast:
-                icon(d, 'fast', 26, 25, 18)
-            else:
-                d.ellipse([28, 28, 38, 38], fill=badge_color)
-            d.text((left, 18), badge, font=f, fill=INK)
+            self.draw_badge(d, badge, badge_color, fast)
         return im
+
+    def draw_badge(self, d, badge, color, fast=False):
+        f = condensed(22, 600)
+        tw = f.getlength(badge)
+        left = 44 if not fast else 50
+        d.rounded_rectangle([16, 16, left + tw + 12, 50], radius=17, fill=BG)
+        if fast:
+            icon(d, 'fast', 26, 25, 18)
+        else:
+            d.ellipse([28, 28, 38, 38], fill=color)
+        d.text((left, 18), badge, font=f, fill=INK)
 
     # -- frames
 
@@ -958,7 +961,7 @@ class Renderer:
             index, stats = run.frame_at(at), run.stats_at(at)
 
             def build():
-                return self.compose(self.game(index, dim=True, badge='Paused · context compaction', badge_color=WARN),
+                return self.compose(self.game(index, badge='Paused · context compaction', badge_color=WARN),
                                     self.compaction_panel(clip.data['handoff']),
                                     self.strip(stats, ('Compacting context', ''), 'The agent summarised its own history into a handoff note to stay within its context budget.',
                                                MUTED, self.progress_at(stats), 'pause'))
@@ -974,7 +977,7 @@ class Renderer:
             def build():
                 cut = f'{turn.seconds:.0f} s of thinking (game paused) shown in {clip.duration:.1f} s'
                 names = ', '.join(dict.fromkeys(c.name for c in turn.calls)) or 'no tools'
-                return self.compose(self.game(index, dim=True, badge='Paused · agent thinking', badge_color=WARN),
+                return self.compose(self.game(index, badge='Paused · agent thinking', badge_color=WARN),
                                     self.panel(turn, reveal, turn.end, plan),
                                     self.strip(stats, ('Thinking', f'next: {names}'), cut, MUTED, self.progress_at(stats), 'pause'))
             return ('think', turn.number, reveal), build
@@ -994,8 +997,8 @@ class Renderer:
             action, mode = (running.name, summarize_call(running.name, running.args)), 'fast' if fast else 'running'
             if len(calls) > 1:
                 detail = f'call {calls.index(running) + 1} of {len(calls)}'
-        elif turn and not calls and any(clip.data['segment'][0] <= o <= clip.data['segment'][1] + 500 for o in run.observations):
-            action, mode = ('Game running', f'no tool called: the host lets {run.default_wait:g} game s pass, then observes'), 'fast' if fast else 'running'
+        elif turn and not calls and (host := next((o for o in run.observations if clip.data['segment'][0] <= o[0] <= clip.data['segment'][1] + 500), None)):
+            action, mode = ('Game running', f'no tool called: the host lets {host[1]:g} game s pass, then observes'), 'fast' if fast else 'running'
         elif finished:
             last = finished[-1]
             action = (last.name, summarize_call(last.name, last.args))
@@ -1015,61 +1018,75 @@ class Renderer:
         return key, build
 
 
-    # -- cards
-
-    def card(self, background, title, lines, footer=None):
-        im = self.backdrop(background).copy()
-        d = ImageDraw.Draw(im)
-        x, y, width = 160, 150, W - 320
-        d.text((x, y), clean(title), font=condensed(76, 600), fill=INK)
-        y += 108
-        for text, fnt, color, gap in lines:
-            for line in wrap(text, fnt, width) if text else ['']:
-                if y > H - 140:
-                    break
-                d.text((x, y), line, font=fnt, fill=color)
-                y += int(fnt.size * 1.35)
-            y += gap
-        if footer:
-            d.text((x, H - 110), clean(footer), font=sans(20), fill=MUTED)
-        return im
-
+    # -- result
 
     def outro(self):
+        """The result: the final view (zoomed out on the keep when the host took one) beside the score."""
         if 'outro' not in self.cache:
-            run, meta = self.run, self.run.meta
-            s = dict(run.stats_at(math.inf) or {})
-            s.update({k: v for k, v in (run.final_stats or {}).items() if v is not None})
-            ep = run.episode or {}
-            progress = meta.get('progress') or {}
-            budget = progress.get('budget') or {}
-            rows = []
-            if ep.get('net_worth') is not None:
-                growth = ep.get('net_worth_growth')
-                rows.append(f"Net worth {ep['net_worth']:,}" + (f'  ({growth:+,} from start)' if isinstance(growth, (int, float)) else ''))
-            pieces = [f"Gold {s['gold']:,}" if isinstance(s.get('gold'), int) else None,
-                      f"Population {s.get('population')} / {s.get('housing')}" if s.get('population') is not None else None,
-                      f"Popularity {s.get('popularity')}" if s.get('popularity') is not None else None,
-                      f"Food {s.get('food')}" if s.get('food') is not None else None]
-            rows.append('   ·   '.join(p for p in pieces if p))
-            goods = ep.get('goods') or {}
-            if goods:
-                rows.append('Stored: ' + ', '.join(f'{k.replace("_", " ")} {v}' for k, v in goods.items()))
-            used = budget.get('usedGameSeconds')
-            facts = [f'{game_clock(used)} game time' if used is not None else None,
-                     f"{meta.get('turns') or len(run.turns)} turns",
-                     f"{meta.get('tokens'):,} tokens" if isinstance(meta.get('tokens'), int) else None,
-                     f"{budget['wallUsedSeconds'] / 60:.1f} min real time" if budget.get('wallUsedSeconds') else None,
-                     f"ended: {str(progress.get('stopReason') or meta.get('status', '')).replace('_', ' ')}"]
-            lines = [(f'{self.model}  ·  {self.subtitle}', condensed(36, 600), ACCENT, 26)]
-            lines += [(row, condensed(46, 600), INK, 14) for row in rows if row]
-            lines.append(('   ·   '.join(f for f in facts if f), sans(24), INK2, 0))
-            if run.final_image:
-                background = Frame(0, data=run.final_image).image()
-            else:
-                background = self.game_image(len(run.frames) - 1 if run.frames else None)
-            self.cache['outro'] = self.card(background, 'Result', lines)
+            run = self.run
+            stats = dict(run.stats_at(math.inf) or {})
+            stats.update({k: v for k, v in (run.final_stats or {}).items() if v is not None})
+            image = run.overview_image or run.final_image
+            game = Frame(0, data=image).image() if image else self.game_image(len(run.frames) - 1 if run.frames else None).copy()
+            badge = 'Final view · zoomed out on the keep' if run.overview_image else 'Final view'
+            ended = str((run.meta.get('progress') or {}).get('stopReason') or run.meta.get('status', '')).replace('_', ' ')
+            draw = ImageDraw.Draw(game)
+            self.draw_badge(draw, badge, ACCENT)
+            self.cache['outro'] = self.compose(game, self.result_panel(stats),
+                                               self.strip(stats, ('Result', f'ended: {ended}'), '', MUTED, self.progress_at(stats), 'completed'))
         return self.cache['outro']
+
+    def result_panel(self, s):
+        run, meta = self.run, self.run.meta
+        im = Image.new('RGB', (PANEL_W, H), PANEL)
+        d = ImageDraw.Draw(im)
+        d.line([(0, 0), (0, H)], fill=LINE, width=2)
+        x, width = PAD, PANEL_W - 2 * PAD
+        self.header(d, x, width)
+        label(d, 'Result', x, 98, ACCENT, 16)
+        y = 132
+        ep = run.episode or {}
+        if ep.get('net_worth') is not None:
+            label(d, 'Net worth', x, y, size=14)
+            d.text((x, y + 20), f"{ep['net_worth']:,}", font=condensed(52, 600), fill=INK)
+            growth = ep.get('net_worth_growth')
+            if isinstance(growth, (int, float)):
+                d.text((x, y + 84), f'{growth:+,} from the start', font=sans(15), fill=GOOD if growth >= 0 else BAD)
+            y += 124
+        rows = [('Gold', f"{s['gold']:,}" if isinstance(s.get('gold'), int) else None),
+                ('Population', f"{s.get('population')} / {s.get('housing')}" if s.get('population') is not None else None),
+                ('Popularity', s.get('popularity')), ('Food', s.get('food'))]
+        for name, value in rows:
+            if value is None:
+                continue
+            label(d, name, x, y + 4, size=14)
+            text = str(value)
+            f = condensed(26, 600)
+            d.text((x + width - f.getlength(text), y - 2), text, font=f, fill=INK)
+            y += 36
+        goods = ep.get('goods') or {}
+        if goods:
+            y += 10
+            label(d, 'Stored', x, y, size=14)
+            y += 22
+            for line in wrap(', '.join(f'{k.replace("_", " ")} {v}' for k, v in goods.items()), sans(15), width)[:4]:
+                d.text((x, y), line, font=sans(15), fill=INK2)
+                y += 21
+        progress = meta.get('progress') or {}
+        budget = progress.get('budget') or {}
+        used = budget.get('usedGameSeconds')
+        facts = [f'{game_clock(used)} game time' if used is not None else None,
+                 f"{meta.get('turns') or len(run.turns)} turns",
+                 f"{meta.get('tokens'):,} tokens" if isinstance(meta.get('tokens'), int) else None,
+                 f"{budget['wallUsedSeconds'] / 60:.1f} min real time" if budget.get('wallUsedSeconds') else None]
+        y += 18
+        d.line([(x, y), (x + width, y)], fill=LINE)
+        y += 14
+        for fact in facts:
+            if fact:
+                d.text((x, y), fact, font=sans(15), fill=MUTED)
+                y += 22
+        return im
 
     # -- frames
 
@@ -1091,14 +1108,12 @@ class Renderer:
         d = ImageDraw.Draw(im)
         d.line([(0, 0), (0, H)], fill=LINE, width=2)
         x, width = PAD, PANEL_W - 2 * PAD
-        d.text((x, 20), ellipsize(self.model, condensed(34), width), font=condensed(34), fill=INK)
-        d.text((x, 62), ellipsize(self.subtitle, sans(15), width), font=sans(15), fill=MUTED)
-        d.line([(x, 96), (x + width, 96)], fill=LINE)
-        label(d, 'Handoff note', x, 110, WARN, 17)
-        y = 146
-        for line in wrap(handoff, sans(15), width)[:38]:
-            d.text((x, y), line, font=sans(15), fill=INK2)
-            y += 22
+        self.header(d, x, width)
+        label(d, 'Handoff note', x, 98, WARN, 16)
+        y = 128
+        for line in wrap(handoff, sans(14), width)[:45]:
+            d.text((x, y), line, font=sans(14), fill=INK2)
+            y += 20
         return im
 
 
@@ -1109,7 +1124,8 @@ class Renderer:
 
 def encoder_args(name):
     if name == 'libx264':
-        return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22']
+        # Flat panels and mostly still footage: about half the size of veryfast at CRF 22, same VMAF.
+        return ['-c:v', 'libx264', '-preset', 'slow', '-crf', '28', '-tune', 'animation']
     return ['-c:v', name, '-b:v', '8M']
 
 

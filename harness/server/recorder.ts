@@ -54,7 +54,7 @@ export class FrameStreamParser {
  * input densely. A 1920×1080 capture costs about 74 ms on the laptop (live 2026-09-30).
  */
 export type RecordingOptions = { fps: number; burstFps: number; burstSeconds: number; width: number; quality: number };
-export const defaultRecording: RecordingOptions = { fps: 4, burstFps: 10, burstSeconds: 2.5, width: 1440, quality: 78 };
+export const defaultRecording: RecordingOptions = { fps: 4, burstFps: 10, burstSeconds: 2.5, width: 1600, quality: 78 };
 
 /**
  * Records the game window for a run video while the agent acts, not while it thinks.

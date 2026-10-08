@@ -36,7 +36,12 @@ between September and October 2026.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
-- Run recording and video rendering, with scripted inputs.
+- Run recording and video rendering, with scripted inputs and in a 2-game-minute
+  GLM 5.3 Flash episode on 2026-10-08.
+- On a paused game: minimap clicks and `Z` move and zoom the camera, and the keep
+  hotkey does nothing. The final overview's camera sequence (minimap to the keep's
+  tile, then `Z` until the view stops widening) was run by script on 2026-10-08; it
+  has not yet run at the end of a real run.
 - The current harness and prompt, in two 5-game-minute GLM 5.3 Flash episodes on
   2026-10-08 that completed: the compact observation summary, reading tools at the
   start of a reply running while the game stays paused, the dashboard fetching a

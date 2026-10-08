@@ -126,6 +126,7 @@ logs. **Export logs** and **Download full events** download them.
 | `checkpoint.json` | The conversation (without images), memory and progress, rewritten each turn. For inspection; runs cannot resume from it |
 | `notifications.jsonl` | Every reader event: messages seen on screen, gaps in the reader stream |
 | `controls-guide.html` | The first screenshot annotated with the construction controls |
+| `final-overview.jpg` | The game after the final reading, centred on the keep with minimap clicks and zoomed all the way out with `Z`, still paused. Near a map edge the keep is in view but off centre. Taken only when the final pause was confirmed and the reader reports the camera; changes nothing but the camera |
 | `recording/`, `video.mp4` | Recorded frames and the rendered video (recorded runs only) |
 | `episode.json` | The scorecard (`npm run episodes` only; see [The benchmark](benchmark.md#the-scorecard)) |
 
@@ -147,23 +148,25 @@ game window while the agent acts, and the host renders an edited MP4 when the ru
 ends.
 
 - **Recording.** A separate SSH session captures the game window only, scaled to
-  1440 × 810: 10 frames per second for 2.5 seconds after each input, 4 otherwise.
+  1600 × 900: 10 frames per second for 2.5 seconds after each input, 4 otherwise.
   Recording holds while the game is paused for thinking. It runs independently of the
   agent's own screenshots and clicks, and a recorder failure never stops the run.
-  Expect about 1 GB per 10 game minutes.
-- **The video** (`<run>/video.mp4`, 1920 × 1080, one chapter per turn) plays actions at
-  real speed with a drawn pointer, click rings, building names and key badges;
-  fast-forwards idle stretches; cuts paused frames; and shows each thinking pause as a
-  short card with the model's reasoning. Beside the game it shows the plan and the
-  turn's tool calls; below it, game time and the main stats. It ends with a result
-  card.
+  The frames are JPEGs kept in `<run>/recording/`: a 2-game-minute run recorded at
+  the earlier 1440 × 810 took 370 MB, and 1600 × 900 frames are larger.
+- **The video** (`<run>/video.mp4`, 1920 × 1080 H.264 with no audio track, one chapter
+  per turn) plays actions at real speed with a drawn pointer, click rings, building
+  names and key badges; fast-forwards idle stretches; cuts paused frames; and shows
+  each thinking pause briefly, the paused game beside the model's reasoning as it
+  types out. The game fills 1600 × 900; beside it are the plan and the turn's tool
+  calls, below it game time and the main stats. It ends on the result: the final
+  overview beside the score. A 2-game-minute run renders to about 1:40 and 11 MB.
 
 Re-render or change the edit by hand (needs Pillow and ffmpeg with libx264):
 
 ```bash
 npm run video -- <run folder>                        # writes <run>/video.mp4
 npm run video -- <run> --idle-speed 16 --max-idle 2  # compress idle play harder
-npm run video -- <run> --max-think 0 --outro 0       # no thinking cards, no result card
+npm run video -- <run> --max-think 0 --outro 0       # no thinking pauses, no result
 ```
 
 Other options: `--speed`, `--min-think`, `--think-rate`, `--fps`, `--max-seconds`

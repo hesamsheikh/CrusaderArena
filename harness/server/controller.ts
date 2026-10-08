@@ -37,8 +37,17 @@ import {
   runSystemPrompt,
 } from "./preparation.js";
 import type { GameDevice } from "./device.js";
+import { ackTime, goToTile, sampleAfter, type AnchorContext } from "./anchors.js";
+import { MapView } from "./map-view.js";
+import { cameraKey } from "./construction-ui.js";
+import type { Ack } from "./placement.js";
 import type { Store } from "./store.js";
 import { codeVersion, sha256 } from "./version.js";
+
+/** Most `Z` presses the final overview tries; it stops once the camera stops zooming out. */
+const MAX_ZOOM_OUT_STEPS = 8;
+/** Time for the game to draw the zoomed-out view before the overview capture. */
+const OVERVIEW_SETTLE_MS = 700;
 
 /** Provider failures worth one more request: no content, overload, rate limit or server error. */
 export function isTransientProviderError(message?: string) {
@@ -793,6 +802,53 @@ export class RunController {
     } catch (error) {
       this.progress.finalPause = String(error);
       this.log("error", `Final verification incomplete: ${String(error)}`);
+      return;
     }
+    try {
+      await this.finalOverview(allowed);
+    } catch (error) {
+      this.log("error", `Final overview not captured: ${String(error)}`);
+    }
+  }
+  /**
+   * With the game confirmed paused after the final reading, centre on the keep, zoom all the way
+   * out and save the view as <run>/final-overview.jpg: a picture of what the agent built. Host-only
+   * and best effort; it changes only the camera and never touches the scorecard reading. The keep
+   * hotkey does nothing while paused, but minimap clicks and Z do (live 2026-10-08). Near a map
+   * edge the zoomed-out view cannot centre on the keep, but the keep stays in view.
+   */
+  private async finalOverview(allowed: () => void) {
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    if (!this.device.currentStats().observation?.camera) {
+      this.log("system", "Final overview skipped: the reader has no camera position.");
+      return;
+    }
+    const ctx: AnchorContext = {
+      device: this.device,
+      capture: async () => {
+        allowed();
+        return this.device.capture();
+      },
+      send: async (frame, action) => (await this.device.action(action, frame.id, allowed)) as Ack,
+      hotkey: (name) => this.device.hotkey(name, allowed),
+      pause: (seconds) => wait(seconds * 1000),
+      state: {},
+    };
+    const map = new MapView(await this.device.mapSummary());
+    const keep = map.keep();
+    const centre = keep ? (await goToTile(ctx, keep, map.extent())).status : "no_keep";
+    let steps = 0;
+    for (; steps < MAX_ZOOM_OUT_STEPS; steps++) {
+      const before = cameraKey(this.device.currentStats().observation ?? {});
+      const ack = await ctx.send(await ctx.capture(), { type: "key", key: "Z" });
+      if (!(await sampleAfter(ctx, ackTime(ack), (o) => cameraKey(o) !== before, 0.8))) break;
+    }
+    await wait(OVERVIEW_SETTLE_MS);
+    const frame = await ctx.capture();
+    const camera = this.device.currentStats().observation?.camera ?? null;
+    writeFileSync(path.join(this.memory.directory, "final-overview.jpg"), Buffer.from(frame.image, "base64"), { mode: 0o600 });
+    this.refresh(frame);
+    this.store.event(this.run.id, { type: "final_overview", frame, keep, centre, zoomOutSteps: steps, camera });
+    this.log("system", `Final overview saved (camera to the keep: ${centre.replace("_", " ")}; zoomed out ${steps} step${steps === 1 ? "" : "s"}).`);
   }
 }
