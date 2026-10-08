@@ -57,6 +57,13 @@ between September and October 2026.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.
+- Learning series: the playbook carried from one episode to the next, its tools, and
+  the request after each episode that rewrites it. The episode runner's series
+  bookkeeping has not run live.
+- Recording what OpenRouter bills per request: checked against a recorded-style
+  response stream, not yet against a live one.
+- Host shutdown ending a run with the final pause, and the host staying ready when a
+  run cannot be set up.
 
 ## Not verified or not built
 

@@ -80,7 +80,8 @@ unchanged.
 
 ## Running episodes
 
-`npm run episodes` runs complete episodes without an operator:
+`npm run episodes` runs a learning series of episodes (3 by default) without an
+operator. For each episode it:
 
 1. Starts the game through Steam on the game machine and connects to it.
 2. Waits out the startup screens, opens Load Game, searches for the save by name and
@@ -90,10 +91,12 @@ unchanged.
    `episode.json`, into the run's folder.
 5. Disconnects and closes the game. With `--record`, renders the run video.
 
+A failed episode is recorded and the series goes on with the next.
+
 ```bash
 npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
   --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
-  --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 10 --episodes 3
+  --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 10
 ```
 
 | Flag | Default | Meaning |
@@ -107,7 +110,8 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--wall-limit-minutes` | 60 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
 | `--context-budget` | 120000 | Working context budget in tokens |
-| `--episodes` | 1 | Episodes to run one after another, each with a fresh game launch |
+| `--episodes` | 3 | Episodes in the series, one after another, each with a fresh game launch |
+| `--no-playbook` | off | Run the episodes as independent runs, with no playbook and no series |
 | `--record` | off | Record the run and render a video |
 | `--dry-run` | off | Everything except the agent run; no model cost |
 | `--restart` | off | Close a game that is already running instead of stopping |
@@ -118,6 +122,31 @@ Before starting, the dashboard must be running (`npm run dev`, from a terminal; 
 [Setup](setup.md#known-issues)), not connected and not running a run. It must also
 have been started after the last change to the harness or prompt files; the runner
 checks this.
+
+## Learning series
+
+The episodes of a series play the same save, each from the start. One thing carries
+over: the agent's **playbook**, Markdown notes of up to 8 KB, which measures how much
+the agent learns from playing.
+
+- **Start.** The preparation message says which episode of how many this is and shows
+  the playbook as the previous episode left it (empty in the first).
+- **During play** the agent can read and change the playbook with `playbook_read`,
+  `playbook_write` and `playbook_edit` ([Tools](tools.md#memory)). They cost no game
+  time.
+- **After the episode** the host shows the agent the final reading, net worth
+  included, and its playbook, and asks for the complete next version. The request
+  repeats the last gameplay request plus that message, so it is cached like the
+  compaction request. If the model calls a tool instead, it is asked again as text
+  only. A reply that is empty or over 8 KB leaves the playbook as the agent last wrote
+  it during play.
+- **Score.** The last episode's net worth is the series' score. The report also shows
+  each episode's net worth and the change from episode 1 to the last.
+
+The runner keeps each series in `harness/runtime/series/<id>/`: `series.json` (the
+save, benchmark, model and each episode's run, status and net worth, or its error) and
+`playbook-after-episode-<n>.md`. Each run folder also holds its final `playbook.md`.
+Runs started from the dashboard are never part of a series.
 
 ## The scorecard
 
@@ -137,8 +166,10 @@ Runs started from the dashboard do not write `episode.json`.
 
 ## Comparing runs
 
-`npm run report` prints one Markdown table with a row per run. It only reads files, so
-it is safe to run during a benchmark.
+`npm run report` prints one Markdown table with a row per run and, when the runs
+include learning series, a second table with a row per series: net worth by episode,
+the final episode's net worth (the series' score), the change from episode 1, and the
+series' cost. It only reads files, so it is safe to run during a benchmark.
 
 ```bash
 npm run report                                              # every run under harness/runtime/runs
@@ -153,11 +184,12 @@ Columns, in order: run, start time, model, model settings (reasoning, output lim
 providers), harness version (commit, uncommitted-change hash, and prompt and tool
 hashes), benchmark, map, how it ended, game seconds, wall seconds, turns, tokens
 (total, uncached input, cache reads, cache writes, the share of input read from the
-cache, output, tokens per game minute), population, housing, popularity, net worth,
-growth, gold, food, structures, troops, where the score came from, building
-placements attempted / placed / failed, anchor-tool calls / placed / failed,
-retries, retry methods, retries skipped, peak game memory, tool errors and tool
-usage.
+cache, output, tokens per game minute), cost in US dollars as the provider billed it
+(OpenRouter reports it; other providers leave it blank), population, housing,
+popularity, net worth, growth, gold, food, structures, troops, where the score came
+from, building placements attempted / placed / failed, anchor-tool calls / placed /
+failed, retries, retry methods, retries skipped, peak game memory, tool errors and
+tool usage.
 
 "How it ended" is one of: `game_time` (budget used), `wall_limit`, `turn_limit`,
 `memory_guard`, `error: <last error>`, `stopped`, `interrupted`, `running` or
@@ -173,7 +205,8 @@ reader ticks and `*` marks an unfinished run.
 - **Single reading.** The score is one reader sample after the final pause. Reads are
   checked twice but are not atomic snapshots.
 - **No control of randomness.** Neither the game's nor the model's randomness is
-  fixed. Run several episodes.
+  fixed, so the change across a series mixes learning with chance. Run several
+  series, or compare with a series run with `--no-playbook`.
 - **Harness versions.** Prompt and tool changes affect results. Compare runs with the
   same Harness value in `npm run report`.
 - **The memory guard can end a run early** (see [Status](status.md#known-issues));

@@ -121,5 +121,10 @@ bridge.
 | `notebook_write` | `revision`, `text` (up to 8 KB) | Replaces the notebook. Fails if the revision is not current |
 | `notebook_edit` | `revision`, `before`, `after` | Replaces text that appears exactly once |
 | `notification_history` | `after` (cursor), optional `limit` up to 50 | Pages through every message the reader saw on screen during the run |
+| `playbook_read` | none | Returns the playbook text and its revision. Learning series only |
+| `playbook_write` | `revision`, `text` (up to 8 KB) | Replaces the playbook. Fails if the revision is not current. Learning series only |
+| `playbook_edit` | `revision`, `before`, `after` | Replaces text that appears exactly once. Learning series only |
 
-None of these count as actions or touch the game.
+None of these count as actions or touch the game. The playbook tools exist only in the
+episodes of a learning series, where the playbook carries over to the next episode
+(see [Benchmark](benchmark.md#learning-series)).

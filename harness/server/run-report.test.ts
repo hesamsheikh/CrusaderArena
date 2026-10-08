@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { buildReport, renderJson, renderMarkdown, scanEvents } from "./run-report.js";
+import { buildReport, renderJson, renderMarkdown, scanEvents, seriesRows } from "./run-report.js";
 
 const START = Date.parse("2026-09-29T12:00:00Z");
 
@@ -62,6 +62,9 @@ function completeRun(dir: string) {
       event({ type: "message_end", message: { role: "assistant", usage: usage(1000, 40, 0, 400) } }),
       event({ type: "message_end", message: { role: "assistant", usage: usage(500, 20, 1500) } }),
       event({ type: "compaction_usage", usage: usage(600, 0, 0) }),
+      // What OpenRouter billed; run.json has no total, so the report adds these up.
+      event({ type: "request_cost", kind: "gameplay", dollars: 0.0125 }),
+      event({ type: "request_cost", kind: "compaction", dollars: 0.0105 }),
       event({ type: "memory_sample", gameRssMiB: 2000 }),
       event({ type: "turn_start" }),
       toolStart("c1", "build_structure", { placements: [{ name: "Hovel", x: 1, y: 1 }, { name: "Farm", x: 2, y: 2 }, { name: "Well", x: 3, y: 3 }] }),
@@ -142,7 +145,8 @@ test("a complete run reports budget, tokens, scorecard, build results and retrie
   assert.equal(row.turns, 3);
   // In + cache reads + cache writes + output add up to the run total; 1500 of 4100 input tokens came from the cache.
   assert.deepEqual(row.tokens, { total: 4170, input: 2200, output: 70, cacheRead: 1500, cacheWrite: 400, cachedShare: 1500 / 4100 });
-  assert.match(renderMarkdown([row]), /\| 2\.2k \| 1\.5k \| 400 \| 37% \| 70 \|/);
+  assert.match(renderMarkdown([row]), /\| 2\.2k \| 1\.5k \| 400 \| 37% \| 70 \| \$0\.023 \|/);
+  assert.ok(Math.abs(row.cost! - 0.023) < 1e-12);
   assert.ok(Math.abs(row.tokensPerGameMinute! - 4170 / (600.4 / 60)) < 1e-9);
   assert.deepEqual(row.scorecard, {
     source: "final", population: 37, housing: 74, popularity: 100, gold: 970,
@@ -262,4 +266,28 @@ test("scanEvents ignores a missing file and a run with no usage", async () => {
   assert.equal(summary?.usage, undefined);
   assert.equal(summary?.turnStarts, 1);
   assert.equal(summary?.complete, true);
+});
+
+test("a learning series is scored by its last episode, with the change from the first", async () => {
+  const dir = root();
+  const series = (episode: number) => ({ id: "20261008-series1", episode, episodes: 3 });
+  // Episode 2 failed before any reading; the series still has a final score.
+  for (const [episode, worth, cost] of [[1, 1300, 0.4], [2, null, 0.1], [3, 1650, 0.5]] as const)
+    writeRun(dir, `Model-A-Oasis-20261008-12000${episode}Z-2026-10-08T12-00-0${episode}-000Z-s000000${episode}`, {
+      "run.json": {
+        id: `s000000${episode}-1111-2222-3333-444444444444`, model: { name: "Model A", modelId: "vendor/model-a" },
+        benchmarkType: "Oasis construction", startedAt: START + episode * 1000, status: "completed", turns: 3, tokens: 100,
+        cost, series: series(episode),
+      },
+      ...(worth === null ? {} : { "episode.json": { episode, series: series(episode), source: "final", map: "Oasis", gold: worth, population: 10, net_worth: worth } }),
+    });
+  completeRun(dir);
+  const rows = await buildReport(dir);
+  const [row] = seriesRows(rows);
+  assert.equal(seriesRows(rows).length, 1);
+  assert.deepEqual(row.netWorth, [1300, null, 1650]);
+  assert.equal(row.final, 1650);
+  assert.equal(row.change, 350);
+  assert.ok(Math.abs(row.cost! - 1.0) < 1e-12);
+  assert.match(renderMarkdown(rows), /\| 20261008-series1 \| Model A \| Oasis construction \| 1300 → – → 1650 \| 1650 \| \+350 \| \$1\.00 \|/);
 });

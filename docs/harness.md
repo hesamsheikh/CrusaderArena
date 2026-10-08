@@ -118,11 +118,11 @@ logs. **Export logs** and **Download full events** download them.
 
 | File | Contents |
 | --- | --- |
-| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, and progress: budget used, which limit ended the run, plan, notebook, compactions, timings, memory, recording summary. Also the harness version (see below) |
+| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, cost (when the provider reports it), the learning series and episode (if any), and progress: budget used, which limit ended the run, plan, notebook, playbook, compactions, timings, memory, recording summary. Also the harness version (see below) |
 | `inputs.json` | Exactly what the agent was given: system prompt, benchmark rules, controls, settings, model |
 | `logs.jsonl` | Readable log of messages, actions and errors, written live |
 | `events.jsonl` | Every model stream event and tool result, including screenshots and the full reader sample behind each observation, plus host events. Can reach hundreds of MB |
-| `memory.json`, `notebook.md` | The agent's plan, notebook and compaction handoffs |
+| `memory.json`, `notebook.md`, `playbook.md` | The agent's plan, notebook, playbook (learning series only) and compaction handoffs |
 | `checkpoint.json` | The conversation (without images), memory and progress, rewritten each turn. For inspection; runs cannot resume from it |
 | `notifications.jsonl` | Every reader event: messages seen on screen, gaps in the reader stream |
 | `controls-guide.html` | The first screenshot annotated with the construction controls |

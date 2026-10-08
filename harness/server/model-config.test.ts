@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import type { AssistantMessage, Context, Message } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { modelConfig, requestOptions } from "./model.js";
+import { modelConfig, prepareModel, requestOptions } from "./model.js";
 import { placeCacheBreakpoints, pruneImages } from "./context.js";
 import type { ModelProfile } from "../shared/protocol.js";
 
@@ -129,4 +129,49 @@ test("other models get no cache markers", async () => {
     const body = await payload(profile, { systemPrompt: "Rules.", messages: [...guide, ...turn(1)], tools });
     assert.ok(!JSON.stringify(body).includes("cache_control"));
   }
+});
+
+/** A preparation request against a fake provider stream; returns the request body, the reply and the costs read. */
+async function prepareAgainst(profile: ModelProfile, usage: Record<string, unknown>) {
+  const chunks = [
+    { id: "gen-1", choices: [{ index: 0, delta: { content: "Ready.\nBEGIN" }, finish_reason: null }] },
+    { id: "gen-1", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+    { id: "gen-1", choices: [], usage },
+  ];
+  const stream = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+  let sent: Record<string, unknown> | undefined;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  const costs: number[] = [];
+  try {
+    const reply = await prepareModel(
+      profile, "test", "Rules.", { role: "user", content: "Prepare.", timestamp: 0 },
+      AbortSignal.timeout(5000), (dollars) => costs.push(dollars),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return { sent, reply, costs };
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+test("OpenRouter is asked for the billed amount, which is read from a copy of the stream", async () => {
+  const { sent, reply, costs } = await prepareAgainst(openRouter, {
+    prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.00123, prompt_tokens_details: { cached_tokens: 40 },
+  });
+  assert.deepEqual(sent?.usage, { include: true });
+  assert.deepEqual(costs, [0.00123]);
+  // Pi still reads the whole reply and its usage.
+  assert.deepEqual(reply.content.filter((part) => part.type === "text").map((part) => part.text), ["Ready.\nBEGIN"]);
+  assert.equal(reply.usage.cacheRead, 40);
+});
+
+test("other providers are not sent OpenRouter's usage option, and report no cost", async () => {
+  const kimi = { ...openRouter, modelId: "kimi-k3", baseUrl: "https://api.moonshot.ai/v1" };
+  const { sent, costs } = await prepareAgainst(kimi, { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 });
+  assert.equal(sent?.usage, undefined);
+  assert.deepEqual(costs, []);
 });

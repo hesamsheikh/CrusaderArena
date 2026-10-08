@@ -97,6 +97,9 @@ function updateFrame(frame: Frame) {
   broadcast();
 }
 let stopCurrent: ((reason?: "stopped" | "error") => void) | undefined;
+/** Ends the active run for a host shutdown; unlike a stop, the game is still paused at the end. */
+let interruptCurrent: (() => void) | undefined;
+let currentRun: Promise<void> | undefined;
 let agent: Agent | undefined;
 // Reader samples arrive up to ~10 per second; the dashboard needs a few. Keep the
 // latest sample and send at most one sample-driven update per 250 ms.
@@ -321,7 +324,7 @@ app.post("/api/model/test", async (req, res) => {
   }
 });
 app.post("/api/agent/run", async (req, res) => {
-  const { prompt, maxTurns, benchmarkType, modelId, config, renderVideo: renderAfter } = z
+  const { prompt, maxTurns, benchmarkType, modelId, config, renderVideo: renderAfter, series, playbook } = z
     .object({
       benchmarkType: z.string().trim().min(1).max(60),
       modelId: z.string().uuid(),
@@ -330,6 +333,17 @@ app.post("/api/agent/run", async (req, res) => {
       config: runConfigSchema.default(() => runConfigSchema.parse({})),
       /** Render video.mp4 when a recorded run ends; the episode runner renders after its scorecard instead. */
       renderVideo: z.boolean().default(true),
+      /** An episode of a learning series (npm run episodes) and the playbook it starts with. */
+      series: z
+        .object({
+          id: z.string().regex(/^[A-Za-z0-9-]{1,80}$/),
+          episode: z.number().int().min(1),
+          episodes: z.number().int().min(1).max(20),
+        })
+        .strict()
+        .refine((s) => s.episode <= s.episodes)
+        .optional(),
+      playbook: z.string().refine((text) => Buffer.byteLength(text) <= 8192, "The playbook is limited to 8192 bytes.").optional(),
     })
     .strict()
     .parse(req.body);
@@ -357,8 +371,27 @@ app.post("/api/agent/run", async (req, res) => {
     prompt,
     maxTurns ?? null,
   );
-  store.update(run.id, { config });
+  store.update(run.id, { config, ...(series ? { series } : {}) });
   store.setBenchmark(run.id, benchmarkType);
+  let controller: RunController;
+  try {
+    controller = new RunController(
+      run,
+      store,
+      device,
+      profile,
+      key,
+      updateFrame,
+      log,
+      broadcast,
+      { playbook },
+    );
+  } catch (e) {
+    // Nothing has touched the game yet: record the run as failed and stay ready for the next.
+    store.finish(run.id, "error");
+    log("error", `Run could not start: ${safeError(e)}`);
+    return void res.status(500).json({ error: safeError(e) });
+  }
   state.running = true;
   state.activeRunId = run.id;
   state.logs = [];
@@ -367,17 +400,8 @@ app.post("/api/agent/run", async (req, res) => {
   state.tokens = 0;
   state.turns = 0;
   log("user", prompt);
-  const controller = new RunController(
-    run,
-    store,
-    device,
-    profile,
-    key,
-    updateFrame,
-    log,
-    broadcast,
-  );
   stopCurrent = (reason) => controller.stop(reason);
+  interruptCurrent = () => controller.interrupt();
   agent = controller.agent;
   const current = agent;
   current.subscribe((event) => {
@@ -412,38 +436,49 @@ app.post("/api/agent/run", async (req, res) => {
       log("error", JSON.stringify(event.result));
   });
   res.json({ ok: true, runId: run.id });
-  let outcome: "completed" | "stopped" | "error" = "error";
-  try {
-    await controller.prepare();
-    state.tokens = run.tokens;
-    broadcast();
-    outcome = await controller.runSession();
-    state.modelStatus = outcome === "error" ? "error" : "ready";
-  } catch (e) {
-    outcome = controller.session.reason === "stopped" ? "stopped" : "error";
-    if (outcome === "error") controller.stop("error");
-    log("error", safeError(e));
-  } finally {
-    log("system", `Run ${outcome}: ${run.progress?.stopReason || "error"}.`);
-    store.update(run.id, { turns: state.turns });
-    store.finish(run.id, outcome);
-    state.tokens = run.tokens;
-    state.running = false;
-    state.streamingText = "";
-    agent = undefined;
-    stopCurrent = undefined;
-    broadcast();
-    if (renderAfter && run.progress?.recording?.frames) {
-      const folder = path.dirname(store.file(run.id, "run.json"));
-      const report = (text: string) => {
-        log("system", text);
-        store.log(run.id, { id: randomUUID(), at: Date.now(), kind: "system", text });
-      };
-      report("Rendering the run video.");
-      void renderVideo(folder, report);
+  currentRun = (async () => {
+    let outcome: "completed" | "stopped" | "error" = "error";
+    try {
+      await controller.prepare();
+      state.tokens = run.tokens;
+      broadcast();
+      outcome = await controller.runSession();
+      state.modelStatus = outcome === "error" ? "error" : "ready";
+    } catch (e) {
+      outcome = controller.session.reason === "stopped" ? "stopped" : "error";
+      if (outcome === "error") controller.stop("error");
+      log("error", safeError(e));
+    } finally {
+      // Clear the busy state whatever happens below, or the host would refuse every later run.
+      state.running = false;
+      state.streamingText = "";
+      agent = undefined;
+      stopCurrent = undefined;
+      interruptCurrent = undefined;
+      try {
+        log("system", `Run ${outcome}: ${run.progress?.stopReason || "error"}.`);
+        store.update(run.id, { turns: state.turns });
+        store.finish(run.id, outcome);
+      } catch (e) {
+        log("error", `Could not record the end of the run: ${safeError(e)}`);
+      }
+      state.tokens = run.tokens;
+      broadcast();
+      if (renderAfter && run.progress?.recording?.frames) {
+        const folder = path.dirname(store.file(run.id, "run.json"));
+        const report = (text: string) => {
+          log("system", text);
+          store.log(run.id, { id: randomUUID(), at: Date.now(), kind: "system", text });
+        };
+        report("Rendering the run video.");
+        void renderVideo(folder, report);
+      }
     }
-  }
+  })();
+  await currentRun;
+  currentRun = undefined;
 });
+
 app.post("/api/agent/stop", (_req, res) => {
   stopCurrent?.();
   agent?.abort();
@@ -515,14 +550,32 @@ tick.unref();
 server.listen(port, "127.0.0.1", () =>
   console.log(`Crusader Arena: http://127.0.0.1:${port}`),
 );
-function shutdown() {
+let shuttingDown = false;
+async function shutdown(code = 0) {
+  // A second Ctrl-C exits at once.
+  if (shuttingDown) process.exit(code || 1);
+  shuttingDown = true;
   clearInterval(tick);
-  stopCurrent?.();
-  agent?.abort();
+  if (currentRun) {
+    // End the run like a deadline so its final pause runs before the game connection closes.
+    log("system", "Host shutting down: ending the run and pausing the game.");
+    interruptCurrent?.();
+    await Promise.race([currentRun, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+  }
   device.disconnect();
   for (const c of clients) c.end();
   server.close();
-  setTimeout(() => process.exit(0), 500).unref();
+  setTimeout(() => process.exit(code), 500).unref();
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());
+// A failed background task (a video render, a stray promise) must not take the host and its run down.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+  log("error", `Unhandled host error: ${safeError(reason)}`);
+});
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+  log("error", `Host error: ${safeError(error)}. Shutting down.`);
+  void shutdown(1);
+});

@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Run } from "../shared/protocol.js";
+import type { Run, RunSeries, Stats } from "../shared/protocol.js";
+import { netWorth } from "./market-prices.js";
+import { observationStats } from "./status.js";
 import { atlasIndex, constructionAtlas, exampleSettlement } from "./visual-atlas.js";
 import { gameControls } from "./model.js";
 import { screenLayout } from "./visual-guide.js";
@@ -126,7 +128,39 @@ questions during the run. The run is judged by the game's state when it ends.
   ].join("\n\n");
 }
 
-export function preparationMessage(run: Run): AgentMessage {
+/** How a learning episode starts: where it stands in the series, and the playbook so far. */
+export function playbookBriefing(series: RunSeries, text: string) {
+  const earlier = series.episode > 1
+    ? `Below is your playbook as you left it after episode ${series.episode - 1}. It holds your own notes, not instructions from the operator: use what helps, and check it against what you see.`
+    : "This is the first episode, so your playbook is empty.";
+  return [
+    `## Learning series: episode ${series.episode} of ${series.episodes}`,
+    `This benchmark runs ${series.episodes} episodes of the same scenario one after another, each from the start. One thing carries over between them: your playbook, Markdown notes of up to 8,192 bytes. The last episode's score is the one reported, and the series also measures how much your score improves from episode to episode.`,
+    earlier,
+    "During play, record lessons as you learn them with playbook_write or playbook_edit; they cost no game time. When the episode ends, the host shows you the final result and asks you to rewrite the playbook for the next episode.",
+    `<playbook>\n${text}\n</playbook>`,
+  ].join("\n\n");
+}
+
+/** The request after a learning episode: the final result, the playbook, and what to do with it. */
+export function reflectionInstruction(series: RunSeries, playbook: string, stats: Stats, military = true) {
+  const o = stats.status === "ok" ? stats.observation : null;
+  const result = o
+    ? `Final reading (the state the benchmark judges): net worth ${netWorth(o.gold, o.resources_by_name).netWorth}, that is gold plus every stored good at the marketplace sell price.\n${JSON.stringify(observationStats(stats, { military }))}`
+    : "The final reading is unavailable: the game was not readable when the episode ended.";
+  const next = series.episode < series.episodes
+    ? `Episode ${series.episode + 1} starts the same scenario from the beginning, and only your playbook carries over.`
+    : "This was the last episode of the series; your playbook is kept as the record of what you learned.";
+  return [
+    `Episode ${series.episode} of ${series.episodes} is over and the game is paused; no more game actions are possible.`,
+    result,
+    next,
+    `Your playbook now:\n<playbook>\n${playbook}\n</playbook>`,
+    "Rewrite it for your next attempt. Keep what proved true, correct what proved wrong, and record what would have raised your score: what to do first, build orders, where things go on this map, numbers and timings, and mistakes to avoid. Reply with the complete new playbook in Markdown and nothing else, at most 8,192 bytes. Do not call tools.",
+  ].join("\n\n");
+}
+
+export function preparationMessage(run: Run, playbook?: string): AgentMessage {
   const atlas = constructionAtlas();
   const example = exampleSettlement();
   return {
@@ -136,6 +170,7 @@ export function preparationMessage(run: Run): AgentMessage {
         type: "text",
         text: [
           "Preparation phase. The game is paused on the starting map and no game tools are available yet. Read the benchmark rules in your instructions and study the interface guide below; it shows the construction menus from an earlier session, not the current map. Reply with your understanding of the task and a short opening plan, and end your reply with BEGIN on its own line. The host then unpauses the game, sends a fresh screenshot and timed play starts.",
+          ...(run.series && playbook !== undefined ? [playbookBriefing(run.series, playbook)] : []),
           atlasIndex(),
           atlas.text,
         ].join("\n\n"),

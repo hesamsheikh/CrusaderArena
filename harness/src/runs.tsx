@@ -483,6 +483,20 @@ export function RunDetail({
               )}
             </Card>
           )}
+          {p?.playbook && (
+            <Card
+              title="Playbook"
+              aside={
+                <span className="muted">Revision {p.playbook.revision}</span>
+              }
+            >
+              {p.playbook.text ? (
+                <pre className="notebook">{p.playbook.text}</pre>
+              ) : (
+                <p className="empty">Empty: the first episode of its series.</p>
+              )}
+            </Card>
+          )}
           {run.config && (
             <Card title="Configuration">
               <dl className="facts">
@@ -524,6 +538,14 @@ export function RunDetail({
                   <dt>Model settings</dt>
                   <dd>{settingsLabel(run.model) ?? "Not recorded"}</dd>
                 </div>
+                {run.series && (
+                  <div>
+                    <dt>Learning series</dt>
+                    <dd>
+                      Episode {run.series.episode} of {run.series.episodes} ({run.series.id})
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt>Harness</dt>
                   <dd className="mono">

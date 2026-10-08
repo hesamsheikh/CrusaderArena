@@ -5,7 +5,12 @@
  *
  *   npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
  *     --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
- *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 10 --episodes 3
+ *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 10
+ *
+ * The episodes (3 by default) form a learning series: each starts from the playbook the agent
+ * left at the end of the one before, and the last episode's score is the series' score.
+ * --no-playbook runs them as independent runs instead. A failed episode is recorded and the
+ * series goes on.
  *
  * --dry-run does everything except the agent run (no model cost); --keep-game leaves
  * the game running (paused) afterwards for manual inspection; --record records the game
@@ -13,13 +18,14 @@
  */
 import "dotenv/config";
 import { spawn } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
 import { renderVideo, type VideoResult } from "./video.js";
-import type { Frame, GameAction, Run, State } from "../shared/protocol.js";
+import type { Frame, GameAction, Run, RunSeries, State } from "../shared/protocol.js";
 
 const { values: opts } = parseArgs({
   options: {
@@ -33,7 +39,8 @@ const { values: opts } = parseArgs({
     "wall-limit-minutes": { type: "string", default: "60" },
     "default-wait": { type: "string", default: "5" },
     "context-budget": { type: "string", default: "120000" },
-    episodes: { type: "string", default: "1" },
+    episodes: { type: "string", default: "3" },
+    "no-playbook": { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
     restart: { type: "boolean", default: false },
     "keep-game": { type: "boolean", default: false },
@@ -276,7 +283,14 @@ async function checkDashboardFresh() {
   if (newer.length) throw new Error(`The dashboard started before these files changed; restart it (npm run dev): ${newer.join(", ")}`);
 }
 
-async function episode(n: number, total: number, modelId: string | undefined, prompt: string) {
+async function episode(
+  n: number,
+  total: number,
+  modelId: string | undefined,
+  prompt: string,
+  series?: RunSeries,
+  playbook?: string,
+) {
   if (!opts["dry-run"]) await checkDashboardFresh();
   log(`Episode ${n}/${total}: starting the game`);
   const before = await gameSession("status");
@@ -319,6 +333,7 @@ async function episode(n: number, total: number, modelId: string | undefined, pr
         },
         // Rendered below, after the scorecard, so the video's result card can show it.
         renderVideo: false,
+        ...(series ? { series, playbook: playbook ?? "" } : {}),
       });
       log(`Agent run ${runId} started`);
       await sleep(3000);
@@ -344,12 +359,12 @@ async function episode(n: number, total: number, modelId: string | undefined, pr
       : path.join("harness/runtime/episodes");
     mkdirSync(dir, { recursive: true });
     const file = path.join(dir, run ? "episode.json" : `dry-run-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-    writeFileSync(file, JSON.stringify({ episode: n, save: opts.save, benchmark: opts.benchmark, ...card }, null, 2));
+    writeFileSync(file, JSON.stringify({ episode: n, save: opts.save, benchmark: opts.benchmark, ...(series ? { series } : {}), ...card }, null, 2));
     log(`Scorecard: ${file}`);
     // Renders run one at a time on this Mac, in the background of the next episode.
     if (run?.config?.recordVideo && run.progress?.recording?.frames)
       renders.push(renderVideo(dir, (text) => log(`Episode ${n}: ${text}`)));
-    return card;
+    return { card, run };
   } finally {
     await api("disconnect", {}).catch(() => {});
     if (opts["keep-game"]) log("Game left running (--keep-game); close it after inspection.");
@@ -376,10 +391,40 @@ async function main() {
     if (!prompt) throw new Error("--prompt or --prompt-file is required for an agent run.");
   }
   const total = Number(opts.episodes);
-  for (let n = 1; n <= total; n++) {
-    const card = await episode(n, total, modelId, prompt);
-    console.log(JSON.stringify(card));
+  if (!Number.isInteger(total) || total < 1 || total > 20) throw new Error("--episodes must be 1 to 20.");
+  const learning = !opts["dry-run"] && !opts["no-playbook"];
+  const id = `${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "")}-${randomUUID().slice(0, 8)}`;
+  const seriesDir = path.join("harness/runtime/series", id);
+  const results: Record<string, unknown>[] = [];
+  let playbook = "";
+  if (learning) {
+    mkdirSync(seriesDir, { recursive: true });
+    log(`Learning series ${id}: ${total} episode(s); the playbook carries over between them`);
   }
+  for (let n = 1; n <= total; n++) {
+    const series = learning ? { id, episode: n, episodes: total } : undefined;
+    try {
+      const { card, run } = await episode(n, total, modelId, prompt, series, playbook);
+      console.log(JSON.stringify(card));
+      // What the agent left in its playbook (after its reflection) starts the next episode.
+      const file = run ? path.join("harness/runtime/runs", run.folder, "playbook.md") : "";
+      if (learning && file && existsSync(file)) playbook = readFileSync(file, "utf8");
+      results.push({ episode: n, run: run?.id, folder: run?.folder, status: run?.status, net_worth: card.net_worth, net_worth_growth: card.net_worth_growth });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`Episode ${n} failed: ${message}`);
+      results.push({ episode: n, error: message });
+    }
+    if (learning) {
+      writeFileSync(path.join(seriesDir, `playbook-after-episode-${n}.md`), playbook);
+      writeFileSync(path.join(seriesDir, "series.json"), JSON.stringify({
+        id, save: opts.save, map: opts.map, benchmark: opts.benchmark, model: opts.model, episodes: total, results,
+      }, null, 2));
+    }
+  }
+  const worth = results.map((r) => (typeof r.net_worth === "number" ? String(r.net_worth) : "failed"));
+  log(`Net worth by episode: ${worth.join(" → ")}`);
+  if (results.every((r) => r.error)) process.exitCode = 1;
   if (renders.length) {
     log(`Waiting for ${renders.length} video render(s)`);
     await Promise.all(renders);

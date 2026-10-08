@@ -55,7 +55,7 @@ See [Context](context.md) for the full layout and how old images are dropped.
 | Run the economy | `status`, `get_inventory`, `inspect_building`, `set_tax`, `market_trade` | Reading the settlement, taxes and trade |
 | Look things up | `building_info`, `list_buildings`, `guide_page` | Building costs, roles and menu positions from the game reference |
 | Raw input | `game_action` | Any single click, drag, scroll or key |
-| Memory | `update_plan`, `notebook_read`, `notebook_write`, `notebook_edit`, `notification_history` | Plans, notes and past game messages |
+| Memory | `update_plan`, `notebook_read`, `notebook_write`, `notebook_edit`, `notification_history`; in a learning series also `playbook_read`, `playbook_write`, `playbook_edit` | Plans, notes, past game messages and lessons for later episodes |
 
 The higher-level tools exist because raw clicking is slow and error-prone for a model.
 For example, `build_structure` opens the right menu, selects the building, clicks the
@@ -92,6 +92,11 @@ agent has memory it controls:
   notes it has not read.
 - **Notification history** (`notification_history`): every message the reader saw on
   screen during the run, up to 50 per call.
+- **Playbook** (`playbook_read`, `playbook_write`, `playbook_edit`), in the episodes of
+  a learning series only: notes up to 8 KB that, unlike everything else, carry over to
+  the next episode. After each episode the host shows the agent its final result and
+  asks for the playbook's next version (see
+  [Benchmark](benchmark.md#learning-series)).
 
 The plan and notebook survive context compaction. The model sees them when it reads
 or changes them and in the summary after a compaction; they are not repeated every
@@ -112,6 +117,12 @@ turn. The dashboard shows both to the operator live.
 - **Stuck loops.** Four replies in a row with no tool calls, or twelve in a row that
   only read (no action, wait or screenshot), end the run with an error. Reading costs
   no game time, so without this a model could stall the budget forever.
+- **Host shutdown.** Stopping the host (Ctrl-C or a terminate signal) ends a run as
+  `stopped` but, unlike the dashboard's Stop, still pauses the game and takes the final
+  reading, waiting up to 10 seconds; a second Ctrl-C exits at once. An unexpected host
+  error ends the run the same way. A failed background task is only logged.
+- **Run setup.** If a run cannot be set up, it is recorded as `error` and the host
+  stays ready for the next one.
 
 ## Models
 

@@ -286,7 +286,7 @@ export class Store {
   }
   update(
     id: string,
-    patch: Partial<Pick<Run, "turns" | "tokens" | "config" | "progress" | "harness">>,
+    patch: Partial<Pick<Run, "turns" | "tokens" | "cost" | "series" | "config" | "progress" | "harness">>,
   ) {
     Object.assign(this.get(id), patch);
     this.atomic(this.file(id, "run.json"), this.get(id));

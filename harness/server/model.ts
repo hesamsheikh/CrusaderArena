@@ -45,6 +45,7 @@ const READING_TOOLS = new Set([
   "status", "get_inventory", "find_sites", "map_overview", "flat_view",
   "building_info", "list_buildings", "guide_page",
   "update_plan", "notebook_read", "notebook_write", "notebook_edit", "notification_history",
+  "playbook_read", "playbook_write", "playbook_edit",
 ]);
 import { buildingInfo, listBuildings } from "./building-info.js";
 import { InventoryTracker } from "./inventory.js";
@@ -85,11 +86,13 @@ export interface AgentRuntime {
   pausedMilliseconds?: () => number;
   /** Messages that open every request unchanged (the preparation guide). */
   pinned?: () => ReadonlySet<AgentMessage>;
+  /** What the provider billed for one request, when it reports it. */
+  cost?: (kind: "gameplay" | "compaction" | "reflection", dollars: number) => void;
   requestStarted?: () => void;
   timing: (
     milliseconds: number,
     outcome: string,
-    kind: "gameplay" | "compaction",
+    kind: "gameplay" | "compaction" | "reflection",
   ) => void;
 }
 
@@ -146,14 +149,19 @@ export function modelConfig(
 /** Claude through OpenRouter caches only what the request marks with `cache_control`. */
 const anthropicCaching = (profile?: ModelProfile) =>
   Boolean(profile && isOpenRouter(profile.baseUrl) && profile.modelId.startsWith("anthropic/"));
-/** Moves Claude's cache markers to where the next request repeats the conversation (see placeCacheBreakpoints). */
-function cacheBreakpoints(
+/**
+ * Adjusts each request body before it is sent: OpenRouter is asked to report the billed amount,
+ * and Claude's cache markers move to where the next request repeats the conversation (see
+ * placeCacheBreakpoints).
+ */
+function payloadHook(
   profile: ModelProfile,
   messages: readonly unknown[],
   runtime: AgentRuntime | undefined,
   onPayload?: (params: unknown, model: Model<any>) => unknown,
 ) {
   return async (params: unknown, model: Model<any>) => {
+    if (isOpenRouter(profile.baseUrl)) (params as { usage?: unknown }).usage = { include: true };
     if (anthropicCaching(profile)) {
       const pinned = runtime?.pinned?.() ?? new Set();
       let count = 0;
@@ -162,6 +170,42 @@ function cacheBreakpoints(
     }
     return onPayload?.(params, model);
   };
+}
+/**
+ * OpenRouter reports what it billed for a request in the stream's last usage chunk, which Pi
+ * does not keep. This fetch hands Pi the response unchanged and reads the amount from a copy.
+ */
+export function costReader(onCost: (dollars: number) => void, inner: typeof fetch = fetch): typeof fetch {
+  return async (input, init) => {
+    const response = await inner(input, init);
+    if (!response.ok || !response.body) return response;
+    const [copy, body] = response.body.tee();
+    void readCost(copy, onCost);
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+}
+async function readCost(stream: ReadableStream<Uint8Array>, onCost: (dollars: number) => void) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:") || !line.includes('"cost"')) continue;
+        try {
+          const cost = JSON.parse(line.slice(5)).usage?.cost;
+          if (typeof cost === "number") onCost(cost);
+        } catch {}
+      }
+    }
+  } catch {
+    // An aborted or failed request has no cost to read.
+  }
 }
 /** Request options from the profile's settings: its reasoning level and output limit. */
 export const requestOptions = (profile: ModelProfile) => {
@@ -1104,6 +1148,49 @@ export function makeAgent(
           return reply(value);
         },
       }),
+      ...(runtime.memory.playbook
+        ? [
+            defineTool({
+              name: "playbook_read",
+              label: "Read playbook",
+              description:
+                "Read your playbook and its current revision: your own lessons for later episodes of this benchmark, the only thing that carries over to them.",
+              parameters: Type.Object({}),
+              execute: async () => reply(runtime.memory.playbook),
+            }),
+            defineTool({
+              name: "playbook_write",
+              label: "Write playbook",
+              description:
+                "Replace your playbook (Markdown, 8192 bytes) with lessons your next episode should use: what worked, what failed, build orders, places and numbers on this map. Supply its current revision. Costs no game time.",
+              parameters: Type.Object({
+                revision: Type.Integer({ minimum: 0 }),
+                text: Type.String({ maxLength: 8192 }),
+              }),
+              execute: async (_id, args) => {
+                const value = runtime.memory.writePlaybook(args.revision, args.text);
+                runtime.changed();
+                return reply(value);
+              },
+            }),
+            defineTool({
+              name: "playbook_edit",
+              label: "Edit playbook",
+              description:
+                "Replace exactly one matching passage in your playbook, guarded by its current revision. Costs no game time.",
+              parameters: Type.Object({
+                revision: Type.Integer({ minimum: 0 }),
+                before: Type.String({ minLength: 1, maxLength: 8192 }),
+                after: Type.String({ maxLength: 8192 }),
+              }),
+              execute: async (_id, args) => {
+                const value = runtime.memory.editPlaybook(args.revision, args.before, args.after);
+                runtime.changed();
+                return reply(value);
+              },
+            }),
+          ]
+        : []),
       defineTool({
         name: "notification_history",
         label: "Read notification history",
@@ -1162,7 +1249,8 @@ export function makeAgent(
       runtime?.requestStarted?.();
       const stream = models.streamSimple(m, c, {
         ...o,
-        onPayload: cacheBreakpoints(profile, c.messages, runtime, o?.onPayload),
+        onPayload: payloadHook(profile, c.messages, runtime, o?.onPayload),
+        fetch: costReader((dollars) => runtime?.cost?.("gameplay", dollars)),
         ...requestOptions(profile),
         maxRetries: 0,
         timeoutMs: runtime
@@ -1221,12 +1309,15 @@ export async function prepareModel(
   systemPrompt: string,
   message: import("@earendil-works/pi-ai").UserMessage,
   signal: AbortSignal,
+  onCost?: (dollars: number) => void,
 ): Promise<AssistantMessage> {
   const result = await registry(profile).completeSimple(
     modelConfig(profile),
     { systemPrompt, messages: [message] },
     {
       apiKey,
+      onPayload: payloadHook(profile, [message], undefined),
+      fetch: costReader((dollars) => onCost?.(dollars)),
       // The same output limit as gameplay: reasoning counts toward it (512 cut reasoning models off).
       ...requestOptions(profile),
       maxRetries: 0,
@@ -1253,6 +1344,42 @@ export async function compactHandoff(
   runtime: AgentRuntime,
 ) {
   runtime.session.check();
+  const result = await textReply(profile, apiKey, messages, systemPrompt, tools, runtime, {
+    kind: "compaction",
+    timeoutMs: requestTimeout(runtime.session.remaining()),
+    signal: runtime.session.abort.signal,
+  });
+  runtime.session.check();
+  return result;
+}
+/**
+ * The request after a learning episode that asks for the playbook's next version. The session
+ * is over by then, so it has its own time limit; like the handoff request it repeats the last
+ * gameplay request with one more message.
+ */
+export function reflectionReply(
+  profile: ModelProfile,
+  apiKey: string,
+  messages: AgentMessage[],
+  systemPrompt: string,
+  tools: AgentTool<any>[],
+  runtime: AgentRuntime,
+) {
+  return textReply(profile, apiKey, messages, systemPrompt, tools, runtime, {
+    kind: "reflection",
+    timeoutMs: 180_000,
+    signal: AbortSignal.timeout(180_000),
+  });
+}
+async function textReply(
+  profile: ModelProfile,
+  apiKey: string,
+  messages: AgentMessage[],
+  systemPrompt: string,
+  tools: AgentTool<any>[],
+  runtime: AgentRuntime,
+  { kind, timeoutMs, signal }: { kind: "compaction" | "reflection"; timeoutMs: number; signal: AbortSignal },
+) {
   const started = performance.now();
   const context = {
     systemPrompt,
@@ -1273,24 +1400,20 @@ export async function compactHandoff(
       ...requestOptions(profile),
       maxTokens: Math.max(8192, modelSettings(profile).maxTokens),
       maxRetries: 0,
-      timeoutMs: requestTimeout(runtime.session.remaining()),
-      signal: runtime.session.abort.signal,
+      timeoutMs,
+      signal,
       maxRetryDelayMs: 3000,
-      onPayload: cacheBreakpoints(profile, context.messages, runtime),
+      onPayload: payloadHook(profile, context.messages, runtime),
+      fetch: costReader((dollars) => runtime.cost?.(kind, dollars)),
     },
   );
-  runtime.timing(
-    performance.now() - started,
-    result.stopReason,
-    "compaction",
-  );
-  runtime.session.check();
+  runtime.timing(performance.now() - started, result.stopReason, kind);
   if (
     result.stopReason === "error" ||
     result.stopReason === "aborted" ||
     result.stopReason === "length"
   )
-    throw new Error(result.errorMessage || "Compaction did not complete.");
+    throw new Error(result.errorMessage || `The ${kind} request did not complete.`);
   return {
     text: result.content
       .filter((c) => c.type === "text")

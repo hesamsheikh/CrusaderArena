@@ -17,7 +17,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { netWorth } from "./market-prices.js";
-import { settingsLabel } from "../shared/protocol.js";
+import { settingsLabel, type RunSeries } from "../shared/protocol.js";
 
 /** "abc1234+def5678 p:0123abc t:4567def": commit (+ uncommitted changes), prompt and tool hashes. */
 function harnessLabel(harness: Obj | undefined) {
@@ -63,6 +63,8 @@ export type EventSummary = {
   /** False when a line could not be parsed (typically the half-written last line of a live run). */
   complete: boolean;
   usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  /** US dollars from request_cost events; absent when the provider reported none. */
+  cost?: number;
   turnStarts: number;
   tools: Record<string, number>;
   toolErrors: number;
@@ -85,6 +87,8 @@ export type RunRow = {
   modelSettings: string | null;
   /** Short commit, "+" and the change hash when the code was uncommitted; prompt and tool hashes. */
   harness: string | null;
+  /** The learning series the run is an episode of, if any. */
+  series: RunSeries | null;
   benchmark: string | null;
   map: string | null;
   status: string | null;
@@ -109,6 +113,8 @@ export type RunRow = {
     cachedShare: number | null;
   };
   tokensPerGameMinute: number | null;
+  /** US dollars billed, when the provider reported it. */
+  cost: number | null;
   scorecard: {
     /** "final" / "last_observed" as recorded by npm run episodes; "last_tool_observation" when rebuilt from events. */
     source: string | null;
@@ -181,8 +187,8 @@ export async function scanEvents(file: string): Promise<EventSummary | undefined
   };
   const pending = new Map<string, Obj>();
   const wanted = [
-    '"message_end"', '"preparation_reply"', '"compaction_usage"', '"tool_execution_start"',
-    '"tool_execution_end"', '"turn_start"', '"memory_sample"',
+    '"message_end"', '"preparation_reply"', '"compaction_usage"', '"reflection_usage"', '"request_cost"',
+    '"tool_execution_start"', '"tool_execution_end"', '"turn_start"', '"memory_sample"',
   ];
   try {
     const lines = createInterface({ input: createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
@@ -204,7 +210,11 @@ export async function scanEvents(file: string): Promise<EventSummary | undefined
           addUsage(event.reply?.usage);
           break;
         case "compaction_usage":
+        case "reflection_usage":
           addUsage(event.usage);
+          break;
+        case "request_cost":
+          out.cost = (out.cost ?? 0) + (num(event.dollars) ?? 0);
           break;
         case "turn_start":
           out.turnStarts++;
@@ -403,6 +413,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
     model: typeof run?.model?.name === "string" ? run.model.name : null,
     modelSettings: run?.model ? settingsLabel(run.model) : null,
     harness: harnessLabel(run?.harness),
+    series: seriesOf(run?.series) ?? seriesOf(episode?.series),
     benchmark: typeof run?.benchmarkType === "string" ? run.benchmarkType : typeof episode?.benchmark === "string" ? episode.benchmark : null,
     map: typeof episode?.map === "string" ? episode.map : typeof observed?.map_name === "string" ? observed.map_name : null,
     status: typeof run?.status === "string" ? run.status : null,
@@ -424,6 +435,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
       cachedShare: allInput ? usage!.cacheRead / allInput : null,
     },
     tokensPerGameMinute,
+    cost: num(run?.cost) ?? events?.cost ?? null,
     scorecard: card,
     tools: events ? events.tools : null,
     toolErrors: events ? events.toolErrors : null,
@@ -486,6 +498,7 @@ const compact = (value: number | null) => {
 };
 const whole = (value: number | null) => (value === null ? "" : String(Math.round(value)));
 const percent = (value: number | null) => (value === null ? "" : `${Math.round(value * 100)}%`);
+const dollars = (value: number | null) => (value === null ? "" : `$${value.toFixed(value < 1 ? 3 : 2)}`);
 const counts = (record: Record<string, number> | undefined) =>
   record ? Object.entries(record).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k, v]) => `${k}:${v}`).join(" ") : "";
 
@@ -507,6 +520,7 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Cache write", (r) => compact(r.tokens.cacheWrite)],
   ["Cached %", (r) => percent(r.tokens.cachedShare)],
   ["Out", (r) => compact(r.tokens.output)],
+  ["Cost", (r) => dollars(r.cost)],
   ["Tok/game min", (r) => compact(r.tokensPerGameMinute)],
   ["Pop", (r) => whole(r.scorecard.population)],
   ["Housing", (r) => whole(r.scorecard.housing)],
@@ -530,6 +544,60 @@ const columns: [string, (row: RunRow) => string][] = [
 
 const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\s+/g, " ");
 
+function seriesOf(value: unknown): RunSeries | null {
+  const s = value as Obj | undefined;
+  return typeof s?.id === "string" && num(s.episode) !== null && num(s.episodes) !== null
+    ? { id: s.id, episode: s.episode, episodes: s.episodes }
+    : null;
+}
+
+export type SeriesRow = {
+  id: string;
+  model: string | null;
+  benchmark: string | null;
+  episodes: number;
+  /** Net worth by episode; null where an episode is missing or has no reading. */
+  netWorth: (number | null)[];
+  /** The last episode's net worth: the series' score. */
+  final: number | null;
+  /** Final minus episode 1: how much the agent improved with its playbook. */
+  change: number | null;
+  cost: number | null;
+};
+
+/** One row per learning series among the runs, in the order of their first episode. */
+export function seriesRows(rows: RunRow[]): SeriesRow[] {
+  const groups = new Map<string, RunRow[]>();
+  for (const row of rows) if (row.series) groups.set(row.series.id, [...(groups.get(row.series.id) ?? []), row]);
+  return [...groups].map(([id, runs]) => {
+    const episodes = Math.max(...runs.map((r) => r.series!.episodes));
+    const netWorth = Array.from({ length: episodes }, (_, i) =>
+      runs.find((r) => r.series!.episode === i + 1)?.scorecard.netWorth ?? null);
+    const [first, final] = [netWorth[0], netWorth[episodes - 1]];
+    const costs = runs.map((r) => r.cost).filter((c): c is number => c !== null);
+    return {
+      id,
+      model: runs[0].model,
+      benchmark: runs[0].benchmark,
+      episodes,
+      netWorth,
+      final,
+      change: first !== null && final !== null ? final - first : null,
+      cost: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
+    };
+  });
+}
+
+const seriesColumns: [string, (row: SeriesRow) => string][] = [
+  ["Series", (r) => r.id],
+  ["Model", (r) => r.model ?? ""],
+  ["Benchmark", (r) => r.benchmark ?? ""],
+  ["Net worth by episode", (r) => r.netWorth.map((v) => (v === null ? "–" : whole(v))).join(" → ")],
+  ["Final", (r) => whole(r.final)],
+  ["Change from episode 1", (r) => (r.change === null ? "" : `${r.change > 0 ? "+" : ""}${whole(r.change)}`)],
+  ["Cost", (r) => dollars(r.cost)],
+];
+
 export function renderMarkdown(rows: RunRow[]): string {
   const header = `| ${columns.map(([name]) => name).join(" | ")} |`;
   const rule = `| ${columns.map(() => "---").join(" | ")} |`;
@@ -538,9 +606,20 @@ export function renderMarkdown(rows: RunRow[]): string {
     "",
     "`~` game seconds derived from reader ticks (no budget recorded); `*` incomplete run (still writing, or unreadable run.json / events).",
     "Build att/placed/fail counts build_structure placements; Anchor counts place_near and expand_storage calls, buildings placed, and calls that placed nothing.",
-    "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Blank cells were not recorded for that run.",
+    "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Cost is what the provider billed (OpenRouter reports it). Blank cells were not recorded for that run.",
   ];
-  return [header, rule, ...body, ...legend].join("\n");
+  const series = seriesRows(rows);
+  const seriesTable = series.length
+    ? [
+        "",
+        "Learning series: each episode starts from the playbook the one before left; the last episode's net worth is the series' score.",
+        "",
+        `| ${seriesColumns.map(([name]) => name).join(" | ")} |`,
+        `| ${seriesColumns.map(() => "---").join(" | ")} |`,
+        ...series.map((row) => `| ${seriesColumns.map(([, get]) => cell(get(row))).join(" | ")} |`),
+      ]
+    : [];
+  return [header, rule, ...body, ...legend, ...seriesTable].join("\n");
 }
 
 export function renderJson(rows: RunRow[]): string {

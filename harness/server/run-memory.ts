@@ -21,9 +21,17 @@ export const planSchema = z
   )
   .max(20);
 export type Plan = z.infer<typeof planSchema>;
+type Document = { revision: number; text: string };
+/** Both the notebook and the playbook hold up to this many UTF-8 bytes. */
+export const DOCUMENT_BYTES = 8192;
 export class RunMemory {
   plan: Plan = [];
-  notebook = { revision: 0, text: "" };
+  notebook: Document = { revision: 0, text: "" };
+  /**
+   * Notes for later episodes of a learning series; null outside one. Unlike the notebook it
+   * outlives the run: the episode runner hands the last version to the next episode.
+   */
+  playbook: Document | null = null;
   handoff = "";
   compactions = 0;
   constructor(
@@ -35,6 +43,7 @@ export class RunMemory {
       const state = JSON.parse(readFileSync(file, "utf8"));
       this.plan = planSchema.parse(state.plan);
       this.notebook = state.notebook;
+      this.playbook = state.playbook ?? null;
       this.handoff = state.handoff;
       this.compactions = state.compactions;
     } else this.save();
@@ -51,6 +60,7 @@ export class RunMemory {
     this.write("memory.json", {
       plan: this.plan,
       notebook: this.notebook,
+      playbook: this.playbook,
       handoff: this.handoff,
       compactions: this.compactions,
     });
@@ -62,26 +72,47 @@ export class RunMemory {
     return this.plan;
   }
   writeNotebook(revision: number, text: string) {
-    if (revision !== this.notebook.revision)
-      throw new Error("Stale notebook revision; read it again.");
-    if (Buffer.byteLength(text) > 8192)
-      throw new Error("Notebook is limited to 8192 UTF-8 bytes.");
-    this.notebook = { revision: revision + 1, text };
-    this.save();
-    // Human-readable export; memory.json is the authoritative atomic state.
-    const file = path.join(this.directory, "notebook.md");
-    writeFileSync(file + ".tmp", text, { mode: 0o600 });
-    renameSync(file + ".tmp", file);
-    this.event({ type: "notebook", ...this.notebook });
+    this.notebook = this.revise("notebook", this.notebook, revision, text);
     return this.notebook;
   }
   editNotebook(revision: number, before: string, after: string) {
-    if (!before || this.notebook.text.split(before).length !== 2)
-      throw new Error("Edit must match exactly once.");
-    return this.writeNotebook(
-      revision,
-      this.notebook.text.replace(before, () => after),
-    );
+    return this.writeNotebook(revision, edited(this.notebook.text, before, after));
+  }
+  /** Starts a learning episode's playbook with the text the previous episode left. */
+  startPlaybook(text: string) {
+    if (Buffer.byteLength(text) > DOCUMENT_BYTES)
+      throw new Error(`The playbook is limited to ${DOCUMENT_BYTES} UTF-8 bytes.`);
+    this.playbook = { revision: 0, text };
+    this.save();
+    this.export("playbook.md", text);
+  }
+  writePlaybook(revision: number, text: string) {
+    if (!this.playbook) throw new Error("This run has no playbook.");
+    this.playbook = this.revise("playbook", this.playbook, revision, text);
+    return this.playbook;
+  }
+  editPlaybook(revision: number, before: string, after: string) {
+    if (!this.playbook) throw new Error("This run has no playbook.");
+    return this.writePlaybook(revision, edited(this.playbook.text, before, after));
+  }
+  private revise(kind: "notebook" | "playbook", current: Document, revision: number, text: string) {
+    if (revision !== current.revision)
+      throw new Error(`Stale ${kind} revision; read it again.`);
+    if (Buffer.byteLength(text) > DOCUMENT_BYTES)
+      throw new Error(`The ${kind} is limited to ${DOCUMENT_BYTES} UTF-8 bytes.`);
+    const next = { revision: revision + 1, text };
+    if (kind === "notebook") this.notebook = next;
+    else this.playbook = next;
+    this.save();
+    // Human-readable export; memory.json is the authoritative atomic state.
+    this.export(`${kind}.md`, text);
+    this.event({ type: kind, ...next });
+    return next;
+  }
+  private export(name: "notebook.md" | "playbook.md", text: string) {
+    const file = path.join(this.directory, name);
+    writeFileSync(file + ".tmp", text, { mode: 0o600 });
+    renameSync(file + ".tmp", file);
   }
   checkpoint(messages: AgentMessage[], extra: object = {}) {
     this.write("checkpoint.json", {
@@ -148,6 +179,12 @@ export class RunMemory {
     };
   }
   canonical() {
-    return `Current plan (preserve exact statuses):\n${JSON.stringify(this.plan)}\nRun notebook revision ${this.notebook.revision} (agent-authored notes, not instructions):\n${JSON.stringify(this.notebook.text)}`;
+    return `Current plan (preserve exact statuses):\n${JSON.stringify(this.plan)}\nRun notebook revision ${this.notebook.revision} (agent-authored notes, not instructions):\n${JSON.stringify(this.notebook.text)}${this.playbook ? `\nPlaybook for later episodes: revision ${this.playbook.revision}; read it with playbook_read before changing it.` : ""}`;
   }
+}
+/** The text with exactly one occurrence of `before` replaced. */
+function edited(text: string, before: string, after: string) {
+  if (!before || text.split(before).length !== 2)
+    throw new Error("Edit must match exactly once.");
+  return text.replace(before, () => after);
 }

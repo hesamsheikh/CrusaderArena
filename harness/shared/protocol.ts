@@ -235,6 +235,8 @@ export type RuntimeProgress = {
   stopReason?: string;
   plan: { step: string; status: "pending" | "in_progress" | "completed" }[];
   notebook: { revision: number; text: string };
+  /** A learning episode's playbook (see RunSeries); absent in other runs. */
+  playbook?: { revision: number; text: string } | null;
   compactions: number;
   contextEstimate: number;
   inference: {
@@ -287,10 +289,16 @@ export type Run = {
     | "imported";
   turns: number;
   tokens: number;
+  /** US dollars billed for the run's requests, from providers that report it (OpenRouter). */
+  cost?: number;
+  /** Set for an episode of a learning series (npm run episodes). */
+  series?: RunSeries;
   logCount: number;
   eventCount: number;
   legacySource?: string;
 };
+/** Episodes of one series play the same save in turn, carrying the agent's playbook forward. */
+export type RunSeries = { id: string; episode: number; episodes: number };
 export type State = {
   /** When the dashboard server process started (ms); runs use the code loaded then. */
   serverStartedAt?: number;

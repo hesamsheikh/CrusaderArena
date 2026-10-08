@@ -51,6 +51,9 @@ available:
 
 - instructions to study the guide, make a plan and end the reply with `BEGIN` on its
   own line;
+- in an episode of a learning series, which episode of how many this is, how the
+  playbook works, and the playbook as the previous episode left it (see
+  [Benchmark](benchmark.md#learning-series));
 - the **construction menu guide**: one image of all ten construction menu pages, with
   numbered buttons and the name and purpose of each;
 - optionally, a screenshot of a developed settlement from an earlier human game on a
@@ -147,7 +150,8 @@ writes for its future self.
   a tool instead of answering, writes too little, or the request would not fit the
   budget, the host asks once more with the conversation as text only and no tools.
 - **New conversation.** The pinned preparation message and reply; one message with
-  the current plan, the notebook and the handoff; the last model reply with its tool
+  the current plan, the notebook, the playbook's revision (in a learning series) and
+  the handoff; the last model reply with its tool
   results; and a fresh observation. The system prompt never changed, so the rules,
   controls and objective are still there.
 - **Failure.** If the summary fails, is out of range, or the new conversation is still
@@ -161,7 +165,9 @@ Compaction takes real time but no game time, and never resets the budget.
 The host adds up the token usage the provider reports for every request, including
 preparation and compaction. `npm run report` splits it into uncached input, cache
 reads, cache writes and output, and shows the share of all input read from the cache.
-Providers that do not report cache writes show 0.
+Providers that do not report cache writes show 0. OpenRouter is asked to report what
+it billed for each request; the host reads that from the reply's last usage chunk and
+keeps the run's total as `cost` in `run.json`. Other providers report no cost.
 
 Most providers cache repeated prompt prefixes on their own, which the fixed system
 prompt, the pinned opening and the unchanged history are designed to benefit. Claude

@@ -18,7 +18,7 @@ import { Session, requestTimeout } from "./session.js";
 import { pruneImages, contextEstimate } from "./context.js";
 import { RunMemory } from "./run-memory.js";
 import { availableAtlasPages, constructionAtlasInstalled } from "./visual-atlas.js";
-import { runConfigSchema, type Frame } from "../shared/protocol.js";
+import { runConfigSchema, type Frame, type RunSeries } from "../shared/protocol.js";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -52,6 +52,7 @@ function fixture(
   defaultWait = 0,
   gameMinutes = 10,
   recording: { spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams } = {},
+  learning?: { series: RunSeries; playbook: string },
 ) {
   const store = new Store(
     mkdtempSync(path.join(tmpdir(), "arena-controller-")),
@@ -71,6 +72,7 @@ function fixture(
       defaultWaitSeconds: defaultWait,
       recordVideo: !!recording.spawnRecorder,
     }),
+    ...(learning ? { series: learning.series } : {}),
   });
   let clock = 0,
     captures = 0,
@@ -87,6 +89,10 @@ function fixture(
   let camera: Record<string, number> | null = null;
   let handoffHook = () => {};
   const handoffs: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
+  const reflections: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
+  let reflectionReply = (_call: number): { text: string; stopReason?: string } => ({
+    text: "# Playbook\n- Place the granary beside the keep first.",
+  });
   let handoffReply = (_call: number): { text: string; stopReason?: string } => ({
     text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
   });
@@ -166,7 +172,12 @@ function fixture(
         return { ...handoffReply(handoffs.length), usage: { totalTokens: 7 } };
       },
       prepare: async (input, system) => prepareHook(input, system),
+      reflection: async (messages, system, tools) => {
+        reflections.push({ messages, system, tools: tools.map((t) => t.name) });
+        return { ...reflectionReply(reflections.length), usage: { totalTokens: 11 } };
+      },
       spawnRecorder: recording.spawnRecorder,
+      playbook: learning?.playbook,
     },
   );
   let prepareHook = async (_input: AgentMessage, _system: string) => message([{ type: "text", text: "Ready.\nBEGIN" }]);
@@ -223,6 +234,10 @@ function fixture(
     handoffs,
     setHandoffReply: (fn: typeof handoffReply) => {
       handoffReply = fn;
+    },
+    reflections,
+    setReflectionReply: (fn: typeof reflectionReply) => {
+      reflectionReply = fn;
     },
     setPrepareHook: (fn: typeof prepareHook) => {
       prepareHook = fn;
@@ -504,6 +519,19 @@ test("operator stop overrides continuation and never toggles pause", async () =>
   });
   assert.equal(await f.controller.runSession(), "stopped");
   assert.deepEqual(f.actions, []);
+});
+test("a host shutdown ends the run as stopped but still pauses the game", async () => {
+  const f = fixture(null);
+  // The game is running (no pause during this fake inference) when the host shuts down.
+  f.provider(() => {
+    f.controller.interrupt();
+    return [call("game_action", { type: "key", key: "P" })];
+  });
+  assert.equal(await f.controller.runSession(), "stopped");
+  // No agent action ran; only the host's final pause.
+  assert.deepEqual(f.actions, [{ type: "key", key: "P" }]);
+  assert.equal(f.isPaused(), true);
+  assert.match(String(f.controller.progress.finalPause), /Confirmed paused/);
 });
 test("multiple compactions retain exact plan, notes and objective in actual next requests, under one system prompt", async () => {
   const f = fixture(7);
@@ -971,4 +999,73 @@ test("the preparation guide opens every request unchanged, through image pruning
     assert.ok(shots.length <= 2);
   }
   assert.ok(f.requests.some((r) => JSON.stringify(r.messages[2]).includes("The preparation guide above is kept for reference")));
+});
+
+test("a learning episode starts from its playbook, can edit it during play and rewrites it after the episode", async () => {
+  const series = { id: "series-test", episode: 2, episodes: 3 };
+  const f = fixture(2, 0, 10, {}, { series, playbook: "- Wood first." });
+  let preparation = "";
+  f.setPrepareHook(async (input) => {
+    preparation = JSON.stringify(input);
+    return message([{ type: "text", text: "Ready.\nBEGIN" }]);
+  });
+  await f.controller.prepare();
+  assert.match(preparation, /Learning series: episode 2 of 3/);
+  assert.match(preparation, /Wood first/);
+  const tools = f.controller.agent.state.tools.map((t) => t.name);
+  for (const name of ["playbook_read", "playbook_write", "playbook_edit"]) assert.ok(tools.includes(name));
+  f.provider((turn) => turn === 1
+    ? [call("playbook_edit", { revision: 0, before: "- Wood first.", after: "- Wood first.\n- Quarry needs an ox tether." }), call("observe", {})]
+    : [call("observe", {})]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  // The reflection saw the playbook as edited during play, with the same tools as gameplay.
+  assert.equal(f.reflections.length, 1);
+  const [reflection] = f.reflections;
+  assert.deepEqual(reflection.tools, tools);
+  const instruction = JSON.stringify(reflection.messages.at(-1));
+  assert.match(instruction, /Episode 2 of 3 is over/);
+  assert.match(instruction, /ox tether/);
+  // Its reply is the next version, on disk for the episode runner.
+  assert.equal(f.controller.memory.playbook?.text, "# Playbook\n- Place the granary beside the keep first.");
+  assert.equal(f.controller.memory.playbook?.revision, 2);
+  const file = path.join(f.controller.memory.directory, "playbook.md");
+  assert.equal(readFileSync(file, "utf8"), "# Playbook\n- Place the granary beside the keep first.");
+});
+
+test("a reflection that calls a tool is asked again as text; a failed one keeps the playbook", async () => {
+  const series = { id: "series-test", episode: 1, episodes: 3 };
+  const f = fixture(1, 0, 10, {}, { series, playbook: "" });
+  await f.controller.prepare();
+  f.setReflectionReply((call) => call === 1 ? { text: "", stopReason: "toolUse" } : { text: "- Build houses early." });
+  f.provider(() => [call("observe", {})]);
+  await f.controller.runSession();
+  assert.deepEqual(f.reflections.map((r) => r.tools.length > 0), [true, false]);
+  assert.equal(f.controller.memory.playbook?.text, "- Build houses early.");
+
+  const g = fixture(1, 0, 10, {}, { series, playbook: "- Keep this." });
+  await g.controller.prepare();
+  g.setReflectionReply(() => ({ text: "x".repeat(9000) }));
+  g.provider(() => [call("observe", {})]);
+  await g.controller.runSession();
+  assert.equal(g.controller.memory.playbook?.text, "- Keep this.");
+  assert.ok(g.logMessages.some((text) => /Reflection failed/.test(text)));
+});
+
+test("a run outside a learning series has no playbook tools and no reflection", async () => {
+  const f = fixture(1);
+  await f.controller.prepare();
+  assert.ok(!f.controller.agent.state.tools.some((t) => t.name.startsWith("playbook")));
+  f.provider(() => [call("observe", {})]);
+  await f.controller.runSession();
+  assert.equal(f.reflections.length, 0);
+  assert.equal(f.controller.memory.playbook, null);
+});
+
+test("what the provider billed is kept per request and summed in run.json", () => {
+  const f = fixture(1);
+  f.controller.runtime.cost?.("gameplay", 0.012);
+  f.controller.runtime.cost?.("compaction", 0.003);
+  assert.ok(Math.abs(f.store.get(f.run.id).cost! - 0.015) < 1e-12);
+  const events = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8");
+  assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003/);
 });

@@ -13,7 +13,7 @@ import type {
 } from "../shared/protocol.js";
 import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
-import { RunMemory } from "./run-memory.js";
+import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
 import { RunRecorder, defaultRecording } from "./recorder.js";
 import {
   ContextBudget,
@@ -27,6 +27,7 @@ import {
   gameControls,
   makeAgent,
   prepareModel,
+  reflectionReply,
   type AgentRuntime,
 } from "./model.js";
 import {
@@ -34,6 +35,7 @@ import {
   benchmarkSpec,
   isPreparedReply,
   preparationMessage,
+  reflectionInstruction,
   runSystemPrompt,
 } from "./preparation.js";
 import type { GameDevice } from "./device.js";
@@ -122,7 +124,14 @@ export class RunController {
         tools: AgentTool<any>[],
       ) => Promise<{ text: string; usage: { totalTokens: number }; stopReason?: string }>;
       prepare?: (message: AgentMessage, system: string) => Promise<AssistantMessage>;
+      reflection?: (
+        messages: AgentMessage[],
+        system: string,
+        tools: AgentTool<any>[],
+      ) => Promise<{ text: string; usage: { totalTokens: number }; stopReason?: string }>;
       spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams;
+      /** The playbook a learning episode (run.series) starts with: what the previous episode left. */
+      playbook?: string;
     } = {},
   ) {
     if (!run.config) throw new Error("Missing run configuration");
@@ -130,6 +139,8 @@ export class RunController {
       path.dirname(store.file(run.id, "run.json")),
       (event) => store.event(run.id, event),
     );
+    // Before the agent is made: its playbook tools exist only in learning episodes.
+    if (run.series) this.memory.startPlaybook(dependencies.playbook ?? "");
     if (run.config.recordVideo)
       this.recorder = new RunRecorder(
         path.dirname(store.file(run.id, "run.json")),
@@ -183,6 +194,7 @@ export class RunController {
       isPaused: () => this.pauseStartedAt !== undefined,
       pausedMilliseconds: () => this.pausedMilliseconds(),
       pinned: () => this.pinned(),
+      cost: (kind, dollars) => this.recordCost(kind, dollars),
       requestStarted: () => {
         this.requestStartedAt = performance.now();
         this.firstDeltaMs = undefined;
@@ -208,6 +220,7 @@ export class RunController {
             : {}),
         });
         const timing = this.progress.inference;
+        if (kind === "reflection") return;
         if (kind === "compaction") timing.compactionMs += ms;
         else if (outcome === "aborted") timing.aborted++;
         else if (outcome === "error") timing.failed++;
@@ -331,9 +344,25 @@ export class RunController {
     };
     this.progress.plan = this.memory.plan;
     this.progress.notebook = this.memory.notebook;
+    this.progress.playbook = this.memory.playbook;
     this.progress.compactions = this.memory.compactions;
     this.store.update(this.run.id, { progress: this.progress });
     this.changed();
+  }
+  /** What the provider billed for one request; the run's total is kept in run.json. */
+  private recordCost(kind: "preparation" | "gameplay" | "compaction" | "reflection", dollars: number) {
+    this.store.event(this.run.id, { type: "request_cost", kind, dollars });
+    this.store.update(this.run.id, { cost: (this.run.cost ?? 0) + dollars });
+  }
+  /**
+   * End the run for a host shutdown. Unlike an operator stop, which leaves the game as it is
+   * for the operator, the game is still paused and captured at the end.
+   */
+  interrupt() {
+    this.interruption = "stopped";
+    this.session.stop("stopped");
+    this.agent.abort();
+    this.device.cancelQueued();
   }
   stop(reason: "stopped" | "error" = "stopped") {
     this.operatorStopped = true;
@@ -408,7 +437,7 @@ export class RunController {
     this.log("system", "Game confirmed paused for agent preparation.");
     if (!constructionAtlasInstalled())
       this.log("system", "No construction guide image is installed; the agent gets the text guide only.");
-    const message = preparationMessage(this.run);
+    const message = preparationMessage(this.run, this.memory.playbook?.text);
     this.store.event(this.run.id, { type: "preparation_message", message });
     const started = performance.now();
     const request = () => this.dependencies.prepare
@@ -419,6 +448,7 @@ export class RunController {
           this.systemPromptText,
           message as import("@earendil-works/pi-ai").UserMessage,
           this.session.abort.signal,
+          (dollars) => this.recordCost("preparation", dollars),
         );
     // The game stays paused during preparation, so transient provider failures are retried.
     // A reply without BEGIN is also retried twice (GLM 5.3 Flash, 2026-09-28).
@@ -729,6 +759,7 @@ export class RunController {
         else
           this.progress.finalPause =
             "Not attempted after operator stop.";
+        if (!this.operatorStopped) await this.reflect();
         this.progress.stopReason =
           this.interruption || this.progress.stopReason;
         this.progress.phase =
@@ -748,6 +779,44 @@ export class RunController {
       }
     }
     return this.progress.phase as "completed" | "stopped" | "error";
+  }
+  /**
+   * After a learning episode: show the agent its final result and ask for the playbook's next
+   * version. A failed request leaves the playbook as the agent last wrote it.
+   */
+  private async reflect() {
+    const series = this.run.series;
+    const playbook = this.memory.playbook;
+    if (!series || !playbook || !this.prepared) return;
+    this.runtime.phase("reflecting");
+    const system = this.agent.state.systemPrompt;
+    const instruction: AgentMessage = {
+      role: "user",
+      content: reflectionInstruction(series, playbook.text, this.device.currentStats(), this.runtime.military),
+      timestamp: Date.now(),
+    };
+    const request = async (messages: AgentMessage[], tools: AgentTool<any>[]) => {
+      const result = await (this.dependencies.reflection
+        ? this.dependencies.reflection(messages, system, tools)
+        : reflectionReply(this.profile, this.key, messages, system, tools, this.runtime));
+      this.store.event(this.run.id, { type: "reflection_usage", usage: result.usage });
+      this.store.update(this.run.id, { tokens: this.run.tokens + result.usage.totalTokens });
+      return result;
+    };
+    try {
+      // As with the handoff: the last gameplay request plus the instruction, then text only.
+      let result = await request([...this.agent.state.messages, instruction], this.agent.state.tools);
+      if (result.stopReason === "toolUse" || !result.text.trim())
+        result = await request([...pruneImages(this.agent.state.messages, 0), instruction], []);
+      const text = result.text.trim();
+      if (!text) throw new Error("the reply was empty");
+      if (Buffer.byteLength(text) > DOCUMENT_BYTES) throw new Error(`the reply is over ${DOCUMENT_BYTES} bytes`);
+      this.memory.writePlaybook(this.memory.playbook!.revision, text);
+      this.store.event(this.run.id, { type: "reflection", playbook: text });
+      this.log("agent", `Playbook for the next episode:\n${text}`);
+    } catch (error) {
+      this.log("error", `Reflection failed (${error instanceof Error ? error.message : String(error)}); the playbook stays as the agent last wrote it.`);
+    }
   }
   private async finalizePause() {
     // Host-only finalization; no agent actions after stopping and no blind P toggle.
