@@ -37,20 +37,21 @@ between September and October 2026.
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
 - Run recording and video rendering, with scripted inputs.
-- The current harness and prompt, in one 5-game-minute GLM 5.3 Flash episode on
+- The current harness and prompt, in two 5-game-minute GLM 5.3 Flash episodes on
   2026-10-08 that completed: the compact observation summary, reading tools at the
   start of a reply running while the game stays paused, the dashboard fetching a
   screenshot only when the run has a new one, and the model settings and harness
-  version recorded in `run.json`. The run did not reach compaction.
+  version recorded in `run.json`. The second ran with a 60,000-token budget and
+  compacted twice; each handoff request repeated the gameplay request and was
+  served about three-quarters from the provider's cache.
 
 ## Tested in code only
 
 - Context compaction across many turns, stop and deadline handling, and failure
   paths, with fake models and game devices (`npm test`).
 - Removing duplicate messages that appear in several channels at once.
-- Prompt caching marks for Claude through OpenRouter, and the handoff request
-  repeating the gameplay request: checked against the request body the model
-  library builds, not yet against a live provider.
+- Prompt caching marks for Claude through OpenRouter: checked against the request
+  body the model library builds, not yet against a live provider.
 
 ## Not verified or not built
 
