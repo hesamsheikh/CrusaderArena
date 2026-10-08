@@ -24,6 +24,12 @@ fixed amount of game time.
 > independent project, not affiliated with or endorsed by Firefly Studios. See
 > [Responsible use](#responsible-use).
 
+https://github.com/user-attachments/assets/42a50097-a379-4ee8-889b-42a3885d26fc
+
+*GLM 5.3 Flash playing 2 game minutes of Oasis by the Sea. The harness renders this
+video from the run's recording: it shortens the thinking pauses, plays actions at real
+speed and fast-forwards the waiting.*
+
 ## How it works
 
 - **The agent** is a vision-capable language model with 27 tools: look, click, build,
