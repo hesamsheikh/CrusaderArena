@@ -4,11 +4,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { BenchmarkStamp, HarnessVersion } from "../shared/protocol.js";
-import { readBenchmarkStamp } from "./benchmark-version.js";
+import { BEHAVIOUR_PATHSPEC, readBenchmarkStamp } from "./benchmark-version.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-/** Paths whose contents decide how a run behaves; docs and notes do not. */
-const RUN_PATHS = ["harness", "prompt", "src", "tools", "package.json", "package-lock.json"];
 
 export const sha256 = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 
@@ -19,13 +17,14 @@ function git(...args: string[]) {
 
 /**
  * The code this host process runs, read once at start: the server does not reload its modules,
- * so later edits only take effect after a restart.
+ * so later edits only take effect after a restart. "Dirty" counts only the files the benchmark
+ * fingerprint covers, so uncommitted docs, tests, the dashboard or the dataset tools do not.
  */
 function readCodeVersion(): Pick<HarnessVersion, "commit" | "dirty" | "diffSha256"> {
   const commit = git("rev-parse", "HEAD")?.trim() || null;
   if (!commit) return { commit: null, dirty: null };
-  const diff = git("diff", "HEAD", "--", ...RUN_PATHS);
-  const untracked = git("ls-files", "--others", "--exclude-standard", "--", ...RUN_PATHS);
+  const diff = git("diff", "HEAD", "--", ...BEHAVIOUR_PATHSPEC);
+  const untracked = git("ls-files", "--others", "--exclude-standard", "--", ...BEHAVIOUR_PATHSPEC);
   if (diff === null || untracked === null) return { commit, dirty: null };
   const added = untracked.split("\n").filter(Boolean).sort();
   if (!diff && !added.length) return { commit, dirty: false };

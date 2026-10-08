@@ -19,10 +19,16 @@ import type { BenchmarkStamp } from "../shared/protocol.js";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export const VERSIONS_FILE = path.join(root, "benchmark-versions.json");
 
-/** Paths whose files decide how a run plays or is scored. */
-const BEHAVIOUR_PATHS = ["harness/server", "harness/shared", "prompt", "tools/ubuntu", "src", "CMakeLists.txt", "cmake", "package-lock.json"];
-/** Files under those paths that only report, render or test. */
-const NOT_BEHAVIOUR = [/\.test\.ts$/, /(^|\/)test_[^/]*\.py$/, /^harness\/server\/run-report\.ts$/, /^harness\/server\/video\.ts$/];
+/**
+ * Git pathspec of the files that decide how a run plays or is scored, leaving out files under
+ * those paths that only report, render or test. The run's uncommitted-change check (version.ts)
+ * uses the same set.
+ */
+export const BEHAVIOUR_PATHSPEC = [
+  "harness/server", "harness/shared", "prompt", "tools/ubuntu", "src", "CMakeLists.txt", "cmake", "package-lock.json",
+  ":(exclude,glob)**/*.test.ts", ":(exclude,glob)**/test_*.py",
+  ":(exclude)harness/server/run-report.ts", ":(exclude)harness/server/video.ts",
+];
 
 export type VersionEntry = { version: string; fingerprint: string; date: string; note: string };
 export type Versions = { current: string; history: VersionEntry[] };
@@ -35,9 +41,9 @@ function git(args: string[], input?: string) {
 
 /** The behavioural files: tracked or new (not ignored), present on disk, sorted. */
 export function behaviourFiles() {
-  return git(["ls-files", "--cached", "--others", "--exclude-standard", "--", ...BEHAVIOUR_PATHS])
+  return git(["ls-files", "--cached", "--others", "--exclude-standard", "--", ...BEHAVIOUR_PATHSPEC])
     .split("\n")
-    .filter((file) => file && !NOT_BEHAVIOUR.some((pattern) => pattern.test(file)) && existsSync(path.join(root, file)))
+    .filter((file) => file && existsSync(path.join(root, file)))
     .sort()
     .filter((file, i, all) => file !== all[i - 1]);
 }

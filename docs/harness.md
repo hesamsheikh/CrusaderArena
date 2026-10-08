@@ -132,9 +132,10 @@ logs. **Export logs** and **Download full events** download them.
 | `episode.json` | The scorecard (`npm run episodes` only; see [The benchmark](benchmark.md#the-scorecard)) |
 
 **Harness version.** Every run records which code produced it, in `run.json` under
-`harness`: the git commit the host started from, whether `harness/`, `prompt/`,
-`src/`, `tools/` or the package files had uncommitted changes (and a hash of those
-changes), and hashes of the exact system prompt and tool definitions. The run page
+`harness`: the git commit the host started from, whether the files the
+[benchmark fingerprint](benchmark.md#versions) covers had uncommitted changes (and a
+hash of those changes; docs, tests, the dashboard and the dataset tools do not count),
+and hashes of the exact system prompt and tool definitions. The run page
 shows it, and `npm run report` has a Harness column, so runs made with different code
 are easy to tell apart. `run.json` also records the [benchmark version](benchmark.md#versions)
 under `benchmark`: the version, the fingerprint of the files it covers, and a hash of the

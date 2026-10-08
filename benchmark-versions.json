@@ -6,6 +6,12 @@
       "fingerprint": "b29429743a0faeb45df72c135ce6587763fb75cbab9fff90fbb1fd87f6ffca34",
       "date": "2026-10-08",
       "note": "First versioned benchmark. Oasis by the Sea construction (and the diagnostic benchmarks) at 25 game minutes on a fixed game speed of 40, minimum turn 8 game seconds, default wait 5, context budget 120,000; reading-only replies cost game time from the 12th in a row; 4 replies without a tool call end the run; growth measured from the do-nothing baseline; resumable series with infrastructure failures run again."
+    },
+    {
+      "version": "v1",
+      "fingerprint": "107c9ceef99f90c7ecf5a9658de6059ce362d705d9d176f03e5b86718b329193",
+      "date": "2026-10-08",
+      "note": "The uncommitted-change check (harness.dirty) covers only the fingerprinted files; play and scoring are unchanged."
     }
   ]
 }

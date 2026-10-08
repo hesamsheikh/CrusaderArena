@@ -280,7 +280,7 @@ export type RuntimeProgress = {
 export type HarnessVersion = {
   /** Git commit the host process started from; null when git was unavailable. */
   commit: string | null;
-  /** Whether the run-relevant files (harness, prompt, src, tools, package files) differed from it. */
+  /** Whether the files the benchmark fingerprint covers (benchmark-version.ts) differed from it. */
   dirty: boolean | null;
   /** SHA-256 of those differences (tracked diff plus new files), when dirty. */
   diffSha256?: string;
