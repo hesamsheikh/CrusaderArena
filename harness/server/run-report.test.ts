@@ -11,7 +11,8 @@ const START = Date.parse("2026-09-29T12:00:00Z");
 const root = () => mkdtempSync(path.join(tmpdir(), "arena-report-"));
 const jsonl = (rows: unknown[]) => rows.map((row) => JSON.stringify(row)).join("\n") + "\n";
 const event = (event: Record<string, unknown>) => ({ at: 1, event });
-const usage = (input: number, output: number, cacheRead: number) => ({ input, output, cacheRead, cacheWrite: 0, totalTokens: input + output + cacheRead });
+const usage = (input: number, output: number, cacheRead: number, cacheWrite = 0) =>
+  ({ input, output, cacheRead, cacheWrite, totalTokens: input + output + cacheRead + cacheWrite });
 const toolStart = (id: string, toolName: string, args: unknown = {}) => event({ type: "tool_execution_start", toolCallId: id, toolName, args });
 const toolEnd = (id: string, toolName: string, result: unknown, isError = false) =>
   event({
@@ -57,7 +58,8 @@ function completeRun(dir: string) {
       event({ type: "preparation_reply", reply: { role: "assistant", usage: usage(100, 10, 0) } }),
       // Skipped by the scanner: not an assistant message.
       event({ type: "message_end", message: { role: "user", usage: usage(9999, 9999, 9999) } }),
-      event({ type: "message_end", message: { role: "assistant", usage: usage(1400, 40, 0) } }),
+      // A first request that writes 400 tokens to the cache (Claude reports writes apart from input).
+      event({ type: "message_end", message: { role: "assistant", usage: usage(1000, 40, 0, 400) } }),
       event({ type: "message_end", message: { role: "assistant", usage: usage(500, 20, 1500) } }),
       event({ type: "compaction_usage", usage: usage(600, 0, 0) }),
       event({ type: "memory_sample", gameRssMiB: 2000 }),
@@ -138,7 +140,9 @@ test("a complete run reports budget, tokens, scorecard, build results and retrie
   assert.equal(row.wallSeconds, 880.5);
   assert.equal(row.inferenceSeconds, 12.5);
   assert.equal(row.turns, 3);
-  assert.deepEqual(row.tokens, { total: 4170, input: 2600, output: 70, cacheRead: 1500 });
+  // In + cache reads + cache writes + output add up to the run total; 1500 of 4100 input tokens came from the cache.
+  assert.deepEqual(row.tokens, { total: 4170, input: 2200, output: 70, cacheRead: 1500, cacheWrite: 400, cachedShare: 1500 / 4100 });
+  assert.match(renderMarkdown([row]), /\| 2\.2k \| 1\.5k \| 400 \| 37% \| 70 \|/);
   assert.ok(Math.abs(row.tokensPerGameMinute! - 4170 / (600.4 / 60)) < 1e-9);
   assert.deepEqual(row.scorecard, {
     source: "final", population: 37, housing: 74, popularity: 100, gold: 970,

@@ -149,13 +149,15 @@ npm run report -- --runs /path/to/runs --json > report.json
 Filters ignore case and punctuation. `--model` matches the profile name or the
 provider's model ID; `--since` takes an ISO date or time.
 
-Columns: run, start time, model, benchmark, map, how it ended, game seconds, wall
-seconds, turns, tokens (total, uncached input, cache reads, output, tokens per game
-minute), population, housing, popularity, net worth, growth, gold, food, structures,
-troops, where the score came from, building placements attempted / placed / failed,
-anchor-tool calls / placed / failed, retries, peak game memory, tool errors, tool
-usage, model settings (reasoning, output limit, providers) and the harness version
-(commit, uncommitted-change hash, and prompt and tool hashes).
+Columns, in order: run, start time, model, model settings (reasoning, output limit,
+providers), harness version (commit, uncommitted-change hash, and prompt and tool
+hashes), benchmark, map, how it ended, game seconds, wall seconds, turns, tokens
+(total, uncached input, cache reads, cache writes, the share of input read from the
+cache, output, tokens per game minute), population, housing, popularity, net worth,
+growth, gold, food, structures, troops, where the score came from, building
+placements attempted / placed / failed, anchor-tool calls / placed / failed,
+retries, retry methods, retries skipped, peak game memory, tool errors and tool
+usage.
 
 "How it ended" is one of: `game_time` (budget used), `wall_limit`, `turn_limit`,
 `memory_guard`, `error: <last error>`, `stopped`, `interrupted`, `running` or

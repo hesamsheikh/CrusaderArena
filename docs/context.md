@@ -160,7 +160,8 @@ Compaction takes real time but no game time, and never resets the budget.
 
 The host adds up the token usage the provider reports for every request, including
 preparation and compaction. `npm run report` splits it into uncached input, cache
-reads and output.
+reads, cache writes and output, and shows the share of all input read from the cache.
+Providers that do not report cache writes show 0.
 
 Most providers cache repeated prompt prefixes on their own, which the fixed system
 prompt, the pinned opening and the unchanged history are designed to benefit. Claude

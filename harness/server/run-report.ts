@@ -62,7 +62,7 @@ export type AnchorSummary = {
 export type EventSummary = {
   /** False when a line could not be parsed (typically the half-written last line of a live run). */
   complete: boolean;
-  usage?: { input: number; output: number; cacheRead: number; total: number };
+  usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
   turnStarts: number;
   tools: Record<string, number>;
   toolErrors: number;
@@ -98,7 +98,16 @@ export type RunRow = {
   inferenceSeconds: number | null;
   turns: number | null;
   compactions: number | null;
-  tokens: { total: number | null; input: number | null; output: number | null; cacheRead: number | null };
+  tokens: {
+    total: number | null;
+    /** Uncached input; cache reads and writes are counted apart from it. */
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    /** Share of all input tokens read from the provider's cache. */
+    cachedShare: number | null;
+  };
   tokensPerGameMinute: number | null;
   scorecard: {
     /** "final" / "last_observed" as recorded by npm run episodes; "last_tool_observation" when rebuilt from events. */
@@ -159,7 +168,7 @@ export async function scanEvents(file: string): Promise<EventSummary | undefined
     complete: true, turnStarts: 0, tools: {}, toolErrors: 0, build: emptyBuild(), observations: 0,
     anchor: { calls: 0, placed: 0, failed: 0, partlyPlaced: 0 },
   };
-  const usage = { input: 0, output: 0, cacheRead: 0, total: 0 };
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
   let sawUsage = false;
   const addUsage = (u: Obj | undefined) => {
     if (!u) return;
@@ -167,6 +176,7 @@ export async function scanEvents(file: string): Promise<EventSummary | undefined
     usage.input += num(u.input) ?? 0;
     usage.output += num(u.output) ?? 0;
     usage.cacheRead += num(u.cacheRead) ?? 0;
+    usage.cacheWrite += num(u.cacheWrite) ?? 0;
     usage.total += num(u.totalTokens) ?? 0;
   };
   const pending = new Map<string, Obj>();
@@ -354,6 +364,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
   const usage = events?.usage;
   const total = num(run?.tokens) ?? usage?.total ?? null;
   const tokensPerGameMinute = total !== null && gameSeconds ? total / (gameSeconds / 60) : null;
+  const allInput = usage ? usage.input + usage.cacheRead + usage.cacheWrite : 0;
 
   // Scorecard: episode.json when it carries a reading, else the last valid observation in the events.
   const observed = events?.lastObservation;
@@ -409,6 +420,8 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
       input: usage?.input ?? null,
       output: usage?.output ?? null,
       cacheRead: usage?.cacheRead ?? null,
+      cacheWrite: usage?.cacheWrite ?? null,
+      cachedShare: allInput ? usage!.cacheRead / allInput : null,
     },
     tokensPerGameMinute,
     scorecard: card,
@@ -472,6 +485,7 @@ const compact = (value: number | null) => {
   return String(Math.round(value));
 };
 const whole = (value: number | null) => (value === null ? "" : String(Math.round(value)));
+const percent = (value: number | null) => (value === null ? "" : `${Math.round(value * 100)}%`);
 const counts = (record: Record<string, number> | undefined) =>
   record ? Object.entries(record).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k, v]) => `${k}:${v}`).join(" ") : "";
 
@@ -489,7 +503,9 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Turns", (r) => whole(r.turns)],
   ["Tokens", (r) => compact(r.tokens.total)],
   ["In", (r) => compact(r.tokens.input)],
-  ["Cached", (r) => compact(r.tokens.cacheRead)],
+  ["Cache read", (r) => compact(r.tokens.cacheRead)],
+  ["Cache write", (r) => compact(r.tokens.cacheWrite)],
+  ["Cached %", (r) => percent(r.tokens.cachedShare)],
   ["Out", (r) => compact(r.tokens.output)],
   ["Tok/game min", (r) => compact(r.tokensPerGameMinute)],
   ["Pop", (r) => whole(r.scorecard.population)],
@@ -522,7 +538,7 @@ export function renderMarkdown(rows: RunRow[]): string {
     "",
     "`~` game seconds derived from reader ticks (no budget recorded); `*` incomplete run (still writing, or unreadable run.json / events).",
     "Build att/placed/fail counts build_structure placements; Anchor counts place_near and expand_storage calls, buildings placed, and calls that placed nothing.",
-    "Tokens = run total; In is uncached input, Cached is cache reads, Out is output. Blank cells were not recorded for that run.",
+    "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Blank cells were not recorded for that run.",
   ];
   return [header, rule, ...body, ...legend].join("\n");
 }
