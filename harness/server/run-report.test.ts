@@ -149,7 +149,8 @@ test("a complete run reports budget, tokens, scorecard, build results and retrie
   assert.ok(Math.abs(row.cost! - 0.023) < 1e-12);
   assert.ok(Math.abs(row.tokensPerGameMinute! - 4170 / (600.4 / 60)) < 1e-9);
   assert.deepEqual(row.scorecard, {
-    source: "final", population: 37, housing: 74, popularity: 100, gold: 970,
+    // Recorded before episode.json had `valid`.
+    source: "final", valid: null, population: 37, housing: 74, popularity: 100, gold: 970,
     // 970 gold + 10 wood × 1 + 20 stone × 7 + 2 iron × 23 at the sell prices.
     netWorth: 1166, netWorthGrowth: null, netWorthBaseline: null, totalFood: 53, structures: 33, troops: 0,
   });
@@ -271,7 +272,8 @@ test("scanEvents ignores a missing file and a run with no usage", async () => {
 test("a learning series is scored by its last episode, with the change from the first", async () => {
   const dir = root();
   const series = (episode: number) => ({ id: "20261008-series1", episode, episodes: 3 });
-  // Episode 2 failed before any reading; the series still has a final score.
+  // Episode 2 failed before any reading; the series still has a final score. Episode 3 hit the
+  // real-time limit, so its net worth is marked as not a full-budget score.
   for (const [episode, worth, cost] of [[1, 1300, 0.4], [2, null, 0.1], [3, 1650, 0.5]] as const)
     writeRun(dir, `Model-A-Oasis-20261008-12000${episode}Z-2026-10-08T12-00-0${episode}-000Z-s000000${episode}`, {
       "run.json": {
@@ -279,17 +281,21 @@ test("a learning series is scored by its last episode, with the change from the 
         benchmarkType: "Oasis construction", startedAt: START + episode * 1000, status: "completed", turns: 3, tokens: 100,
         cost, series: series(episode),
       },
-      ...(worth === null ? {} : { "episode.json": { episode, series: series(episode), source: "final", map: "Oasis", gold: worth, population: 10, net_worth: worth } }),
+      ...(worth === null ? {} : { "episode.json": {
+        episode, series: series(episode), source: "final", map: "Oasis", gold: worth, population: 10, net_worth: worth,
+        ...(episode === 3 ? { valid: false, invalid: ["ended by wall_limit"] } : { valid: true }),
+      } }),
     });
   completeRun(dir);
   const rows = await buildReport(dir);
   const [row] = seriesRows(rows);
   assert.equal(seriesRows(rows).length, 1);
   assert.deepEqual(row.netWorth, [1300, null, 1650]);
+  assert.deepEqual(row.valid, [true, null, false]);
   assert.equal(row.final, 1650);
   assert.equal(row.change, 350);
   assert.ok(Math.abs(row.cost! - 1.0) < 1e-12);
-  assert.match(renderMarkdown(rows), /\| 20261008-series1 \| Model A \| Oasis construction \| 1300 → – → 1650 \| 1650 \| \+350 \| \$1\.00 \|/);
+  assert.match(renderMarkdown(rows), /\| 20261008-series1 \| Model A \| Oasis construction \| 1300 → – → 1650! \| 1650! \| \+350 \| \$1\.00 \|/);
 });
 
 test("growth is net worth minus what doing nothing scores on the same save and budget", async () => {

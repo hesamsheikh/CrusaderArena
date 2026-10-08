@@ -221,15 +221,34 @@ async function setPaused(paused: boolean) {
   throw new Error(`Could not confirm the game ${paused ? "paused" : "running"}.`);
 }
 
+/**
+ * Why an agent episode's net worth is not a full-budget score, if it is not: the run did not
+ * complete, a limit other than the game-time budget ended it, the final pause was not confirmed, or
+ * the reading is the last one seen during play. Empty for a valid episode.
+ */
+function invalidity(run: Run, source: "final" | "last_observed") {
+  const reasons: string[] = [];
+  if (run.status !== "completed")
+    reasons.push(`run ${run.status}${run.progress?.stopReason ? ` (${run.progress.stopReason})` : ""}`);
+  const endedBy = run.progress?.budget?.endedBy;
+  if (endedBy !== "game_time") reasons.push(endedBy ? `ended by ${endedBy}` : "game-time budget not used up");
+  if (!run.progress?.finalPause?.startsWith("Confirmed paused")) reasons.push("final pause not confirmed");
+  if (source !== "final") reasons.push("scored from the last reading during play");
+  return reasons;
+}
+
 function scorecard(state: State, run?: Run, source: "final" | "last_observed" = "final", baseline?: number) {
   const o = state.stats?.observation;
   const s = o?.settlement;
   const goods = o?.resources_by_name ?? {};
   const worth = netWorth(o?.gold, goods);
+  const invalid = run ? invalidity(run, source) : [];
   return {
     // "last_observed": the game was gone at the end (e.g. a memory-guard stop), so these are the
     // last valid reader values seen while the run was in progress.
     source,
+    // Agent episodes only: whether net_worth is a full-budget score (a series' score must be).
+    ...(run ? { valid: invalid.length === 0, ...(invalid.length ? { invalid } : {}) } : {}),
     map: o?.map_name,
     date: s ? { month: s.month, year: s.year } : null,
     game_time: o?.game_time,
@@ -461,7 +480,7 @@ async function main() {
       // What the agent left in its playbook (after its reflection) starts the next episode.
       const file = run ? path.join("harness/runtime/runs", run.folder, "playbook.md") : "";
       if (learning && file && existsSync(file)) playbook = readFileSync(file, "utf8");
-      results.push({ episode: n, run: run?.id, folder: run?.folder, status: run?.status, net_worth: card.net_worth, net_worth_growth: card.net_worth_growth });
+      results.push({ episode: n, run: run?.id, folder: run?.folder, status: run?.status, net_worth: card.net_worth, net_worth_growth: card.net_worth_growth, valid: card.valid, ...(card.invalid ? { invalid: card.invalid } : {}) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       log(`Episode ${n} failed: ${message}`);
@@ -479,7 +498,10 @@ async function main() {
     }, null, 2));
   }
   if (learning && stopped) writeSeries();
-  const worth = results.map((r) => (typeof r.net_worth === "number" ? String(r.net_worth) : "failed"));
+  const worth = results.map((r) =>
+    typeof r.net_worth !== "number" ? "failed"
+      : r.valid === false ? `${r.net_worth} (not a full-budget score: ${(r.invalid as string[]).join("; ")})`
+        : String(r.net_worth));
   if (worth.length) log(`Net worth by episode: ${worth.join(" → ")}`);
   if (stopped || results.every((r) => r.error)) process.exitCode = 1;
   if (renders.length) {

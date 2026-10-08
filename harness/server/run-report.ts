@@ -119,6 +119,8 @@ export type RunRow = {
   scorecard: {
     /** "final" / "last_observed" as recorded by npm run episodes; "last_tool_observation" when rebuilt from events. */
     source: string | null;
+    /** From episode.json: whether netWorth is a full-budget score (null when not recorded). */
+    valid: boolean | null;
     population: number | null;
     housing: number | null;
     popularity: number | null;
@@ -386,6 +388,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
   const card: RunRow["scorecard"] = useEpisode
     ? {
         source: typeof episode!.source === "string" ? episode!.source : "episode",
+        valid: typeof episode!.valid === "boolean" ? episode!.valid : null,
         population: num(episode!.population),
         housing: num(episode!.housing),
         popularity: num(episode!.popularity),
@@ -399,6 +402,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
       }
     : {
         source: observed ? "last_tool_observation" : null,
+        valid: null,
         population: num(observed?.population),
         housing: num(observed?.settlement?.housing_cap),
         popularity: num(observed?.popularity),
@@ -537,7 +541,7 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Pop", (r) => whole(r.scorecard.population)],
   ["Housing", (r) => whole(r.scorecard.housing)],
   ["Popularity", (r) => whole(r.scorecard.popularity)],
-  ["Net worth", (r) => whole(r.scorecard.netWorth)],
+  ["Net worth", (r) => whole(r.scorecard.netWorth) + (r.scorecard.valid === false ? "!" : "")],
   ["Growth", (r) => whole(r.scorecard.netWorthGrowth)],
   ["Gold", (r) => whole(r.scorecard.gold)],
   ["Food", (r) => whole(r.scorecard.totalFood)],
@@ -570,6 +574,8 @@ export type SeriesRow = {
   episodes: number;
   /** Net worth by episode; null where an episode is missing or has no reading. */
   netWorth: (number | null)[];
+  /** Whether each episode's net worth is a full-budget score (null when not recorded). */
+  valid: (boolean | null)[];
   /** The last episode's net worth: the series' score. */
   final: number | null;
   /** Final minus episode 1: how much the agent improved with its playbook. */
@@ -583,8 +589,9 @@ export function seriesRows(rows: RunRow[]): SeriesRow[] {
   for (const row of rows) if (row.series) groups.set(row.series.id, [...(groups.get(row.series.id) ?? []), row]);
   return [...groups].map(([id, runs]) => {
     const episodes = Math.max(...runs.map((r) => r.series!.episodes));
-    const netWorth = Array.from({ length: episodes }, (_, i) =>
-      runs.find((r) => r.series!.episode === i + 1)?.scorecard.netWorth ?? null);
+    const episode = (i: number) => runs.find((r) => r.series!.episode === i + 1);
+    const netWorth = Array.from({ length: episodes }, (_, i) => episode(i)?.scorecard.netWorth ?? null);
+    const valid = Array.from({ length: episodes }, (_, i) => episode(i)?.scorecard.valid ?? null);
     const [first, final] = [netWorth[0], netWorth[episodes - 1]];
     const costs = runs.map((r) => r.cost).filter((c): c is number => c !== null);
     return {
@@ -593,6 +600,7 @@ export function seriesRows(rows: RunRow[]): SeriesRow[] {
       benchmark: runs[0].benchmark,
       episodes,
       netWorth,
+      valid,
       final,
       change: first !== null && final !== null ? final - first : null,
       cost: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
@@ -604,8 +612,8 @@ const seriesColumns: [string, (row: SeriesRow) => string][] = [
   ["Series", (r) => r.id],
   ["Model", (r) => r.model ?? ""],
   ["Benchmark", (r) => r.benchmark ?? ""],
-  ["Net worth by episode", (r) => r.netWorth.map((v) => (v === null ? "–" : whole(v))).join(" → ")],
-  ["Final", (r) => whole(r.final)],
+  ["Net worth by episode", (r) => r.netWorth.map((v, i) => (v === null ? "–" : whole(v) + (r.valid[i] === false ? "!" : ""))).join(" → ")],
+  ["Final", (r) => (r.final === null ? "" : whole(r.final) + (r.valid.at(-1) === false ? "!" : ""))],
   ["Change from episode 1", (r) => (r.change === null ? "" : `${r.change > 0 ? "+" : ""}${whole(r.change)}`)],
   ["Cost", (r) => dollars(r.cost)],
 ];
@@ -616,7 +624,7 @@ export function renderMarkdown(rows: RunRow[]): string {
   const body = rows.map((row) => `| ${columns.map(([, get]) => cell(get(row))).join(" | ")} |`);
   const legend = [
     "",
-    "`~` game seconds derived from reader ticks (no budget recorded); `*` incomplete run (still writing, or unreadable run.json / events).",
+    "`~` game seconds derived from reader ticks (no budget recorded); `*` incomplete run (still writing, or unreadable run.json / events); `!` not a full-budget score (episode.json `invalid` says why).",
     "Build att/placed/fail counts build_structure placements; Anchor counts place_near and expand_storage calls, buildings placed, and calls that placed nothing.",
     "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Cost is what the provider billed (OpenRouter reports it). Blank cells were not recorded for that run.",
   ];

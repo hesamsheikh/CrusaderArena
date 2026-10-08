@@ -158,11 +158,13 @@ the agent learns from playing.
   compaction request. If the model calls a tool instead, it is asked again as text
   only. A reply that is empty or over 8 KB leaves the playbook as the agent last wrote
   it during play.
-- **Score.** The last episode's net worth is the series' score. The report also shows
-  each episode's net worth and the change from episode 1 to the last.
+- **Score.** The last episode's net worth is the series' score, if that episode is
+  valid (see [the scorecard](#the-scorecard)). The report also shows each episode's net
+  worth and the change from episode 1 to the last, and marks invalid ones.
 
 The runner keeps each series in `harness/runtime/series/<id>/`: `series.json` (the
-save, benchmark, model and each episode's run, status and net worth, or its error) and
+save, benchmark, model and each episode's run, status, net worth and validity, or its
+error) and
 `playbook-after-episode-<n>.md`. Each run folder also holds its final `playbook.md`.
 Runs started from the dashboard are never part of a series.
 
@@ -179,7 +181,12 @@ Runs started from the dashboard are never part of a series.
   memory;
 - `source`: `final` for a reading taken after the final pause, or `last_observed` when
   the game was gone at the end (for example after a memory-guard stop) and the last
-  valid reading from the run was used instead.
+  valid reading from the run was used instead;
+- `valid`: whether `net_worth` is a full-budget score. It is `false`, with the reasons
+  in `invalid`, when the run did not complete, a limit other than the game-time budget
+  ended it, the final pause was not confirmed, or `source` is `last_observed`. Only
+  valid episodes should be compared or used as a series' score. The runner's summary
+  line says which episodes are not.
 
 Runs started from the dashboard do not write `episode.json`.
 
@@ -215,7 +222,8 @@ tool usage.
 `incomplete`. For runs without `episode.json`, the score is rebuilt from the last
 reading in the run's tool results and labelled `last_tool_observation`, without
 growth. Missing data stays blank rather than guessed; `~` marks game time derived from
-reader ticks and `*` marks an unfinished run.
+reader ticks, `*` marks an unfinished run and `!` a net worth that is not a full-budget
+score (`valid: false` in `episode.json`).
 
 ## Limits
 
