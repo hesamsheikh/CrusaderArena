@@ -981,7 +981,7 @@ export function makeAgent(
       name: "expand_storage",
       label: "Expand stockpile or granary",
       description:
-        "Add 1–3 stockpiles or granaries touching the existing one (the game requires adjacency). Same spot finding as place_near with the storage building as its own anchor; new ones may also touch those just placed. Returns text only; the camera stays on the storage.",
+        "Add 1–3 stockpiles or granaries touching the existing ones (the game requires adjacency). Same spot finding as place_near with the storage building as its own anchor; new ones may touch any of the same kind joined to it, including those just placed. Returns text only; the camera stays on the storage.",
       parameters: Type.Object({
         kind: Type.Union([Type.Literal("stockpile"), Type.Literal("granary")]),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })),

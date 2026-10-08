@@ -136,6 +136,29 @@ export class TileMap {
     });
     return rect;
   }
+  /**
+   * The footprint of building `id`, then those of every building of its type joined to it through
+   * touching footprints: a cluster of stockpiles or granaries. Just its own without structure
+   * types from the probe.
+   */
+  cluster(id: number): Rect[] {
+    const own = this.structureRect(id);
+    if (!own) return [];
+    const types = this.region.structure_types ?? {};
+    const type = types[String(id)];
+    if (type === undefined) return [own];
+    const others = Object.entries(types)
+      .filter(([other, t]) => t === type && Number(other) !== id)
+      .map(([other]) => this.structureRect(Number(other)))
+      .filter((r): r is Rect => r !== null);
+    const touch = (a: Rect, b: Rect) => a.x1 <= b.x2 + 1 && b.x1 <= a.x2 + 1 && a.y1 <= b.y2 + 1 && b.y1 <= a.y2 + 1;
+    const cluster = [own];
+    for (let i = 0; i < cluster.length; i++)
+      for (let j = 0; j < others.length; )
+        if (touch(cluster[i], others[j])) cluster.push(...others.splice(j, 1));
+        else j++;
+    return cluster;
+  }
   /** The building nearest the camera centre (the anchor after center_on). */
   structureNearCentre(radius = 6): number {
     const c = { x: this.camera.centre_tile_x, y: this.camera.centre_tile_y };

@@ -73,11 +73,14 @@ async function placeFromMap(
   placed: { x: number; y: number; side?: Side; lateral?: number; tilesOut?: number }[],
   anchorCamera: string,
 ) {
-  const anchorRect = map.structureRect(map.structureNearCentre());
+  const anchorId = map.structureNearCentre();
+  const anchorRect = map.structureRect(anchorId);
   if (!anchorRect) return null;
   const storage = building === "Stockpile" || building === "Granary";
   const size = footprintOf(building);
-  const touching: Rect[] = [anchorRect];
+  // Storage may touch any stockpile or granary of the anchor's cluster: centring always returns to
+  // the first one, so with its sides alone expand_storage ran out of spots after 4 to 6.
+  const touching: Rect[] = storage ? map.cluster(anchorId) : [anchorRect];
   let attempts = 0;
   let stopped: string | undefined;
   let feedback: string[] = [];

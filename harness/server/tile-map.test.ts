@@ -156,3 +156,21 @@ test("woodcutter sites come closest to trees first, with the trees within reach"
   assert.deepEqual(bare.map((s) => s.trees), [0, 0]);
   assert.deepEqual(bare[0].tile, { x: 100, y: 100 });
 });
+
+test("a storage cluster is the anchor plus every building of its type joined to it", () => {
+  const r = region((set) => {
+    fill(set, "structure", 100, 100, 104, 104, 1); // the first stockpile (type 52)
+    fill(set, "structure", 105, 100, 109, 104, 2); // touching it
+    fill(set, "structure", 110, 100, 114, 104, 3); // touching the second only
+    fill(set, "structure", 120, 100, 124, 104, 4); // a stockpile elsewhere
+    fill(set, "structure", 100, 105, 102, 107, 5); // a granary (type 80) touching the first
+  });
+  const map = new TileMap({ ...r, structure_types: { "1": 52, "2": 52, "3": 52, "4": 52, "5": 80 } }, camera, frame);
+  assert.deepEqual(map.cluster(1), [
+    { x1: 100, y1: 100, x2: 104, y2: 104 },
+    { x1: 105, y1: 100, x2: 109, y2: 104 },
+    { x1: 110, y1: 100, x2: 114, y2: 104 },
+  ]);
+  // Without structure types only the anchor itself.
+  assert.deepEqual(new TileMap(r, camera, frame).cluster(1), [{ x1: 100, y1: 100, x2: 104, y2: 104 }]);
+});
