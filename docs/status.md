@@ -126,6 +126,10 @@ between September and October 2026.
   20261009T100849-21b4ea9d) were packaged again with it and replaced with `--replace` on
   2026-10-09: their tables came out the same, they went from 546 to 227 MB and from 770 to
   249 MB, the files on the Hub match their manifests, and the tables load from the Hub.
+  The replaced versions were then deleted from the dataset's storage with
+  `permanently_delete_lfs_files` (history rewritten): the 12 old `events.jsonl` files and
+  1080p videos, 1,302.5 MB. The dataset now stores 376 files, 468.8 MB, all used by `main`;
+  both series still match their manifests, and the tables and a video download from the Hub.
 
 ## Not verified or not built
 
