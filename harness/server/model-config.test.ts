@@ -136,7 +136,7 @@ test("other models get no cache markers", async () => {
   }
 });
 
-/** A preparation request against a fake provider stream; returns the request body, the reply and the costs read. */
+/** A preparation request against a fake OpenAI-format stream; returns the request body, the reply and the costs read. */
 async function prepareAgainst(profile: ModelProfile, usage: Record<string, unknown>) {
   const chunks = [
     { id: "gen-1", choices: [{ index: 0, delta: { content: "Ready.\nBEGIN" }, finish_reason: null }] },
@@ -144,6 +144,10 @@ async function prepareAgainst(profile: ModelProfile, usage: Record<string, unkno
     { id: "gen-1", choices: [], usage },
   ];
   const stream = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+  return prepareWith(profile, stream);
+}
+/** A preparation request answered with `stream`; returns the request body, the reply and the costs recorded. */
+async function prepareWith(profile: ModelProfile, stream: string) {
   let sent: Record<string, unknown> | undefined;
   const original = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
@@ -151,39 +155,80 @@ async function prepareAgainst(profile: ModelProfile, usage: Record<string, unkno
     return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
   };
   const costs: number[] = [];
+  const sources: string[] = [];
   try {
     const reply = await prepareModel(
       profile, "test", "Rules.", { role: "user", content: "Prepare.", timestamp: 0 },
-      AbortSignal.timeout(5000), (dollars) => costs.push(dollars),
+      AbortSignal.timeout(5000), (dollars, source) => (costs.push(dollars), sources.push(source)),
     );
     await new Promise((resolve) => setTimeout(resolve, 10));
-    return { sent, reply, costs };
+    return { sent, reply, costs, sources };
   } finally {
     globalThis.fetch = original;
   }
 }
 
 test("OpenRouter is asked for the billed amount, which is read from a copy of the stream", async () => {
-  const { sent, reply, costs } = await prepareAgainst(openRouter, {
+  const { sent, reply, costs, sources } = await prepareAgainst(openRouter, {
     prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.00123, prompt_tokens_details: { cached_tokens: 40 },
   });
   assert.deepEqual(sent?.usage, { include: true });
   assert.deepEqual(costs, [0.00123]);
+  assert.deepEqual(sources, ["billed"]);
   // Pi still reads the whole reply and its usage.
   assert.deepEqual(reply.content.filter((part) => part.type === "text").map((part) => part.text), ["Ready.\nBEGIN"]);
   assert.equal(reply.usage.cacheRead, 40);
 });
 
-test("other providers are not sent OpenRouter's usage option, and report no cost", async () => {
+test("other providers are not sent OpenRouter's usage option; their tokens are priced with the profile's prices", async () => {
   const kimi = { ...openRouter, modelId: "kimi-k3", baseUrl: "https://api.moonshot.ai/v1" };
-  const { sent, costs } = await prepareAgainst(kimi, { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 });
+  const usage = { prompt_tokens: 1000, completion_tokens: 100, total_tokens: 1100, prompt_tokens_details: { cached_tokens: 400 } };
+  const { sent, costs } = await prepareAgainst(kimi, usage);
   assert.equal(sent?.usage, undefined);
-  assert.deepEqual(costs, []);
+  assert.deepEqual(costs, [], "no prices, no cost");
+  const priced = await prepareAgainst({ ...kimi, prices: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0 } }, usage);
+  assert.deepEqual(priced.sources, ["prices"]);
+  assert.ok(Math.abs(priced.costs[0] - (3 * 600 + 0.3 * 400 + 15 * 100) / 1e6) < 1e-12);
+});
+
+test("OpenRouter's billed amount is used even when the profile has prices", async () => {
+  const prices = { input: 100, output: 100, cacheRead: 100, cacheWrite: 100 };
+  assert.deepEqual(modelConfig({ ...openRouter, prices }).cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  const { costs, sources } = await prepareAgainst({ ...openRouter, prices }, { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.002 });
+  assert.deepEqual([costs, sources], [[0.002], ["billed"]]);
 });
 
 const haiku: ModelProfile = {
   id: "h", name: "Claude Haiku 5.5", modelId: "claude-haiku-5-5", baseUrl: "https://api.anthropic.com", keyConfigured: true,
 };
+
+/** Anthropic's stream for a reply with this usage. */
+function anthropicReply(usage: { input_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }, output: number) {
+  const events = [
+    { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "claude-haiku-5-5", content: [], stop_reason: null, usage: { ...usage, output_tokens: 1 } } },
+    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Ready.\nBEGIN" } },
+    { type: "content_block_stop", index: 0 },
+    { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: output } },
+    { type: "message_stop" },
+  ];
+  return events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
+}
+
+test("Anthropic reports no cost, so each request is priced from its tokens, long prompts at their own rates", async () => {
+  const prices = {
+    input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125,
+    longPrompt: { above: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 },
+  };
+  const short = await prepareWith({ ...haiku, prices }, anthropicReply({ input_tokens: 1000, cache_read_input_tokens: 50000, cache_creation_input_tokens: 2000 }, 500));
+  assert.equal(short.reply.usage.output, 500);
+  assert.deepEqual(short.sources, ["prices"]);
+  assert.ok(Math.abs(short.costs[0] - 0.0011) < 1e-12, String(short.costs[0]));
+  const long = await prepareWith({ ...haiku, prices }, anthropicReply({ input_tokens: 1000, cache_read_input_tokens: 100000, cache_creation_input_tokens: 2000 }, 500));
+  assert.ok(Math.abs(long.costs[0] - 0.008) < 1e-12, String(long.costs[0]));
+  const unpriced = await prepareWith(haiku, anthropicReply({ input_tokens: 1000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }, 5));
+  assert.deepEqual(unpriced.costs, []);
+});
 
 test("Anthropic requests use adaptive thinking at the profile's effort and its output limit", async () => {
   const body = await payload({ ...haiku, reasoning: "medium", maxTokens: 32768 });

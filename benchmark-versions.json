@@ -60,6 +60,12 @@
       "fingerprint": "6c6d5b617a605f66a783b78b79d46795a4e71418c14f28b155cb84a7546923dd",
       "date": "2026-10-09",
       "note": "Each finished episode is saved in the game and copied into the run folder; no change in what a run plays or scores"
+    },
+    {
+      "version": "1.1.2",
+      "fingerprint": "198c7eff558a5095aca371e343dfbf21bcabb2403096fa8a8878b1abc317191c",
+      "date": "2026-10-09",
+      "note": "Runs record their cost on every endpoint: model profiles off OpenRouter have prices, applied to each request's tokens, and npm run cost prices earlier runs. Play and scoring unchanged."
     }
   ]
 }

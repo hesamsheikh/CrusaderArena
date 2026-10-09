@@ -32,6 +32,7 @@ import {
   prepareModel,
   reflectionReply,
   type AgentRuntime,
+  type CostSource,
 } from "./model.js";
 import {
   benchmarkMarkdown,
@@ -206,7 +207,7 @@ export class RunController {
       isPaused: () => this.pauseStartedAt !== undefined,
       pausedMilliseconds: () => this.pausedMilliseconds(),
       pinned: () => this.pinned(),
-      cost: (kind, dollars) => this.recordCost(kind, dollars),
+      cost: (kind, dollars, source) => this.recordCost(kind, dollars, source),
       requestStarted: () => {
         this.requestStartedAt = performance.now();
         this.firstDeltaMs = undefined;
@@ -365,9 +366,9 @@ export class RunController {
     this.store.update(this.run.id, { progress: this.progress });
     this.changed();
   }
-  /** What the provider billed for one request; the run's total is kept in run.json. */
-  private recordCost(kind: "preparation" | "gameplay" | "compaction" | "reflection", dollars: number) {
-    this.store.event(this.run.id, { type: "request_cost", kind, dollars });
+  /** What one request cost (see CostSource); the run's total is kept in run.json. */
+  private recordCost(kind: "preparation" | "gameplay" | "compaction" | "reflection", dollars: number, source: CostSource) {
+    this.store.event(this.run.id, { type: "request_cost", kind, dollars, source });
     this.store.update(this.run.id, { cost: (this.run.cost ?? 0) + dollars });
   }
   /**
@@ -537,7 +538,7 @@ export class RunController {
           this.systemPromptText,
           message as import("@earendil-works/pi-ai").UserMessage,
           this.session.abort.signal,
-          (dollars) => this.recordCost("preparation", dollars),
+          (dollars, source) => this.recordCost("preparation", dollars, source),
         );
     // The game stays paused during preparation, so transient provider failures are retried.
     // A reply without BEGIN is also retried twice (GLM 5.3 Flash, 2026-09-28).

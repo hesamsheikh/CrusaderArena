@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import { createModels, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { createModels, type AssistantMessage, type Model, type Usage } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
@@ -11,6 +11,7 @@ import type { RunMemory } from "./run-memory.js";
 import type { ObservationCycle, Session } from "./session.js";
 import { requestTimeout } from "./session.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
+import { modelCost, usedTokens } from "./cost.js";
 import { atlasPage, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 import {
   buildableNames,
@@ -100,8 +101,8 @@ export interface AgentRuntime {
   pausedMilliseconds?: () => number;
   /** Messages that open every request unchanged (the preparation guide). */
   pinned?: () => ReadonlySet<AgentMessage>;
-  /** What the provider billed for one request, when it reports it. */
-  cost?: (kind: "gameplay" | "compaction" | "reflection", dollars: number) => void;
+  /** What one request cost: billed by OpenRouter, or its tokens at the profile's prices. */
+  cost?: (kind: "gameplay" | "compaction" | "reflection", dollars: number, source: CostSource) => void;
   requestStarted?: () => void;
   timing: (
     milliseconds: number,
@@ -150,7 +151,7 @@ export function modelConfig(
       input: ["text", "image"],
       contextWindow: 1048576,
       maxTokens: settings.maxTokens,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: modelCost(profile.prices),
       compat: {
         // Claude 4.6 and later take adaptive thinking steered by effort, not a token budget.
         forceAdaptiveThinking: true,
@@ -171,7 +172,8 @@ export function modelConfig(
     input: ["text", "image"],
     contextWindow: 1048576,
     maxTokens: settings.maxTokens,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // OpenRouter reports what it billed instead (costReader).
+    cost: modelCost(openRouter ? undefined : profile?.prices),
     compat: {
       supportsDeveloperRole: false,
       maxTokensField: "max_tokens",
@@ -246,6 +248,24 @@ async function readCost(stream: ReadableStream<Uint8Array>, onCost: (dollars: nu
   } catch {
     // An aborted or failed request has no cost to read.
   }
+}
+/** "billed": the amount OpenRouter reported; "prices": the request's tokens at the profile's prices. */
+export type CostSource = "billed" | "prices";
+/**
+ * How a request's cost is recorded. On OpenRouter `options` reads the billed amount from the
+ * stream. Elsewhere Pi prices the reply's usage with the profile's prices (modelCost), and
+ * `settle` records it once the reply is complete, failed and cut-off replies included, as their
+ * tokens are counted too.
+ */
+function costTracking(profile: ModelProfile, onCost?: (dollars: number, source: CostSource) => void) {
+  if (isOpenRouter(profile.baseUrl))
+    return { options: { fetch: costReader((dollars) => onCost?.(dollars, "billed")) }, settle: () => {} };
+  return {
+    options: {},
+    settle: (usage: Usage) => {
+      if (profile.prices && usedTokens(usage)) onCost?.(usage.cost.total, "prices");
+    },
+  };
 }
 /** Request options from the profile's settings: its reasoning level and output limit. */
 export const requestOptions = (profile: ModelProfile) => {
@@ -1366,10 +1386,11 @@ export function makeAgent(
       runtime?.phase("thinking");
       const started = performance.now();
       runtime?.requestStarted?.();
+      const cost = costTracking(profile, (dollars, source) => runtime?.cost?.("gameplay", dollars, source));
       const stream = models.streamSimple(m, c, {
         ...o,
         onPayload: payloadHook(profile, c.messages, runtime, o?.onPayload),
-        fetch: costReader((dollars) => runtime?.cost?.("gameplay", dollars)),
+        ...cost.options,
         ...requestOptions(profile),
         maxRetries: 0,
         timeoutMs: runtime
@@ -1378,15 +1399,10 @@ export function makeAgent(
         apiKey,
       });
       if (runtime)
-        void stream
-          .result()
-          .then((result) =>
-            runtime.timing(
-              performance.now() - started,
-              result.stopReason,
-              "gameplay",
-            ),
-          );
+        void stream.result().then((result) => {
+          cost.settle(result.usage);
+          runtime.timing(performance.now() - started, result.stopReason, "gameplay");
+        });
       return stream;
     },
     toolExecution: "sequential",
@@ -1428,15 +1444,16 @@ export async function prepareModel(
   systemPrompt: string,
   message: import("@earendil-works/pi-ai").UserMessage,
   signal: AbortSignal,
-  onCost?: (dollars: number) => void,
+  onCost?: (dollars: number, source: CostSource) => void,
 ): Promise<AssistantMessage> {
+  const cost = costTracking(profile, onCost);
   const result = await registry(profile).completeSimple(
     modelConfig(profile),
     { systemPrompt, messages: [message] },
     {
       apiKey,
       onPayload: payloadHook(profile, [message], undefined),
-      fetch: costReader((dollars) => onCost?.(dollars)),
+      ...cost.options,
       // The same output limit as gameplay: reasoning counts toward it (512 cut reasoning models off).
       ...requestOptions(profile),
       maxRetries: 0,
@@ -1444,6 +1461,7 @@ export async function prepareModel(
       signal,
     },
   );
+  cost.settle(result.usage);
   // A reply cut off at the limit comes back like one without BEGIN, and is retried the same way.
   if (["error", "aborted"].includes(result.stopReason))
     throw new Error(result.errorMessage || `Preparation stopped: ${result.stopReason}`);
@@ -1500,6 +1518,7 @@ async function textReply(
   { kind, timeoutMs, signal }: { kind: "compaction" | "reflection"; timeoutMs: number; signal: AbortSignal },
 ) {
   const started = performance.now();
+  const cost = costTracking(profile, (dollars, source) => runtime.cost?.(kind, dollars, source));
   const context = {
     systemPrompt,
     messages: messages.filter(
@@ -1523,9 +1542,10 @@ async function textReply(
       signal,
       maxRetryDelayMs: 3000,
       onPayload: payloadHook(profile, context.messages, runtime),
-      fetch: costReader((dollars) => runtime.cost?.(kind, dollars)),
+      ...cost.options,
     },
   );
+  cost.settle(result.usage);
   runtime.timing(performance.now() - started, result.stopReason, kind);
   if (
     result.stopReason === "error" ||

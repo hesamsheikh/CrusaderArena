@@ -141,7 +141,7 @@ The dataset card defines three tables, read by the Hub's viewer and by `load_dat
 | Table | Rows | Holds |
 | --- | --- | --- |
 | `series` | One per learning series | Net worth per episode, the score (last episode), change from episode 1, totals of cost, tokens, time, turns and tool calls, the final playbook, the last final image |
-| `episodes` | One per episode | Model, settings, benchmark version and harness version; the attempt and its outcome; how the run ended and whether it is a full-budget score; the scorecard and every good; game, wall and inference time; tokens by kind, cost; turns, compactions, tool calls in total and by tool, errors, building and anchor-tool results; the final image; paths of the video and files |
+| `episodes` | One per episode | Model, settings, benchmark version and harness version; the attempt and its outcome; how the run ended and whether it is a full-budget score; the scorecard and every good; game, wall and inference time; tokens by kind, cost and whether it was billed or worked out from list prices; turns, compactions, tool calls in total and by tool, errors, building and anchor-tool results; the final image; paths of the video and files |
 | `timeline` | One per game minute of each episode | Gold, net worth, population, housing, popularity, food, structures, troops, date and every good, with the tokens, cost, turns, tool calls and tool errors spent by then |
 
 Column lists are in the [dataset card](../tools/dataset/card.md). The numbers in `series` and

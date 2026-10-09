@@ -65,6 +65,7 @@ lists them; **+ Add** creates one.
   | Reasoning | `default`, `off`, `minimal`, `low`, `medium`, `high` | `default` sends no reasoning setting and lets the endpoint decide. `off` is OpenRouter only. Moonshot accepts only `default`. On Anthropic a level is Claude's effort |
   | Max tokens | 1,024 to 131,072 (default 8,192) | Output tokens per reply, reasoning included. Used for gameplay, preparation and compaction (compaction never below 8,192) |
   | Providers, allow fallbacks | Provider names in order of preference | OpenRouter only: which upstream providers may serve the model. Empty lets OpenRouter choose for each request |
+  | Prices | US dollars per million tokens: input, output, cache read, cache write; optionally higher ones for prompts over a number of tokens | Not OpenRouter, which reports what it billed. The provider's list prices, which the host applies to each request's tokens to record its cost (see [Context](context.md#tokens-and-caching)). Cache write is the 5-minute rate; a prompt counts input, cache reads and cache writes. A run cannot start without them. Runs record the prices they used |
 
   Profiles created before these settings existed keep what the harness used to send:
   low reasoning on OpenRouter, the endpoint's default elsewhere, 8,192 tokens, no
@@ -97,8 +98,9 @@ On **Home**, fill in:
 | Context budget | 120,000 tokens | When to compact the conversation (32,000 to 200,000; see [Context](context.md#compaction)) |
 | Record video | on | Record the game while the agent acts |
 
-**Start run** is refused unless the game is connected, the model has a key, the memory
-guard is active and the reader confirms a single-player map within 3 seconds. The run
+**Start run** is refused unless the game is connected, the model has a key (and prices,
+unless it is on OpenRouter), the memory guard is active and the reader confirms a
+single-player map within 3 seconds. The run
 is named `Model · Benchmark · YYYYMMDD-HHMMSSZ` (UTC).
 
 The API also accepts a turn limit of 1 to 12 (`maxTurns`) for short diagnostics; the
@@ -127,7 +129,7 @@ logs. **Export logs** and **Download full events** download them.
 
 | File | Contents |
 | --- | --- |
-| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, cost (when the provider reports it), the learning series, episode and attempt (if any), and progress: budget used, which limit ended the run, the error that ended it, plan, notebook, playbook, compactions, timings, memory, recording summary. Also the harness and benchmark versions (see below) |
+| `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, cost (see [Context](context.md#tokens-and-caching)), the learning series, episode and attempt (if any), and progress: budget used, which limit ended the run, the error that ended it, plan, notebook, playbook, compactions, timings, memory, recording summary. Also the harness and benchmark versions (see below) |
 | `inputs.json` | Exactly what the agent was given: system prompt, benchmark rules, controls, settings, model |
 | `logs.jsonl` | Readable log of messages, actions and errors, written live |
 | `events.jsonl` | Every model stream event and tool result, including screenshots and the full reader sample behind each observation, plus host events. Can reach hundreds of MB |

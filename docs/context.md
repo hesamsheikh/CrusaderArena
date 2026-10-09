@@ -170,10 +170,17 @@ Compaction takes real time but no game time, and never resets the budget.
 The host adds up the token usage the provider reports for every request, including
 preparation and compaction. `npm run report` splits it into uncached input, cache
 reads, cache writes and output, and shows the share of all input read from the cache.
-Providers that do not report cache writes show 0. OpenRouter is asked to report what
-it billed for each request; the host reads that from the reply's last usage chunk and
-keeps the run's total as `cost` in `run.json`. Other providers, Anthropic included,
-report no cost; work it out from the token counts and the provider's prices.
+Providers that do not report cache writes show 0.
+
+Every request's cost is recorded as a `request_cost` event, and the run's total as
+`cost` in `run.json`. OpenRouter is asked to report what it billed for each request,
+and the host reads that from the reply's last usage chunk (`source: "billed"`). Other
+endpoints, Anthropic's and Moonshot's included, report only token counts, so the host
+prices each request's tokens with the model profile's prices (`source: "prices"`, see
+[model settings](harness.md#model-profiles)). A failed or cut-off request is priced too, since its
+tokens count. A run cannot start on such an endpoint until its profile has prices, so no
+run goes without a cost. `npm run cost` prices earlier runs that recorded none
+([Comparing runs](benchmark.md#comparing-runs)).
 
 Most providers cache repeated prompt prefixes on their own, which the fixed system
 prompt, the pinned opening and the unchanged history are designed to benefit. Claude

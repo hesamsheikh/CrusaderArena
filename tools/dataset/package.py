@@ -389,6 +389,7 @@ def episode_row(base: dict, ep: Episode, episodes: int, run: dict, episode: dict
         'cached_share': number(tokens.get('cachedShare')),
         'tokens_per_game_minute': number(row.get('tokensPerGameMinute')),
         'cost_usd': number(row.get('cost')),
+        'cost_source': row.get('costSource'),
         'tool_calls': sum(tools.values()) if isinstance(tools, dict) else None,
         'tool_calls_by_name': counts(tools, by_count=True),
         'tool_errors': integer(row.get('toolErrors')),

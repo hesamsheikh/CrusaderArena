@@ -17,6 +17,21 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- Runs record their cost on every endpoint. OpenRouter still reports what it billed;
+  for other endpoints, such as Anthropic's and Moonshot's, which report only tokens, a
+  model profile now has prices (US dollars per million tokens, with optional higher
+  prices for long prompts, as Claude Haiku 5.5 has over 100,000 tokens), and the host
+  prices each request's tokens with them. A run cannot start on such an endpoint without
+  prices. Each `request_cost` event says whether it was `billed` or worked out from
+  `prices`; `npm run report` marks the latter with `~`, and the dataset's episodes table
+  has a `cost_source` column.
+- `npm run cost` prices earlier runs that recorded tokens but no cost, at their model
+  profile's prices; `--write` records the costs.
+
 ## [1.1.2] - 2026-10-09
 
 Comparable with 1.1.1: runs play and score the same.

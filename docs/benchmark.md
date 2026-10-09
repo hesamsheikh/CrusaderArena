@@ -314,8 +314,9 @@ Columns, in order: run, start time, model, model settings (reasoning, output lim
 providers), harness version (commit, uncommitted-change hash, and prompt and tool
 hashes), benchmark, map, how it ended, game seconds, wall seconds, turns, tokens
 (total, uncached input, cache reads, cache writes, the share of input read from the
-cache, output, tokens per game minute), cost in US dollars as the provider billed it
-(OpenRouter reports it; other providers leave it blank), population, housing,
+cache, output, tokens per game minute), cost in US dollars (what OpenRouter billed,
+or `~` before it when worked out from the run's tokens and its model's prices; see
+[Context](context.md#tokens-and-caching)), population, housing,
 popularity, net worth, growth, gold, food, structures, troops, where the score came
 from, building placements attempted / placed / failed, anchor-tool calls / placed /
 failed, retries, retry methods, retries skipped, peak game memory, tool errors and
@@ -328,6 +329,24 @@ reading in the run's tool results and labelled `last_tool_observation`, without
 growth. Missing data stays blank rather than guessed; `~` marks game time derived from
 reader ticks, `*` marks an unfinished run and `!` a net worth that is not a full-budget
 score (`valid: false` in `episode.json`).
+
+### Costs of earlier runs
+
+Runs from before the host priced requests on endpoints other than OpenRouter, such as
+the first Claude runs through Anthropic's API, recorded tokens but no cost. Enter the
+model's prices in its settings, then:
+
+```bash
+npm run cost            # lists the runs it can price and what each cost; changes nothing
+npm run cost -- --write # records those costs
+```
+
+It prices each request's recorded tokens at the profile's prices, as a live run would,
+and writes a `request_cost` event after each request (marked `backfilled`) and the
+total and prices into `run.json`. It leaves out running runs, runs that already have a
+cost, and OpenRouter runs from before billed amounts were recorded. Restart the host
+afterwards to see the costs in the dashboard, and package a published series again
+([Publishing](publishing.md)) to carry them into the dataset.
 
 ## Limits
 

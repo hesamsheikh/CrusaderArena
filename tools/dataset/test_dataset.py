@@ -149,7 +149,7 @@ def report_row(folder: str, n: int) -> dict:
     return {
         'folder': folder, 'incomplete': False, 'ended': 'game_time', 'endDetail': None,
         'gameSeconds': 120.0, 'budgetGameSeconds': 120, 'wallSeconds': 300.0, 'inferenceSeconds': 90.0,
-        'turns': 1, 'compactions': 0, 'tokensPerGameMinute': 800.0, 'cost': 0.002,
+        'turns': 1, 'compactions': 0, 'tokensPerGameMinute': 800.0, 'cost': 0.002, 'costSource': 'prices',
         'tokens': {'total': 1600, 'input': 1500, 'output': 70, 'cacheRead': 30, 'cacheWrite': 0, 'cachedShare': 0.02},
         'scorecard': {'source': 'final', 'valid': True, 'population': 10, 'housing': 20, 'popularity': 90, 'gold': 1200,
                       'netWorth': 1500 + n, 'netWorthBaseline': 1304, 'netWorthGrowth': 196 + n, 'totalFood': 40, 'structures': 20, 'troops': 0},
@@ -327,6 +327,7 @@ class PackageTest(Fixture):
         self.assertEqual((series['valid'], series['valid_by_episode']), (False, [True, False]))
         row = load_dataset('parquet', data_files={'train': str(result.dest / 'episode-2/episode.parquet')}, split='train')[0]
         self.assertEqual((row['valid'], row['invalid']), (False, ['ended by wall_limit', 'final pause not confirmed']))
+        self.assertEqual((row['cost_usd'], row['cost_source']), (0.002, 'prices'))
 
     def test_patches_of_one_minor_version_compare_and_share_a_folder(self):
         folders = self.make_series()

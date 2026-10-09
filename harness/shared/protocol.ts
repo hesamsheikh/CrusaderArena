@@ -166,14 +166,31 @@ export type ModelSettings = {
   /** OpenRouter only: whether providers outside the list may serve a request. */
   allowFallbacks: boolean;
 };
+/** US dollars per million tokens. Cache writes are the 5-minute rate; a 1-hour write costs twice the input rate. */
+export type TokenRates = { input: number; output: number; cacheRead: number; cacheWrite: number };
+/**
+ * A model's list prices, for endpoints that do not report what they bill (every one but OpenRouter).
+ * `longPrompt` holds the rates for a request whose prompt (input, cache reads and cache writes) is
+ * over `above` tokens, such as Claude Haiku 5.5's over 100,000.
+ */
+export type TokenPrices = TokenRates & { longPrompt?: TokenRates & { above: number } };
 export type ModelProfile = {
   id: string;
   name: string;
   modelId: string;
   baseUrl: string;
   keyConfigured: boolean;
+  prices?: TokenPrices;
 } & Partial<ModelSettings>;
 export const isOpenRouter = (baseUrl: string) => new URL(baseUrl).hostname === "openrouter.ai";
+/**
+ * Why a run on this profile would record no cost; null when it records one. OpenRouter reports
+ * what it billed for each request; elsewhere the host prices each request's tokens.
+ */
+export function costProblem(profile: { baseUrl: string; prices?: TokenPrices }) {
+  if (isOpenRouter(profile.baseUrl) || profile.prices) return null;
+  return "This endpoint does not report what it bills. Enter the model's prices in its settings so runs record their cost.";
+}
 export const isMoonshot = (baseUrl: string) => /^api\.moonshot\./.test(new URL(baseUrl).hostname);
 /** Anthropic's own Messages API (not its OpenAI-compatible layer). */
 export const isAnthropic = (baseUrl: string) => new URL(baseUrl).hostname === "api.anthropic.com";
@@ -314,8 +331,11 @@ export type Run = {
   id: string;
   name: string;
   modelId: string;
-  /** The profile when the run started; runs before 2026-10-08 have no settings recorded. */
-  model: Pick<ModelProfile, "name" | "modelId" | "baseUrl"> & Partial<ModelSettings>;
+  /**
+   * The profile when the run started; runs before 2026-10-08 have no settings recorded. `prices`
+   * are the ones its cost was worked out from (endpoints other than OpenRouter).
+   */
+  model: Pick<ModelProfile, "name" | "modelId" | "baseUrl" | "prices"> & Partial<ModelSettings>;
   /** The harness that ran it; runs before 2026-10-08 have none. */
   harness?: HarnessVersion;
   /** The benchmark version it ran; runs before versioning have none. */
@@ -335,7 +355,10 @@ export type Run = {
     | "imported";
   turns: number;
   tokens: number;
-  /** US dollars billed for the run's requests, from providers that report it (OpenRouter). */
+  /**
+   * US dollars for the run's requests: what OpenRouter billed, or elsewhere each request's tokens at
+   * the profile's prices (`model.prices`). Absent when neither was available.
+   */
   cost?: number;
   /** Set for an episode of a learning series (npm run episodes). */
   series?: RunSeries;

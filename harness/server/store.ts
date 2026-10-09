@@ -12,6 +12,7 @@ import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import {
+  isOpenRouter,
   modelSettings,
   reasoningLevels,
   settingsProblem,
@@ -35,6 +36,15 @@ const endpoint = z
           ["localhost", "127.0.0.1"].includes(u.hostname)))
     );
   }, "Use an HTTPS API endpoint (or localhost HTTP), without credentials or query parameters.");
+// US dollars per million tokens.
+const rate = z.number().finite().min(0).max(10000);
+const rates = { input: rate, output: rate, cacheRead: rate, cacheWrite: rate };
+const pricesSchema = z
+  .object({
+    ...rates,
+    longPrompt: z.object({ above: z.number().int().min(1).max(100_000_000), ...rates }).strict().optional(),
+  })
+  .strict();
 export const profileSchema = z
   .object({
     id: z.string().uuid().optional(),
@@ -48,6 +58,8 @@ export const profileSchema = z
     // OpenRouter provider slugs, e.g. "z-ai" or "deepinfra/fp8".
     providers: z.array(z.string().trim().min(1).max(80).regex(/^[A-Za-z0-9._/-]+$/)).max(8).optional(),
     allowFallbacks: z.boolean().optional(),
+    // Omitted keeps the profile's prices; null removes them.
+    prices: pricesSchema.nullable().optional(),
   })
   .strict();
 type PrivateProfile = Omit<ModelProfile, "keyConfigured"> & ModelSettings & {
@@ -124,6 +136,7 @@ export class Store {
       baseUrl: p.baseUrl,
       keyConfigured: !!this.key(p.id),
       ...modelSettings(p),
+      ...(p.prices ? { prices: p.prices } : {}),
     }));
   }
   model(id: string) {
@@ -183,12 +196,14 @@ export class Store {
     });
     const problem = settingsProblem(data.baseUrl, settings);
     if (problem) throw new Error(problem);
+    const prices = data.prices === undefined ? old?.prices : data.prices ?? undefined;
     const profile: PrivateProfile = {
       id: old?.id || randomUUID(),
       name: data.name,
       modelId: data.modelId,
       baseUrl: data.baseUrl,
       ...settings,
+      ...(prices ? { prices } : {}),
       ...(data.apiKey
         ? { apiKey: data.apiKey }
         : data.envKey
@@ -262,6 +277,8 @@ export class Store {
         modelId: model.modelId,
         baseUrl: model.baseUrl,
         ...modelSettings(model),
+        // OpenRouter reports what it billed; other endpoints' costs come from these prices.
+        ...(model.prices && !isOpenRouter(model.baseUrl) ? { prices: model.prices } : {}),
       },
       prompt: this.redact(prompt),
       maxTurns,

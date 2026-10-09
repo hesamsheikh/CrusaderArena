@@ -1239,11 +1239,12 @@ test("a run outside a learning series has no playbook tools and no reflection", 
   assert.equal(f.controller.memory.playbook, null);
 });
 
-test("what the provider billed is kept per request and summed in run.json", () => {
+test("each request's cost is kept with its source and summed in run.json", () => {
   const f = fixture(1);
-  f.controller.runtime.cost?.("gameplay", 0.012);
-  f.controller.runtime.cost?.("compaction", 0.003);
+  f.controller.runtime.cost?.("gameplay", 0.012, "billed");
+  f.controller.runtime.cost?.("compaction", 0.003, "prices");
   assert.ok(Math.abs(f.store.get(f.run.id).cost! - 0.015) < 1e-12);
   const events = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8");
-  assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003/);
+  assert.match(events, /"type":"request_cost","kind":"gameplay","dollars":0.012,"source":"billed"/);
+  assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003,"source":"prices"/);
 });

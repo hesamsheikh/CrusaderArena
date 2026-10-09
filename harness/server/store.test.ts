@@ -214,3 +214,20 @@ test("model settings: older profiles keep their old behaviour, endpoints refuse 
   assert.equal(moved.reasoning, "default");
   assert.deepEqual(moved.providers, []);
 });
+
+test("prices: saved with a profile, kept when omitted, removed with null, and recorded by runs off OpenRouter", () => {
+  const store = fixture();
+  const prices = { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125, longPrompt: { above: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 } };
+  const haiku = store.saveModel({ name: "Haiku", modelId: "claude-haiku-5-5", baseUrl: "https://api.anthropic.com", apiKey: "k", prices });
+  assert.deepEqual(haiku.prices, prices);
+  const renamed = store.saveModel({ id: haiku.id, name: "Claude Haiku", modelId: haiku.modelId, baseUrl: haiku.baseUrl });
+  assert.deepEqual(renamed.prices, prices);
+  assert.deepEqual(new Store(store.root, {}).model(haiku.id).prices, prices);
+  assert.deepEqual(store.create("Priced run", haiku.id, "Play.", null).model.prices, prices);
+  assert.throws(() => store.saveModel({ id: haiku.id, name: "Haiku", modelId: haiku.modelId, baseUrl: haiku.baseUrl, prices: { ...prices, input: -1 } }));
+  assert.throws(() => store.saveModel({ id: haiku.id, name: "Haiku", modelId: haiku.modelId, baseUrl: haiku.baseUrl, prices: { input: 1, output: 1 } }));
+  assert.equal(store.saveModel({ id: haiku.id, name: "Haiku", modelId: haiku.modelId, baseUrl: haiku.baseUrl, prices: null }).prices, undefined);
+  // OpenRouter reports what it billed, so its runs record no prices.
+  const glm = store.saveModel({ name: "GLM", modelId: "z-ai/glm", baseUrl: "https://openrouter.ai/api/v1", apiKey: "k", prices });
+  assert.equal(store.create("Billed run", glm.id, "Play.", null).model.prices, undefined);
+});

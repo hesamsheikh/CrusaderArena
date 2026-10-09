@@ -1640,6 +1640,9 @@ select {
   font-weight: 400;
   color: var(--muted);
 }
+.budgets.prices {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 .input-unit {
   position: relative;
 }
@@ -1764,7 +1767,8 @@ select {
   .content {
     padding-top: 24px;
   }
-  .budgets {
+  .budgets,
+  .budgets.prices {
     grid-template-columns: 1fr 1fr;
   }
   .field-row {

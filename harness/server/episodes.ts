@@ -38,7 +38,7 @@ import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { behaviourFiles } from "./benchmark-version.js";
 import { classify, counts, episodeSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
-import { TICKS_PER_GAME_SECOND, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
+import { TICKS_PER_GAME_SECOND, costProblem, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
 const { values: opts } = parseArgs({
   options: {
@@ -545,6 +545,8 @@ function loadSeries(id: string): SeriesRecord {
 function current(state: State, profileId: string): Pick<SeriesSettings, "version" | "model"> {
   const profile = state.models.find((m) => m.id === profileId) as ModelProfile | undefined;
   if (!profile?.keyConfigured) throw new Error("The series' model profile is gone or has no API key.");
+  const unpriced = costProblem(profile);
+  if (unpriced) throw new Error(`${profile.name}: ${unpriced}`);
   const b = state.benchmark;
   return {
     version: { version: b?.version ?? null, fingerprint: b?.fingerprint ?? "unknown", guide: b?.guide ?? null, commit: b?.commit ?? null },

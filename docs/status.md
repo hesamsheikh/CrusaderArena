@@ -88,7 +88,11 @@ between September and October 2026.
   these models see a 1920 × 1080 screenshot unscaled; compaction and the playbook
   request worked; and episode 2 started from the playbook. The cache marks paid off: each request read the
   conversation the previous one wrote (70–72% of all input from the cache), and the
-  handoff and playbook requests read it too. Anthropic reports no cost. A 60,000-token
+  handoff and playbook requests read it too. Anthropic reports no cost; the costs of
+  that day's ten Claude runs were worked out afterwards with `npm run cost` from their
+  recorded tokens at Anthropic's list prices (about $0.60 in all, $0.38 for the
+  three-episode series 20261009T100849-21b4ea9d), not checked against Anthropic's
+  billing. A 60,000-token
   budget is too small for Claude: its fresh conversation after a compaction (about
   39,300 tokens) did not fit under 65% of it, which ended that run with an error.
 
@@ -127,6 +131,11 @@ between September and October 2026.
   enforces it. Resumable series: the episode outcomes, which attempts count, where a
   series resumes and the settings a resume must match. The automatic re-run after an
   infrastructure failure has not happened live yet.
+- Pricing requests on endpoints other than OpenRouter with the profile's prices
+  (see [Context](context.md#tokens-and-caching)): against fake Anthropic and
+  OpenAI-format streams, including Claude Haiku 5.5's higher prices for prompts over
+  100,000 tokens, and the refusal to start a run without prices. Not yet used in a live
+  run.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.

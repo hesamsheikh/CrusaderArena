@@ -147,6 +147,7 @@ test("a complete run reports budget, tokens, scorecard, build results and retrie
   assert.deepEqual(row.tokens, { total: 4170, input: 2200, output: 70, cacheRead: 1500, cacheWrite: 400, cachedShare: 1500 / 4100 });
   assert.match(renderMarkdown([row]), /\| 2\.2k \| 1\.5k \| 400 \| 37% \| 70 \| \$0\.023 \|/);
   assert.ok(Math.abs(row.cost! - 0.023) < 1e-12);
+  assert.equal(row.costSource, "billed", "events from before sources were recorded came from OpenRouter");
   assert.ok(Math.abs(row.tokensPerGameMinute! - 4170 / (600.4 / 60)) < 1e-9);
   assert.deepEqual(row.scorecard, {
     // Recorded before episode.json had `valid`.
@@ -296,6 +297,27 @@ test("a learning series is scored by its last episode, with the change from the 
   assert.equal(row.change, 350);
   assert.ok(Math.abs(row.cost! - 1.0) < 1e-12);
   assert.match(renderMarkdown(rows), /\| 20261008-series1 \| Model A \| Oasis construction \| 1300 → – → 1650! \| 1650! \| \+350 \| \$1\.00 \|/);
+});
+
+test("a cost worked out from list prices is marked apart from a billed one", async () => {
+  const dir = root();
+  const series = (episode: number) => ({ id: "20261009-series3", episode, episodes: 2 });
+  for (const [episode, source] of [[1, "prices"], [2, "billed"]] as const)
+    writeRun(dir, `Model-B-Oasis-20261009-12000${episode}Z-2026-10-09T12-00-0${episode}-000Z-p000000${episode}`, {
+      "run.json": {
+        id: `p000000${episode}-1111-2222-3333-444444444444`, model: { name: "Model B", modelId: "model-b" },
+        benchmarkType: "Oasis construction", startedAt: START + episode * 1000, status: "completed", turns: 1, tokens: 100,
+        cost: 0.25, series: series(episode),
+      },
+      "events.jsonl": jsonl([event({ type: "request_cost", kind: "gameplay", dollars: 0.25, source })]),
+    });
+  const rows = await buildReport(dir);
+  assert.deepEqual(rows.map((r) => r.costSource).sort(), ["billed", "prices"]);
+  const markdown = renderMarkdown(rows);
+  assert.match(markdown, /\| ~\$0\.250 \|/);
+  assert.match(markdown, /\| \$0\.250 \|/);
+  // A series with any estimated episode is marked.
+  assert.match(markdown, /\| 20261009-series3 \| Model B .*\| ~\$0\.500 \|/);
 });
 
 test("an episode run again counts by its last attempt; runs show their benchmark version", async () => {

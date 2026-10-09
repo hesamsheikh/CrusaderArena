@@ -1,7 +1,8 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import { Play, Settings2, X } from "lucide-react";
-import type { ModelProfile, ReasoningLevel } from "../shared/protocol";
+import type { ModelProfile, ReasoningLevel, TokenPrices, TokenRates } from "../shared/protocol";
 import {
+  costProblem,
   isMoonshot,
   isOpenRouter,
   modelSettings,
@@ -9,6 +10,47 @@ import {
   runNameFor,
 } from "../shared/protocol";
 import { request } from "./api";
+
+const rateFields = [
+  ["input", "Input"],
+  ["output", "Output"],
+  ["cacheRead", "Cache read"],
+  ["cacheWrite", "Cache write"],
+] as const;
+type RateText = Record<keyof TokenRates, string>;
+const rateText = (rates?: TokenRates): RateText => ({
+  input: rates ? String(rates.input) : "",
+  output: rates ? String(rates.output) : "",
+  cacheRead: rates ? String(rates.cacheRead) : "",
+  cacheWrite: rates ? String(rates.cacheWrite) : "",
+});
+/** The four rates as numbers; null when all are blank. */
+function ratesOf(text: RateText): TokenRates | null {
+  const given = rateFields.filter(([key]) => text[key].trim());
+  if (!given.length) return null;
+  if (given.length < rateFields.length) throw new Error("Enter all four prices, or leave them all blank.");
+  return Object.fromEntries(rateFields.map(([key]) => [key, Number(text[key])])) as TokenRates;
+}
+function RateFields({ legend, value, change }: { legend: string; value: RateText; change: (value: RateText) => void }) {
+  return (
+    <fieldset className="budgets prices">
+      <legend>{legend}</legend>
+      {rateFields.map(([key, label]) => (
+        <label key={key} className="field">
+          <span>{label}</span>
+          <input
+            type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
+            value={value[key]}
+            onChange={(e) => change({ ...value, [key]: e.target.value })}
+          />
+        </label>
+      ))}
+    </fieldset>
+  );
+}
 
 function Dialog({
   id,
@@ -79,6 +121,17 @@ export function ModelForm({
   const [maxTokens, setMaxTokens] = useState(initial.maxTokens);
   const [providers, setProviders] = useState(initial.providers.join(", "));
   const [allowFallbacks, setAllowFallbacks] = useState(initial.allowFallbacks);
+  const [rates, setRates] = useState(rateText(model?.prices));
+  const [longPrompt, setLongPrompt] = useState(!!model?.prices?.longPrompt);
+  const [longRates, setLongRates] = useState(rateText(model?.prices?.longPrompt));
+  const [above, setAbove] = useState(String(model?.prices?.longPrompt?.above ?? 100000));
+  const prices = (): TokenPrices | null => {
+    const base = ratesOf(rates);
+    const long = longPrompt ? ratesOf(longRates) : null;
+    if (longPrompt && !long) throw new Error("Enter the long-prompt prices, or turn them off.");
+    if (long && !base) throw new Error("Enter the standard prices as well.");
+    return base && (long ? { ...base, longPrompt: { above: Number(above), ...long } } : base);
+  };
   const endpoint = (() => {
     try {
       return { openRouter: isOpenRouter(baseUrl), moonshot: isMoonshot(baseUrl) };
@@ -116,6 +169,8 @@ export function ModelForm({
               maxTokens,
               providers: endpoint.openRouter ? providerList : [],
               allowFallbacks,
+              // OpenRouter reports what it bills; other endpoints' requests are priced with these.
+              prices: endpoint.openRouter ? null : prices(),
             });
             setKey("");
             saved(m);
@@ -230,6 +285,49 @@ export function ModelForm({
                 Allow other providers when these are unavailable
               </label>
             )}
+          </>
+        )}
+        {!endpoint.openRouter && (
+          <>
+            <RateFields legend="Prices (US$ per million tokens)" value={rates} change={setRates} />
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={longPrompt}
+                onChange={() => setLongPrompt(!longPrompt)}
+              />
+              <span aria-hidden />
+              Higher prices for long prompts
+            </label>
+            {longPrompt && (
+              <>
+                <label className="field">
+                  <span>Long prompts are over</span>
+                  <div className="input-unit">
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      step={1000}
+                      value={above}
+                      onChange={(e) => setAbove(e.target.value)}
+                    />
+                    <em>tokens</em>
+                  </div>
+                </label>
+                <RateFields
+                  legend="Long-prompt prices (US$ per million tokens)"
+                  value={longRates}
+                  change={setLongRates}
+                />
+              </>
+            )}
+            <p className="muted small">
+              This endpoint does not report what it bills, so each request is priced
+              from its tokens with the provider's list prices. Cache write is the
+              5-minute rate. A prompt counts input, cache reads and cache writes. Runs
+              need prices to start.
+            </p>
           </>
         )}
         <p className="muted small">
@@ -364,9 +462,9 @@ export function NewRunDialog({
                 <Settings2 size={16} />
               </button>
             </div>
-            <small className={model?.keyConfigured ? "" : "warn-text"}>
+            <small className={model?.keyConfigured && !costProblem(model) ? "" : "warn-text"}>
               {model
-                ? `${model.modelId} · ${model.keyConfigured ? "API key saved" : "API key needed"}`
+                ? `${model.modelId} · ${model.keyConfigured ? "API key saved" : "API key needed"}${costProblem(model) ? " · prices needed" : ""}`
                 : "Add a model to begin"}
               {" · "}
               <button

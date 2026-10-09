@@ -152,7 +152,9 @@ episode's net worth), `change` (last minus first), `cost_usd`, `tokens_total`, `
   `structures`, `troops`, `game_year`, `game_month`
 - time: `game_seconds`, `game_seconds_budget`, `wall_seconds`, `inference_seconds`
 - tokens and cost: `tokens_total`, `tokens_input` (uncached), `tokens_cache_read`,
-  `tokens_cache_write`, `tokens_output`, `cached_share`, `tokens_per_game_minute`, `cost_usd`
+  `tokens_cache_write`, `tokens_output`, `cached_share`, `tokens_per_game_minute`, `cost_usd`,
+  `cost_source` (`billed`: what OpenRouter billed; `prices`: the episode's tokens at the
+  model's list prices, for providers that do not report a cost)
 - agent: `turns`, `compactions`, `tool_calls`, `tool_calls_by_name`, `tool_errors`,
   `build_attempts`, `build_placed`, `build_failed`, `build_unverified`, `build_retries`,
   `build_missing`, `anchor_calls`, `anchor_placed`, `anchor_failed`, `anchor_partly_placed`,

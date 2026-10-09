@@ -89,6 +89,7 @@ EPISODE = Features({
     'cached_share': Value('float64'),
     'tokens_per_game_minute': Value('float64'),
     'cost_usd': Value('float64'),
+    'cost_source': Value('string'),
     'tool_calls': Value('int64'),
     'tool_calls_by_name': COUNTS,
     'tool_errors': Value('int64'),

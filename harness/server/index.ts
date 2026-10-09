@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import {
+  costProblem,
   runNameFor,
   actionSchema,
   runConfigSchema,
@@ -358,6 +359,8 @@ app.post("/api/agent/run", async (req, res) => {
     return void res
       .status(409)
       .json({ error: "Connect the game and configure the model first." });
+  const unpriced = costProblem(profile);
+  if (unpriced) return void res.status(409).json({ error: unpriced });
   if (device.guardState !== "active")
     return void res
       .status(409)

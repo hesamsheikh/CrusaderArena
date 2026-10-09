@@ -22,6 +22,7 @@ import type {
   Run,
   LogEntry,
 } from "../shared/protocol";
+import { costProblem } from "../shared/protocol";
 import "@fontsource/dm-sans/400.css";
 import "@fontsource/dm-sans/500.css";
 import "@fontsource/dm-sans/600.css";
@@ -295,7 +296,9 @@ function App() {
         ? "Add a model first."
         : !draftModel.keyConfigured
           ? "This model needs an API key."
-          : !draft.benchmarkType.trim()
+          : costProblem(draftModel)
+            ? "This model needs its prices, so the run records its cost. Enter them in its settings."
+            : !draft.benchmarkType.trim()
             ? "Name the benchmark."
             : !draft.prompt.trim()
               ? "Write an instruction for the agent."

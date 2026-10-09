@@ -64,8 +64,10 @@ export type EventSummary = {
   /** False when a line could not be parsed (typically the half-written last line of a live run). */
   complete: boolean;
   usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
-  /** US dollars from request_cost events; absent when the provider reported none. */
+  /** US dollars from request_cost events; absent when none were recorded. */
   cost?: number;
+  /** "prices" when any of those costs came from the profile's prices rather than a provider's bill. */
+  costSource?: "billed" | "prices";
   turnStarts: number;
   tools: Record<string, number>;
   toolErrors: number;
@@ -116,8 +118,10 @@ export type RunRow = {
     cachedShare: number | null;
   };
   tokensPerGameMinute: number | null;
-  /** US dollars billed, when the provider reported it. */
+  /** US dollars: billed by OpenRouter, or the run's tokens at its profile's prices. */
   cost: number | null;
+  /** "billed" by the provider, or worked out from list "prices"; null without a cost. */
+  costSource: "billed" | "prices" | null;
   scorecard: {
     /** "final" / "last_observed" as recorded by npm run episodes; "last_tool_observation" when rebuilt from events. */
     source: string | null;
@@ -223,6 +227,8 @@ export async function scanEvents(file: string): Promise<EventSummary | undefined
           break;
         case "request_cost":
           out.cost = (out.cost ?? 0) + (num(event.dollars) ?? 0);
+          // Events before sources were recorded came from OpenRouter's bill.
+          out.costSource = event.source === "prices" || out.costSource === "prices" ? "prices" : "billed";
           break;
         case "turn_start":
           out.turnStarts++;
@@ -455,6 +461,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
     },
     tokensPerGameMinute,
     cost: num(run?.cost) ?? events?.cost ?? null,
+    costSource: events?.costSource ?? (num(run?.cost) === null ? null : run?.model?.prices ? "prices" : "billed"),
     scorecard: card,
     tools: events ? events.tools : null,
     toolErrors: events ? events.toolErrors : null,
@@ -540,7 +547,7 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Cache write", (r) => compact(r.tokens.cacheWrite)],
   ["Cached %", (r) => percent(r.tokens.cachedShare)],
   ["Out", (r) => compact(r.tokens.output)],
-  ["Cost", (r) => dollars(r.cost)],
+  ["Cost", (r) => (r.costSource === "prices" ? "~" : "") + dollars(r.cost)],
   ["Tok/game min", (r) => compact(r.tokensPerGameMinute)],
   ["Pop", (r) => whole(r.scorecard.population)],
   ["Housing", (r) => whole(r.scorecard.housing)],
@@ -585,6 +592,8 @@ export type SeriesRow = {
   /** Final minus episode 1: how much the agent improved with its playbook. */
   change: number | null;
   cost: number | null;
+  /** "prices" when any episode's cost was worked out from list prices. */
+  costSource: "billed" | "prices" | null;
 };
 
 /** One row per learning series among the runs, in the order of their first episode. */
@@ -611,6 +620,7 @@ export function seriesRows(rows: RunRow[]): SeriesRow[] {
       final,
       change: first !== null && final !== null ? final - first : null,
       cost: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
+      costSource: runs.some((r) => r.costSource === "prices") ? "prices" : costs.length ? "billed" : null,
     };
   });
 }
@@ -622,7 +632,7 @@ const seriesColumns: [string, (row: SeriesRow) => string][] = [
   ["Net worth by episode", (r) => r.netWorth.map((v, i) => (v === null ? "–" : whole(v) + (r.valid[i] === false ? "!" : ""))).join(" → ")],
   ["Final", (r) => (r.final === null ? "" : whole(r.final) + (r.valid.at(-1) === false ? "!" : ""))],
   ["Change from episode 1", (r) => (r.change === null ? "" : `${r.change > 0 ? "+" : ""}${whole(r.change)}`)],
-  ["Cost", (r) => dollars(r.cost)],
+  ["Cost", (r) => (r.costSource === "prices" ? "~" : "") + dollars(r.cost)],
 ];
 
 export function renderMarkdown(rows: RunRow[]): string {
@@ -633,7 +643,7 @@ export function renderMarkdown(rows: RunRow[]): string {
     "",
     "`~` game seconds derived from reader ticks (no budget recorded); `*` incomplete run (still writing, or unreadable run.json / events); `!` not a full-budget score (episode.json `invalid` says why).",
     "Build att/placed/fail counts build_structure placements; Anchor counts place_near and expand_storage calls, buildings placed, and calls that placed nothing.",
-    "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Cost is what the provider billed (OpenRouter reports it). Blank cells were not recorded for that run.",
+    "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Cost is what OpenRouter billed; `~` marks a cost worked out from the run's tokens and its model's list prices (other endpoints). Blank cells were not recorded for that run.",
   ];
   const series = seriesRows(rows);
   const seriesTable = series.length
