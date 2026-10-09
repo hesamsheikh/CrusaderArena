@@ -88,6 +88,17 @@ retried) keeps the version and is recorded as a relock.
   ```
 
   Every entry says what changed or why behaviour did not.
+- **Changelog.** [`CHANGELOG.md`](../CHANGELOG.md) has a section for each version,
+  newest first, headed `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD` with the date the version
+  was first recorded. Its **Benchmark** list says what changed in play or scoring; its
+  **Harness** list gathers the changes since the previous version that left runs as
+  they were, including relocks; until the next version they wait under
+  `## [Unreleased]`. A test fails while a version in
+  `benchmark-versions.json` has no section or a different date, so add the section in
+  the commit that bumps the version. The format is fixed so the website can read it.
+- **Tags.** The git tag `vMAJOR.MINOR.PATCH` marks the commit each version was
+  released at, and each tag has a GitHub release whose notes are its changelog
+  section.
 - **Each run** records `benchmark` in `run.json`: the version (null when the files are
   not a listed version), the fingerprint, and a hash of the private preparation images
   (null when the guide is text only), which are not in the repository and so not in
