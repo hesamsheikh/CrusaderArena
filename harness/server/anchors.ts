@@ -3,7 +3,7 @@ import type { GameDevice, GameHotkey } from "./device.js";
 import { cameraKey, cameraSpanOf, minimapClick, placementOf, visiblePlacementFeedback } from "./construction-ui.js";
 import { Placer, SAMPLE_POLL_SECONDS, type Ack, type Observation } from "./placement.js";
 import { anchorFootprintTiles, footprintOf } from "./footprints.js";
-import { footprintRect, type Rect, type TileMap } from "./tile-map.js";
+import { footprintRect, STRUCTURE_TYPES, type Rect, type TileMap } from "./tile-map.js";
 import { shortfall } from "./building-info.js";
 
 /**
@@ -53,6 +53,21 @@ export function tilePixel(frame: Pick<Frame, "width" | "height">, span: Span, a:
 }
 
 const MAX_MAP_ATTEMPTS = 6;
+
+/** Engine types of the anchors whose type is known (STRUCTURE_TYPES). */
+const anchorTypes: Partial<Record<Anchor, number>> = {
+  keep: STRUCTURE_TYPES.keep, granary: STRUCTURE_TYPES.granary, market: STRUCTURE_TYPES.market, signpost: STRUCTURE_TYPES.signpost,
+};
+/**
+ * The anchor's footprint in the map: the stockpile or the nearest building of the anchor's type,
+ * else the building nearest the camera centre (the keep's courtyard and campfire are separate
+ * buildings, so the nearest one is not always the anchor).
+ */
+export function anchorRectOf(map: TileMap, anchor: Anchor): Rect | null {
+  if (anchor === "stockpile") return map.nearestToCentre(map.storageRects("Stockpile"));
+  const type = anchorTypes[anchor];
+  return (type !== undefined ? map.nearestToCentre(map.rectsOfType(type)) : null) ?? map.structureRect(map.structureNearCentre());
+}
 /** Tiles around a spot refused as "Too close to …" that are skipped afterwards. */
 export const TOO_CLOSE_MARGIN = 3;
 
@@ -73,14 +88,15 @@ async function placeFromMap(
   placed: { x: number; y: number; side?: Side; lateral?: number; tilesOut?: number }[],
   anchorCamera: string,
 ) {
-  const anchorId = map.structureNearCentre();
-  const anchorRect = map.structureRect(anchorId);
-  if (!anchorRect) return null;
   const storage = building === "Stockpile" || building === "Granary";
+  // Storage goes against the stockpile (or granary) nearest the camera centre or any joined to it:
+  // centring always returns to the first one, so with its sides alone expand_storage ran out of
+  // spots after 4 to 6. A stockpile is four piles, not one building, so the building nearest the
+  // centre was the keep beside it and every spot against the keep was refused (all runs to 2026-10-09).
+  const anchorRect = storage ? map.nearestToCentre(map.storageRects(building)) : anchorRectOf(map, anchor);
+  if (!anchorRect) return null;
   const size = footprintOf(building);
-  // Storage may touch any stockpile or granary of the anchor's cluster: centring always returns to
-  // the first one, so with its sides alone expand_storage ran out of spots after 4 to 6.
-  const touching: Rect[] = storage ? map.cluster(anchorId) : [anchorRect];
+  const touching: Rect[] = storage ? map.cluster(anchorRect, map.storageRects(building)) : [anchorRect];
   let attempts = 0;
   let stopped: string | undefined;
   let feedback: string[] = [];

@@ -34,7 +34,7 @@ iron mine spots in the current view.
 
 Choose, combine and adjust these as the game develops:
 
-- **Raw materials:** quarries (with an ox tether) and iron mines produce stone and iron,
+- **Raw materials:** quarries (with ox tethers) and iron mines produce stone and iron,
   which are worth 7 and 23 each and can be built with or sold.
 - **Not weapons or armour:** their workshops deliver only to an armoury, which is not
   part of this economic benchmark, so they add nothing to net worth.

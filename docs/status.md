@@ -14,6 +14,12 @@ between September and October 2026.
   the game's panels.
 - Date, housing, idle peasants, rations, popularity factors, selected-building
   workers, placement mode and camera position match the game.
+- Storage, on Oasis by the Sea on 2026-10-09: each stockpile pile's good, amount and
+  capacity and each granary's food and capacity, read from the engine's building
+  records, followed purchases and sales at the market. Buying stopped when a good's
+  piles were full and no pile was empty (wood at 140 with stone in the fourth pile; iron
+  refused outright), with no text message from the game; an emptied pile took the next
+  good. The model's `storage` summary showed the stockpile full at that point.
 - Placement and resource warning messages are captured and reach the model with
   their age.
 - Sampling every 100 ms has no measurable cost to the game.
@@ -29,6 +35,12 @@ between September and October 2026.
 - `build_structure` placement, its verification by cost and structure count, the
   camera guard, and retries at nearby spots.
 - `center_on`, `place_near`, `expand_storage`, `flat_view` and saved views.
+- `expand_storage` anchored on the stockpile's piles (2026-10-09): stockpiles placed on the
+  up-right, down-left and down-right sides at the first try (up-left, the keep's side,
+  fell through to the next side), and two granaries beside the granary. Before, it
+  anchored on the keep beside the stockpile, and in every recorded run only spots on the
+  stockpile's down-right side were placed. `market_trade` names gold or storage room when
+  a purchase stops.
 - `map_overview`, `go_to_tile`, `set_tax` and `market_trade` have been used in live
   runs; marketplace prices on screen match the price table.
 
@@ -92,8 +104,8 @@ between September and October 2026.
   added before the first 25-game-minute run: failed handoff and playbook requests,
   cut-off replies with tool calls, and unconfirmed pause toggles.
 - Tool changes made before the first 25-game-minute run, not yet used live: woodcutter
-  spots ranked by nearby trees, `expand_storage` building onto the whole storage cluster,
-  placement checks waiting for a valid reader sample, and `cost` in placement results.
+  spots ranked by nearby trees, placement checks waiting for a valid reader sample, and
+  `cost` in placement results.
 - Reading-only replies costing game time from the 12th in a row instead of ending the
   run, and the warning after each reply without a tool call. Not yet run live.
 - Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that

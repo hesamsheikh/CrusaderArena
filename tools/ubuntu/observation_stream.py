@@ -51,6 +51,17 @@ class ObservationStream:
             observation['wood_planks'] = observation['resources'][2]
             observation['resources_by_name'] = {
                 name: observation['resources'][index] for index, name in RESOURCE_FIELDS.items()}
+        # Stockpile piles [x, y, good, amount, capacity] and granaries [x, y, amount, capacity]; an
+        # empty pile keeps its last good, so it is reported without one.
+        if isinstance(observation.get('storage'), dict):
+            storage = observation['storage']
+            observation['storage'] = {
+                'piles': [{'tile': [x, y], 'good': RESOURCE_FIELDS.get(good, f'good_{good}') if amount else None,
+                           'amount': amount, 'capacity': capacity}
+                          for x, y, good, amount, capacity in storage['piles']],
+                'granaries': [{'tile': [x, y], 'amount': amount, 'capacity': capacity}
+                              for x, y, amount, capacity in storage['granaries']],
+                'truncated': storage['truncated']}
         # 'structures', 'placement', 'camera' and 'managed_heap' pass through
         # unchanged; the last three are null when unavailable.
         if 'own_troops' in observation:

@@ -48,7 +48,14 @@ const resourceGround: Record<string, { bit: number; min: number; reason: string 
   "Pitch Rig": { bit: OIL, min: 1, reason: "no_oil" },
 };
 
-const SIGNPOST_TYPE = 52;
+/**
+ * Engine building types, as the tile probe reports them per instance (structure_types; the open
+ * panel's type uses the same numbers). A stockpile is not one building: it is four 2×2 piles
+ * (type 10) at the corners of a 5×5 square with a one-tile walkway between them, each holding one
+ * good (live on Oasis by the Sea, 2026-10-09).
+ */
+export const STRUCTURE_TYPES = { pile: 10, granary: 19, market: 26, keep: 41, signpost: 52 } as const;
+const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
 /** Placement groups the game never runs the signpost check for. */
 const signpostExempt = new Set(["Woodcutter", "Ox Tether", "Stockpile", "Granary", "Armoury", "Quarry", "Iron Mine", "Pitch Rig", ...farmNames]);
 
@@ -136,23 +143,43 @@ export class TileMap {
     });
     return rect;
   }
-  /**
-   * The footprint of building `id`, then those of every building of its type joined to it through
-   * touching footprints: a cluster of stockpiles or granaries. Just its own without structure
-   * types from the probe.
-   */
-  cluster(id: number): Rect[] {
-    const own = this.structureRect(id);
-    if (!own) return [];
-    const types = this.region.structure_types ?? {};
-    const type = types[String(id)];
-    if (type === undefined) return [own];
-    const others = Object.entries(types)
-      .filter(([other, t]) => t === type && Number(other) !== id)
-      .map(([other]) => this.structureRect(Number(other)))
+  /** Footprints of every building of one type in the region. */
+  rectsOfType(type: number): Rect[] {
+    return Object.entries(this.region.structure_types ?? {})
+      .filter(([, t]) => t === type)
+      .map(([id]) => this.structureRect(Number(id)))
       .filter((r): r is Rect => r !== null);
+  }
+  /**
+   * Stockpile or granary footprints in the region. A stockpile's square starts at a pile, or three
+   * tiles before it when a pile of the same square lies there; a granary is one 4×4 building.
+   */
+  storageRects(kind: "Stockpile" | "Granary"): Rect[] {
+    if (kind === "Granary") return this.rectsOfType(STRUCTURE_TYPES.granary);
+    const piles = this.rectsOfType(STRUCTURE_TYPES.pile);
+    const at = new Set(piles.map((r) => `${r.x1},${r.y1}`));
+    const squares = new Map<string, Rect>();
+    for (const r of piles) {
+      const x = at.has(`${r.x1 - 3},${r.y1}`) ? r.x1 - 3 : r.x1;
+      const y = at.has(`${r.x1},${r.y1 - 3}`) ? r.y1 - 3 : r.y1;
+      squares.set(`${x},${y}`, { x1: x, y1: y, x2: x + 4, y2: y + 4 });
+    }
+    return [...squares.values()];
+  }
+  /** The footprint among `rects` nearest the camera centre (0 when the centre lies inside it). */
+  nearestToCentre(rects: Rect[]): Rect | null {
+    const c = { x: this.camera.centre_tile_x, y: this.camera.centre_tile_y };
+    const distance = (r: Rect) => Math.max(r.x1 - c.x, c.x - r.x2, 0) + Math.max(r.y1 - c.y, c.y - r.y2, 0);
+    return rects.reduce<Rect | null>((best, r) => (!best || distance(r) < distance(best) ? r : best), null);
+  }
+  /**
+   * `start` and every footprint of `rects` joined to it through touching ones: the stockpiles or
+   * granaries a new one may be placed against.
+   */
+  cluster(start: Rect, rects: Rect[]): Rect[] {
     const touch = (a: Rect, b: Rect) => a.x1 <= b.x2 + 1 && b.x1 <= a.x2 + 1 && a.y1 <= b.y2 + 1 && b.y1 <= a.y2 + 1;
-    const cluster = [own];
+    const others = rects.filter((r) => r.x1 !== start.x1 || r.y1 !== start.y1);
+    const cluster = [start];
     for (let i = 0; i < cluster.length; i++)
       for (let j = 0; j < others.length; )
         if (touch(cluster[i], others[j])) cluster.push(...others.splice(j, 1));

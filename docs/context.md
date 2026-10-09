@@ -100,6 +100,7 @@ The `stats` summary contains:
 | `tax_level` | 0 (largest bribe) to 11, with 3 meaning no tax; the same scale as `set_tax` |
 | `food` | Total food, rations (`none`, `half`, `full`, `extra`, `double`), food types eaten and available |
 | `goods` | Every stored good by name, such as `wood_planks`, `stone`, `bread` |
+| `storage` | Stockpile piles, empty piles and, per stored good, the amount and the room left in its piles; granaries, empty granaries, food and room. A `full` note appears when no pile is empty (naming the goods with no room left) or every granary is full: those goods can no longer be delivered and their production stops. Absent when the reader has no storage reading |
 | `troops` | Own troops, total and by type. Only for benchmarks that allow military |
 | `placement_mode` | `none`, `placing` or `demolishing` |
 | `selected_building` | Only while a building panel is open: workers, vacancies, whether it works, keep access, missing inputs, health |

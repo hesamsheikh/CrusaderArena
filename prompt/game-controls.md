@@ -41,7 +41,9 @@ return the game only once it has passed, so act first and look last.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
   `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population
   (with housing and idle peasants), popularity (with its upcoming change and factors, in
-  the game's popularity points), `tax_level`, food, stored `goods` by name, the
+  the game's popularity points), `tax_level`, food, stored `goods` by name, `storage`
+  (stockpile piles, empty piles and the room left for each good; granary food against
+  its capacity, with a `full` note when something can no longer be delivered), the
   placement mode and the camera's centre tile. `status: "unavailable"` or a missing
   value means unknown, not zero.
 - **`game_events`:** game messages that appeared since your previous screenshot, each
@@ -119,8 +121,10 @@ Game rules for placement:
 - Farms need their whole square free, only oasis grass or scrub under it (no gravel or
   bare earth) and at least 50 oasis tiles: most of a wheat or hops farm, half of an
   orchard or dairy farm. Oasis grass is scarce: group farms closely on it.
-- A quarry needs stone ground under part of its square and an ox tether to move the
-  stone; an iron mine needs iron ore. `find_sites` finds spots for both.
+- A quarry needs stone ground under part of its square and at least one ox tether: oxen
+  carry its stone to the stockpile, taking whatever is ready at any quarry. Add tethers
+  when the quarry is far from the stockpile or stone piles up at it. An iron mine needs
+  iron ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
 - Leave walking routes between buildings and their storage, and room to expand storage.
 
 ## Camera and keys
@@ -151,8 +155,9 @@ General guidance, not a validated strategy; the benchmark rules and the live gam
 6. When a building stays idle, `inspect_building` it before building more of the same:
    no worker usually means no idle peasants or housing; no access to the keep means a
    blocked route.
-7. Expand storage when it fills. Keep rations at least normal and taxes low while
-   popularity is near 50.
+7. Watch `storage`: before the last empty pile is taken, sell surplus at the marketplace
+   or `expand_storage`, or production of whatever has no room stops. Keep rations at
+   least normal and taxes low while popularity is near 50.
 
 ## Plans and notes
 

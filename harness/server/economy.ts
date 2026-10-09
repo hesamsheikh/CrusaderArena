@@ -3,6 +3,7 @@ import type { GameHotkey } from "./device.js";
 import { ackTime, dismiss, sampleAfter, type AnchorContext } from "./anchors.js";
 import type { Observation } from "./placement.js";
 import { buyPrice, sellPrice } from "./market-prices.js";
+import { inventoryGroups } from "./inventory.js";
 
 /**
  * Tax and marketplace panels, driven by clicks at positions measured on the 1920×1080
@@ -106,6 +107,9 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
   await dismiss(ctx, await ctx.capture());
   const units = before.stock !== null && last.stock !== null ? last.stock - before.stock : null;
   const goldChange = before.gold !== null && last.gold !== null ? last.gold - before.gold : null;
+  // A purchase stops for gold or for storage room; with gold left for another lot it was room.
+  const lotUnits = done && units ? Math.abs(units) / done : (inventoryGroups.granary as readonly string[]).includes(good) ? 10 : 5;
+  const roomOut = last.gold !== null && last.gold >= (buyPrice[good] ?? Infinity) * lotUnits;
   return {
     status: done === lots ? "traded" as const : done ? "partly_traded" as const : "not_traded" as const,
     good, action, lots: done,
@@ -115,6 +119,9 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
     netWorthChange: units !== null && goldChange !== null ? goldChange + units * (sellPrice[good] ?? 0) : null,
     stock: last.stock, gold: last.gold,
     unitPrice: { buy: buyPrice[good], sell: sellPrice[good] },
-    ...(done < lots ? { note: action === "buy" ? "Stopped: not enough gold or storage." : "Stopped: no more of this good to sell." } : {}),
+    ...(done < lots
+      ? { note: action === "sell" ? "Stopped: no more of this good to sell."
+          : roomOut ? "Stopped: no storage room for this good (see storage in status)." : "Stopped: not enough gold." }
+      : {}),
   };
 }

@@ -38,6 +38,12 @@ Brewery, Inn. Castle and military buildings are not offered.
 | `build_structure` | `placements`: 1–4 of `{name, x, y, exact?}` | For each placement: opens the menu, selects the building, clicks the target pixel, then checks with the reader whether it was placed. Retries a silently blocked spot nearby unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement |
 | `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
+
+A stockpile is not one building in the tile map but four 2×2 piles at the corners of a
+5×5 square; the tile map joins each four into its square. `place_near` and
+`expand_storage` anchor on the stockpile's square, on the granary, the keep, the market
+or the signpost by building type, and on the building nearest the camera centre for the
+other anchors.
 | `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Reads the tile map for the current view and lists free spots where the building fits, as screen pixels. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots as pixels | No |
 
 **Placement statuses** returned by `build_structure`:
@@ -88,7 +94,7 @@ retries use it.
 | `get_inventory` | `section`: `all`, `stockpile`, `granary`, `armory` | Stored goods from the reader, with the change since the previous call. `unavailable` if the reading is stale | Text | No |
 | `inspect_building` | `x`, `y` | Clicks a building, reads its panel (workers, vacancies, working, keep access, missing inputs, health) and closes it | Text | Yes |
 | `set_tax` | `level` 0–11 | Opens the keep and steps the tax arrows until the reader shows that level. 0–2 are bribes, 3 is no tax (the start), 4–11 are taxes | From, to, popularity effect | Yes |
-| `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 | Opens the marketplace and buys or sells one lot per click (5 units, 10 for food) | Units, gold change, net worth change, price | Yes |
+| `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 | Opens the marketplace and buys or sells one lot per click (5 units, 10 for food) | Units, gold change, net worth change, price; when a purchase stops early, whether gold or storage room ran out | Yes |
 
 After `set_tax`, `market_trade`, `place_near` or `expand_storage`, the model must
 observe again before it can click.

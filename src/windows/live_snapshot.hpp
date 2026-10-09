@@ -165,6 +165,39 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
          <<",\"no_resources\":"<<int(m::field<std::uint8_t>(a.api,state.get(),"production_no_resources"))<<'}';
         return s.str();
     });
+    // The local player's stockpile piles (type 10: a stockpile is four 2x2 piles, each holding one
+    // good) and granaries (type 19), from the engine's building records: 0x32c bytes per instance
+    // id, the type at the mapped address and, relative to it, the owner (+0x04), top-left tile
+    // (+0x1c, +0x1e), amount (+0xb2), capacity (+0xb6) and, for piles, the good (+0xba). An empty
+    // pile has amount 0 and capacity 0 and keeps its last good. Mapped live on Oasis by the Sea,
+    // 2026-10-09; the owner field was only seen with player 1. Plain reads of the engine's static
+    // records, bounds-checked against its image; no engine function is called. Optional.
+    const auto storage=optional([&]()->std::string {
+        const auto engine=reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(L"CrusaderDE.dll"));
+        if(!engine)throw std::runtime_error("engine module missing");
+        const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(engine);
+        const auto nt=reinterpret_cast<const IMAGE_NT_HEADERS64*>(engine+dos->e_lfanew);
+        if(dos->e_magic!=IMAGE_DOS_SIGNATURE || nt->Signature!=IMAGE_NT_SIGNATURE)
+            throw std::runtime_error("engine image headers unexpected");
+        constexpr std::uint64_t type_rva=0x64cccde,stride=0x32c;
+        const int limit=i16("structs_limit");
+        if(limit<1 || limit>10000 || type_rva+std::uint64_t(limit+1)*stride>nt->OptionalHeader.SizeOfImage)
+            throw std::runtime_error("building records outside engine image");
+        const auto at=[&](int id,int offset){std::int16_t v;std::memcpy(&v,engine+type_rva+std::uint64_t(id)*stride+offset,2);return int(v);};
+        std::ostringstream piles,granaries;int pile_count=0,granary_count=0;bool truncated=false;
+        for(int id=1;id<=limit;++id) {
+            const int type=at(id,0);
+            if((type!=10 && type!=19) || at(id,0x04)!=player)continue;
+            if(type==10) {
+                if(pile_count==128){truncated=true;continue;}
+                piles<<(pile_count++?",":"")<<'['<<at(id,0x1c)<<','<<at(id,0x1e)<<','<<at(id,0xba)<<','<<at(id,0xb2)<<','<<at(id,0xb6)<<']';
+            } else {
+                if(granary_count==32){truncated=true;continue;}
+                granaries<<(granary_count++?",":"")<<'['<<at(id,0x1c)<<','<<at(id,0x1e)<<','<<at(id,0xb2)<<','<<at(id,0xb6)<<']';
+            }
+        }
+        return "{\"piles\":["+piles.str()+"],\"granaries\":["+granaries.str()+"],\"truncated\":"+(truncated?"true":"false")+"}";
+    });
     const std::string managed_heap=a.gc_heap_size
         ? "{\"heap_bytes\":"+std::to_string(a.gc_heap_size())+",\"used_bytes\":"+std::to_string(a.gc_used_size())+
           (a.gc_collections ? ",\"collections\":"+std::to_string(a.gc_collections(0))+
@@ -182,7 +215,7 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
     for(std::size_t i=0;i<economy.resources.size();++i){if(i)out<<',';out<<economy.resources[i];}
     out<<"],\"own_troops\":{\"total\":"<<total<<",\"by_type_1_to_34\":["<<counts.str()<<"]}"
        <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"managed_heap\":"<<managed_heap
-       <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building
+       <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building<<",\"storage\":"<<storage
        <<",\"visible_messages\":[";
     bool comma=false;
     for(const char* channel:{"Keep_Message","Message_Bar","Feedback_1"}) {

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TileMap, footprintRect } from "./tile-map.js";
+import { STRUCTURE_TYPES, TileMap, footprintRect } from "./tile-map.js";
+import { anchorRectOf } from "./anchors.js";
 import type { TileRegion } from "./device.js";
 
 const camera = { centre_tile_x: 100, centre_tile_y: 100, tiles_wide: 30, tiles_high: 68 };
@@ -157,20 +158,53 @@ test("woodcutter sites come closest to trees first, with the trees within reach"
   assert.deepEqual(bare[0].tile, { x: 100, y: 100 });
 });
 
-test("a storage cluster is the anchor plus every building of its type joined to it", () => {
+/** A stockpile as the game stores it: four 2×2 piles at the corners of a 5×5 square. */
+const stockpile = (set: Parameters<Parameters<typeof region>[0] & {}>[0], x: number, y: number, firstId: number) =>
+  [[0, 0], [3, 0], [0, 3], [3, 3]].forEach(([dx, dy], i) => fill(set, "structure", x + dx, y + dy, x + dx + 1, y + dy + 1, firstId + i));
+const piles = (...firstIds: number[]) =>
+  Object.fromEntries(firstIds.flatMap((id) => [0, 1, 2, 3].map((i) => [String(id + i), STRUCTURE_TYPES.pile])));
+
+test("a stockpile's four piles make one 5×5 square, and touching stockpiles one cluster", () => {
   const r = region((set) => {
-    fill(set, "structure", 100, 100, 104, 104, 1); // the first stockpile (type 52)
-    fill(set, "structure", 105, 100, 109, 104, 2); // touching it
-    fill(set, "structure", 110, 100, 114, 104, 3); // touching the second only
-    fill(set, "structure", 120, 100, 124, 104, 4); // a stockpile elsewhere
-    fill(set, "structure", 100, 105, 102, 107, 5); // a granary (type 80) touching the first
+    stockpile(set, 100, 100, 1);
+    stockpile(set, 105, 100, 5); // touching the first
+    stockpile(set, 110, 100, 9); // touching the second only
+    stockpile(set, 120, 100, 13); // elsewhere
+    fill(set, "structure", 100, 105, 103, 108, 17); // a granary touching the first
   });
-  const map = new TileMap({ ...r, structure_types: { "1": 52, "2": 52, "3": 52, "4": 52, "5": 80 } }, camera, frame);
-  assert.deepEqual(map.cluster(1), [
+  const map = new TileMap({ ...r, structure_types: { ...piles(1, 5, 9, 13), "17": STRUCTURE_TYPES.granary } }, camera, frame);
+  const squares = map.storageRects("Stockpile");
+  assert.equal(squares.length, 4);
+  const first = map.nearestToCentre(squares)!;
+  assert.deepEqual(first, { x1: 100, y1: 100, x2: 104, y2: 104 });
+  assert.deepEqual(map.cluster(first, squares), [
     { x1: 100, y1: 100, x2: 104, y2: 104 },
     { x1: 105, y1: 100, x2: 109, y2: 104 },
     { x1: 110, y1: 100, x2: 114, y2: 104 },
   ]);
-  // Without structure types only the anchor itself.
-  assert.deepEqual(new TileMap(r, camera, frame).cluster(1), [{ x1: 100, y1: 100, x2: 104, y2: 104 }]);
+  assert.deepEqual(map.storageRects("Granary"), [{ x1: 100, y1: 105, x2: 103, y2: 108 }]);
+  // Without structure types there is no storage to anchor on (the caller probes instead).
+  assert.deepEqual(new TileMap(r, camera, frame).storageRects("Stockpile"), []);
+});
+
+test("storage anchors on the stockpile, not the keep beside it at the camera centre (every run to 2026-10-09)", () => {
+  // As on Oasis by the Sea: the keep (7×7) ends on the camera's centre tile, the stockpile's
+  // square starts one tile further along +x, and its walkway tiles hold no building.
+  const r = region((set) => {
+    fill(set, "structure", 94, 97, 100, 103, 20);
+    stockpile(set, 101, 98, 1);
+  });
+  const map = new TileMap({ ...r, structure_types: { ...piles(1), "20": STRUCTURE_TYPES.keep } }, camera, frame);
+  assert.equal(map.structureAt({ x: 100, y: 100 }), 20, "the building at the centre is the keep");
+  const square = anchorRectOf(map, "stockpile")!;
+  assert.deepEqual(square, { x1: 101, y1: 98, x2: 105, y2: 102 });
+  assert.deepEqual(anchorRectOf(map, "keep"), { x1: 94, y1: 97, x2: 100, y2: 103 });
+  // Every side but the keep's offers a spot whose footprint touches the stockpile.
+  for (const side of ["down-right", "down-left", "up-right"]) {
+    const [site] = map.sitesBeside("Stockpile", square, 1, side);
+    assert.equal(site.side, side);
+    const f = footprintRect(site.tile, 5);
+    const touches = f.x1 <= square.x2 + 1 && square.x1 <= f.x2 + 1 && f.y1 <= square.y2 + 1 && square.y1 <= f.y2 + 1;
+    assert.ok(touches && !(f.x1 <= square.x2 && square.x1 <= f.x2 && f.y1 <= square.y2 && square.y1 <= f.y2), `${side} touches without overlapping`);
+  }
 });

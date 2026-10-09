@@ -58,11 +58,13 @@ def launch_chain_tools(pid):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', nargs='?', default='probe',
-                        choices=['probe', 'economy', 'test', 'watch', 'tiles', 'map'])
+                        choices=['probe', 'economy', 'test', 'watch', 'tiles', 'map', 'structures'])
     parser.add_argument('--samples', type=int, default=0, help='Watch sample count; 0 runs until game exit')
     parser.add_argument('--interval-ms', type=int, default=500, help='Watch pause between samples (50..5000 ms)')
     parser.add_argument('--region', type=int, nargs=4, metavar=('X0', 'Y0', 'W', 'H'),
                         help='Tiles mode: read native tile layers for this rectangle (read-only, external)')
+    parser.add_argument('--ids', type=int, nargs=2, metavar=('FIRST', 'COUNT'),
+                        help='Structures mode: raw building records from instance FIRST (diagnostic)')
     args = parser.parse_args()
     if not 0 <= args.samples <= 1000000:
         parser.error("samples must be 0..1000000")
@@ -99,6 +101,7 @@ def main():
                 'probe': [('crusader_probe.exe', [])],
                 'tiles': [('crusader_probe.exe', ['--tile-region', *map(str, args.region or [])])],
                 'map': [('crusader_probe.exe', ['--map-summary'])],
+                'structures': [('crusader_probe.exe', ['--structure-bytes', *map(str, args.ids or [])])],
                 'economy': [('crusader_launcher.exe', ['--economy'])],
                 'test': [(name + '.exe', []) for name in
                          ['observation_test', 'render_observation_test', 'adapter_contract_test']]}

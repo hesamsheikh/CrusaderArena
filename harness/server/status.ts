@@ -39,6 +39,47 @@ const cameraOf = (o: Observation) =>
     : null;
 
 /**
+ * Stockpile and granary room. Each stockpile has four piles and each pile holds one good, so a
+ * good can be delivered only while one of its piles has room or a pile is empty; otherwise its
+ * producers stop (live 2026-10-09). Absent when the reader has no storage reading.
+ */
+export function storageOf(o: Observation) {
+  const st = o.storage;
+  if (!st) return undefined;
+  const goods: Record<string, { stored: number; room: number }> = {};
+  let empty = 0;
+  for (const pile of st.piles) {
+    if (!pile.good || pile.amount <= 0) { empty++; continue; }
+    const g = (goods[pile.good] ??= { stored: 0, room: 0 });
+    g.stored += pile.amount;
+    g.room += Math.max(0, pile.capacity - pile.amount);
+  }
+  const blocked = empty ? [] : Object.entries(goods).filter(([, g]) => g.room === 0).map(([name]) => name);
+  // Granaries hold all foods together; like a pile, an empty one reads capacity 0 until food arrives.
+  const stocked = st.granaries.filter((g) => g.amount > 0);
+  const food = stocked.reduce((n, g) => n + g.amount, 0);
+  const room = stocked.reduce((n, g) => n + Math.max(0, g.capacity - g.amount), 0);
+  const emptyGranaries = st.granaries.length - stocked.length;
+  return {
+    stockpile: {
+      piles: st.piles.length,
+      empty_piles: empty,
+      goods,
+      ...(empty === 0 && st.piles.length
+        ? { full: `No empty pile: ${blocked.length ? `${blocked.join(", ")} and ` : ""}any good not stored yet cannot be delivered, so their producers stop. Sell surplus or expand_storage.` }
+        : {}),
+    },
+    granary: {
+      granaries: st.granaries.length,
+      empty_granaries: emptyGranaries,
+      food,
+      room,
+      ...(stocked.length && !emptyGranaries && !room ? { full: "Granaries full: food producers stop delivering. Add a granary (expand_storage) or sell food." } : {}),
+    },
+  };
+}
+
+/**
  * The settlement beside every screenshot: game values only, in the game's own units. Reader
  * plumbing (session, generation, timestamps, coherence and heap diagnostics) stays in the tool
  * result's details, which are not sent to the model; troops only when the benchmark has military play.
@@ -66,6 +107,7 @@ export function observationStats(stats: Stats, { military = true } = {}) {
         }
       : {}),
     goods: o.resources_by_name ?? null,
+    ...(storageOf(o) ? { storage: storageOf(o) } : {}),
     ...(military && troops
       ? {
           troops: {
@@ -109,6 +151,7 @@ export function statusReport(
       granary: pick(inventoryGroups.granary),
     },
     stockpile: pick(inventoryGroups.stockpile),
+    ...(storageOf(o) ? { storage: storageOf(o) } : {}),
     troops: o.own_troops?.total,
     structures_map_wide: o.structures?.count,
     placement_mode: placementOf(o),

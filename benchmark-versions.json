@@ -1,5 +1,5 @@
 {
-  "current": "1.0.0",
+  "current": "1.1.0",
   "history": [
     {
       "version": "1.0.0",
@@ -36,6 +36,12 @@
       "fingerprint": "6e777c9972102277f47b8b1c75daf8a1afca29befab700d85bba45c11a4f2790",
       "date": "2026-10-09",
       "note": "Claude through Anthropic's own Messages API: adaptive thinking at the profile's effort, cache marks for that API"
+    },
+    {
+      "version": "1.1.0",
+      "fingerprint": "19121beba808ff53579a7399d99118e38af7f19074a91e7b5add9b27f1cd59f0",
+      "date": "2026-10-09",
+      "note": "Stockpile and granary storage (piles, room per good, full notes) in observations and status; the stockpile pile rule in the prompt; place_near and expand_storage anchor by building type, so stockpiles expand on every side; market_trade says whether gold or storage stopped a purchase; a raw building-record diagnostic in the probe; the prompt says only quarries use oxen, several ox tethers can serve one quarry and stone piling up at a quarry means more are needed"
     }
   ]
 }

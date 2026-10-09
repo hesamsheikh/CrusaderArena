@@ -80,7 +80,8 @@ int wmain(int argc,wchar_t** argv) {
         const bool town_mode=argc==2 && wcscmp(argv[1],L"--town-map")==0;
         const bool region_mode=argc==6 && wcscmp(argv[1],L"--tile-region")==0;
         const bool map_mode=argc==2 && wcscmp(argv[1],L"--map-summary")==0;
-        if(argc!=1 && !tile_mode && !block_mode && !town_mode && !region_mode && !map_mode)
+        const bool structure_mode=argc==4 && wcscmp(argv[1],L"--structure-bytes")==0;
+        if(argc!=1 && !tile_mode && !block_mode && !town_mode && !region_mode && !map_mode && !structure_mode)
             throw std::runtime_error("usage: crusader_probe [--tile x y | --tile-block x y | --town-map | --tile-region x0 y0 w h | --map-summary]");
         int region[4]={0,0,0,0};
         if(region_mode)
@@ -158,6 +159,7 @@ int wmain(int argc,wchar_t** argv) {
         if(town_mode)crusader::sample_native_towns(matches[0],engine_base,engine_size);
         if(map_mode)crusader::sample_native_map(matches[0],engine_base,engine_size);
         if(region_mode)crusader::sample_native_region(matches[0],engine_base,engine_size,region[0],region[1],region[2],region[3]);
+        if(structure_mode)crusader::sample_native_structure_bytes(matches[0],engine_base,engine_size,std::stoi(std::wstring(argv[2])),std::stoi(std::wstring(argv[3])));
 #endif
         return 0;
     } catch(const std::exception& e) {

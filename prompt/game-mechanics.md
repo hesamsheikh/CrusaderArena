@@ -32,8 +32,16 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
   destinations. Workers travel to collect and deliver goods; long routes reduce
   effective output. A placed building is not necessarily producing.
 - **Storage:** Stockpiles hold raw materials and intermediate goods; granaries
-  hold food; armories hold weapons and armor. Expand storage when full. Granary
-  extensions must touch the existing granary; keep stockpile space contiguous.
+  hold food; armories hold weapons and armor. A stockpile is four piles (a 2×2 grid)
+  and each pile holds one good. How much a pile holds depends on the good (48 for
+  wood, stone and iron); `storage` shows the room left. Each good takes piles of its
+  own, a few units of a new good take a whole pile, and a good can spread over several
+  piles. Once no pile is empty, a good with no room left in its piles and any
+  good not stored yet cannot be delivered: their workers stand waiting and production
+  stops, with no message from the game. Each granary holds 250 food in total. Make room
+  before storage fills: sell surplus at the marketplace or add stockpiles or granaries
+  with `expand_storage` (new ones must touch the existing ones). Keep stockpile space
+  contiguous and leave room beside it to expand.
 - **Trade:** A marketplace buys and sells goods for gold, including equipment.
   Auto-buy replenishes below a threshold; auto-sell sells above one. Avoid selling
   resources reserved for construction/recruitment or setting unaffordable imports.
@@ -62,9 +70,9 @@ everything else on plain ground.
 | Granary | 5 W; none | Stores meat, cheese, apples and bread. Select to set rations and permitted foods. |
 | Marketplace | Free / 5 W in manual; none | Buys/sells commodities and sets automatic trade. Check the placement cost shown. |
 | Woodcutter | 3 W; 1 | Cuts nearby trees and delivers wood to stockpile. Essential for most early construction. |
-| Quarry | 20 W; 3 | Extracts stone from a stone deposit; needs ox transport to stockpile. |
-| Ox tether | 5 W; 1 | Carries quarry stone to stockpile. A quarry without transport does not supply usable stone reliably. |
-| Iron mine | 20 W; 2 | Place on iron deposits; supplies iron for metal weapons and armor. |
+| Quarry | 20 W; 3 | Cuts stone from a stone deposit. The stone waits at the quarry until an ox carries it to the stockpile: needs at least one ox tether. |
+| Ox tether | 5 W; 1 | Its ox carries quarry stone to the stockpile. Oxen are not tied to one quarry: each takes whatever stone is ready. One quarry can use several; a quarry far from the stockpile needs more, so stone does not pile up while an ox makes the round trip. Stone piling up at a quarry means more ox tethers are needed. Only quarries use oxen. |
+| Iron mine | 20 W; 2 | Place on iron ore; its workers carry the iron to the stockpile themselves, with no ox tether. Supplies iron for metal weapons and armor. |
 | Pitch rig | 20 W; 1 | Place on suitable marsh; supplies pitch for fire defenses and oil smelters. |
 | Hunter's post | 5 W; 1 | Hunts nearby deer and delivers meat directly to granary; depends on available animals. |
 | Apple orchard | 5 W; 1 | Produces apples directly for granary; needs grassland. |
@@ -88,7 +96,8 @@ everything else on plain ground.
 
 - **Bread:** wheat farm → stockpiled wheat → mill → stockpiled flour → bakery → granary.
 - **Ale:** hops farm → stockpiled hops → brewery → stockpiled ale → inn → popularity.
-- **Stone:** quarry → ox tether transport → stockpile → walls/towers/buildings.
+- **Stone:** quarry → oxen from ox tethers → stockpile → walls/towers/buildings.
+- **Iron:** iron mine → stockpile (the miners carry it; no oxen).
 <!-- military -->
 - **Leather armor:** dairy cows → tanner → armory. Tanning consumes cows and can
   compete with cheese production.

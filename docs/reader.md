@@ -91,10 +91,27 @@ in the run's `events.jsonl`.
 | `own_troops` | Total and 34 named types from the Army Report | Names follow the game's own spellings |
 | `settlement` | Month and year, housing capacity, idle peasants, total food, rations, food types eaten and available, popularity factors and upcoming change | Popularity factors are 25 per point shown in the game. `months_of_food` does not match the game's panel; do not use it |
 | `selected_building` | Type, workers, vacancies, working, keep access, missing inputs, health; `null` without an open panel | |
+| `storage` | The local player's stockpile piles (tile, good, amount, capacity) and granaries (tile, amount, capacity); `null` when unavailable | Read from the engine's building records (below) |
 | `structures` | Count and limit | **Map-wide**, including other players; use it only as a change signal |
 | `placement` | What is being placed, and in which mode | |
 | `camera` | Centre tile, visible tiles across and down, zoom | |
 | `visible_messages` | On-screen message text, by channel | See below |
+
+## Storage
+
+A stockpile is four buildings: 2×2 piles at the corners of a 5×5 square, each holding
+one good. A pile's capacity depends on its good (48 for wood, stone and iron, the only
+ones checked); an empty pile reads amount 0 and capacity 0 and takes whichever good
+arrives next. When no pile is empty, a good without room in its own piles is not
+delivered: the market refuses to buy it and producers stop, and the game shows no text
+message. Each granary holds 250 food of all kinds together; an empty granary also reads
+capacity 0. All of this was seen live on Oasis by the Sea on 2026-10-09.
+
+The reader takes these from the engine's records of building instances (one per id,
+read in place, with no game function called), filtered by an owner field seen only
+with player 1. `python3 tools/ubuntu/run-proton.py structures --ids FIRST COUNT` dumps
+raw records for mapping more fields; its output is game memory, so keep it out of the
+repository.
 
 ## Messages
 

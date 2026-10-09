@@ -70,6 +70,19 @@ class StreamTests(unittest.TestCase):
         self.assertIsNone(observation['placement'])
         self.assertIsNone(observation['camera'])
 
+    def test_storage_names_goods_and_leaves_empty_piles_without_one(self):
+        self.record['observation']['storage'] = {
+            'piles': [[430, 359, 2, 48, 48], [430, 362, 4, 0, 0], [433, 362, 99, 3, 48]],
+            'granaries': [[430, 355, 28, 250]], 'truncated': False}
+        storage = self.stream.consume(self.record, 1020)['observation']['storage']
+        self.assertEqual(storage['piles'], [
+            {'tile': [430, 359], 'good': 'wood_planks', 'amount': 48, 'capacity': 48},
+            {'tile': [430, 362], 'good': None, 'amount': 0, 'capacity': 0},
+            {'tile': [433, 362], 'good': 'good_99', 'amount': 3, 'capacity': 48}])
+        self.assertEqual(storage['granaries'], [{'tile': [430, 355], 'amount': 28, 'capacity': 250}])
+        self.record['observation']['storage'] = None
+        self.assertIsNone(self.stream.consume(self.record, 1030)['observation']['storage'])
+
     def test_exit_invalidates_data(self):
         self.stream.consume(self.record, 1020)
         result = self.stream.consume({'status': 'game_exited'}, 1030)

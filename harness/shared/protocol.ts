@@ -123,6 +123,15 @@ export type Stats = {
       upcoming_popularity: number;
       popularity_factors: Record<string, number>;
     } | null;
+    /**
+     * The local player's stockpile piles (four per stockpile, each holding one good; an empty pile
+     * has no good) and granaries, from the engine's building records; null when unavailable.
+     */
+    storage?: {
+      piles: { tile: [number, number]; good: string | null; amount: number; capacity: number }[];
+      granaries: { tile: [number, number]; amount: number; capacity: number }[];
+      truncated: boolean;
+    } | null;
     /** The building whose panel is open; null when none. */
     selected_building?: {
       id: number;

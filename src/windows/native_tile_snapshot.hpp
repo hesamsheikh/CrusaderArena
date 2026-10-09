@@ -21,6 +21,20 @@ T read_native(HANDLE process, std::uintptr_t base, DWORD size, std::uint64_t rva
     return value;
 }
 
+// Raw building records for a diagnostic: `count` strides of 0x32c bytes starting at the type field
+// of instance `first` (the layout of the rest of a record is not mapped).
+void sample_native_structure_bytes(DWORD pid,std::uintptr_t base,DWORD size,int first,int count) {
+    if(first<1 || count<1 || count>64 || first+count>10000)throw std::runtime_error("structure range must be 1..9999, at most 64 records");
+    Handle process(OpenProcess(PROCESS_VM_READ|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid));
+    if(!process.value)throw std::runtime_error("cannot open game for read-only structure diagnostic");
+    std::vector<std::uint8_t> bytes(std::size_t(count)*0x32c);
+    read_native_bytes(process.value,base,size,0x64cccdeull+std::uint64_t(first)*0x32cull,bytes.data(),bytes.size());
+    static const char* digits="0123456789abcdef";
+    std::string hex;hex.reserve(bytes.size()*2);
+    for(const auto b:bytes){hex+=digits[b>>4];hex+=digits[b&15];}
+    std::cout<<"structure_bytes: {\"first\":"<<first<<",\"count\":"<<count<<",\"stride\":812,\"hex\":\""<<hex<<"\"}\n";
+}
+
 void sample_native_towns(DWORD pid,std::uintptr_t base,DWORD size) {
     Handle process(OpenProcess(PROCESS_VM_READ|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid));
     if(!process.value)throw std::runtime_error("cannot open game for read-only town diagnostic");

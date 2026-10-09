@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { adjacentRays, cameraShift, sideOrder, tilePixel } from "./anchors.js";
-import { describeBuilding, statusReport } from "./status.js";
+import { describeBuilding, statusReport, storageOf } from "./status.js";
 
 const frame = { width: 1920, height: 1080 };
 const span = { tiles_wide: 30, tiles_high: 68 };
@@ -73,4 +73,29 @@ test("building description separates staffed buildings from storage", () => {
   assert.deepEqual(describeBuilding({ ...base, id: 13, type: 19, have_stats: 0, workers_have: 0, job_vacancies: 0, workers_needed: 0, working: 0, keep_access: 0 }), {
     id: 13, type: 19, name: "Granary", turned_off: false,
   });
+});
+
+test("storage counts room per good and empty piles, and says when the stockpile is full", () => {
+  const pile = (good: string | null, amount: number, capacity = amount ? 48 : 0) => ({ tile: [0, 0] as [number, number], good, amount, capacity });
+  const granary = (amount: number) => ({ tile: [0, 0] as [number, number], amount, capacity: amount ? 250 : 0 });
+  const observation = (piles: ReturnType<typeof pile>[], granaries = [granary(28)]) => ({
+    gold: 0, population: 0, popularity: 0, map_name: "m", wood_planks: 0,
+    storage: { piles, granaries, truncated: false },
+  });
+  // Haiku's first episode (2026-10-09): wood filled two piles and 25 stone lay split over the other
+  // two, so wood stopped at 96 with no message from the game.
+  const full = storageOf(observation([pile("wood_planks", 48), pile("wood_planks", 48), pile("stone", 13), pile("stone", 12)]))!;
+  assert.deepEqual(full.stockpile.goods, { wood_planks: { stored: 96, room: 0 }, stone: { stored: 25, room: 71 } });
+  assert.equal(full.stockpile.empty_piles, 0);
+  assert.match(full.stockpile.full!, /wood_planks and any good not stored yet cannot be delivered/);
+  assert.deepEqual(full.granary, { granaries: 1, empty_granaries: 0, food: 28, room: 222 });
+  // An empty pile takes any good: nothing is full. A full granary is full only without an empty
+  // one beside it (empty ones read capacity 0, live 2026-10-09).
+  const room = storageOf(observation([pile("wood_planks", 48), pile("wood_planks", 48), pile("stone", 25), pile(null, 0)], [granary(250)]))!;
+  assert.equal(room.stockpile.empty_piles, 1);
+  assert.equal(room.stockpile.full, undefined);
+  assert.match(room.granary.full!, /Granaries full/);
+  const spare = storageOf(observation([], [granary(250), granary(0)]))!;
+  assert.deepEqual(spare.granary, { granaries: 2, empty_granaries: 1, food: 250, room: 0 });
+  assert.equal(storageOf({ ...observation([]), storage: null }), undefined, "no reading: absent, not empty");
 });
