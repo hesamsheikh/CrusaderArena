@@ -69,6 +69,16 @@ between September and October 2026.
   counted episode 1 by its second attempt. Every run recorded its version, attempt and a clean
   commit, and the runner's check of the game machine's files caught an out-of-date one
   before the run.
+- Claude through Anthropic's own API, in a learning series of two 3-game-minute Claude
+  Haiku 5.5 episodes at medium effort on 2026-10-09 with a 75,000-token context budget:
+  both episodes ran their full budget; all 27 buildings it tried to place were placed
+  (3 at a nearby spot after a retry), as expected since Anthropic's documentation says
+  these models see a 1920 × 1080 screenshot unscaled; compaction and the playbook
+  request worked; and episode 2 started from the playbook. The cache marks paid off: each request read the
+  conversation the previous one wrote (70–72% of all input from the cache), and the
+  handoff and playbook requests read it too. Anthropic reports no cost. A 60,000-token
+  budget is too small for Claude: its fresh conversation after a compaction (about
+  39,300 tokens) did not fit under 65% of it, which ended that run with an error.
 
 ## Tested in code only
 
@@ -93,10 +103,6 @@ between September and October 2026.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.
-- Claude through Anthropic's own API: the request body (adaptive thinking at the
-  profile's effort, the output limit and the cache marks) is checked in code. One short
-  text request to Claude Haiku 5.5 at medium effort succeeded on 2026-10-09; no run has
-  used it yet.
 - Host shutdown ending a run with the final pause, and the host staying ready when a
   run cannot be set up.
 - Publishing runs ([Publishing](publishing.md)): packaging, scrubbing, the tables and the
