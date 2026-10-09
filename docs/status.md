@@ -154,6 +154,12 @@ between September and October 2026.
   `permanently_delete_lfs_files` (history rewritten): the 12 old `events.jsonl` files and
   1080p videos, 1,302.5 MB. The dataset now stores 376 files, 468.8 MB, all used by `main`;
   both series still match their manifests, and the tables and a video download from the Hub.
+  The three series in the dataset then (those two and GLM 5.3 Flash on 1.1.0,
+  20261009T122236-3aae6fc4) were packaged again with `cost_source` and replaced with
+  `--replace` on 2026-10-09. Compared value by value with the bundles before: the GLM
+  series changed only by `cost_source` (`billed`), their costs unchanged; the Haiku series
+  gained its costs from list prices ($0.31, `prices`) and its run files the cost events.
+  The files on the Hub match the manifests, and the tables load from the Hub.
 
 ## Not verified or not built
 
