@@ -17,7 +17,9 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.1.3] - 2026-10-09
+
+Comparable with 1.1.2: runs play and score the same.
 
 ### Harness
 
