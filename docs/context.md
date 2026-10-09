@@ -171,7 +171,8 @@ preparation and compaction. `npm run report` splits it into uncached input, cach
 reads, cache writes and output, and shows the share of all input read from the cache.
 Providers that do not report cache writes show 0. OpenRouter is asked to report what
 it billed for each request; the host reads that from the reply's last usage chunk and
-keeps the run's total as `cost` in `run.json`. Other providers report no cost.
+keeps the run's total as `cost` in `run.json`. Other providers, Anthropic included,
+report no cost; work it out from the token counts and the provider's prices.
 
 Most providers cache repeated prompt prefixes on their own, which the fixed system
 prompt, the pinned opening and the unchanged history are designed to benefit. Claude
@@ -181,3 +182,11 @@ definitions, the end of the pinned preparation exchange, and the conversation up
 the oldest screenshot still shown. Every turn replaces that screenshot with a
 placeholder, so the history before it is what the next request repeats unchanged;
 a mark on the newest message would write a cache entry that no later request reads.
+
+Claude through Anthropic's own API (endpoint `https://api.anthropic.com`) caches the
+same way, with the four marks spent differently: the system prompt (which covers the
+tool definitions before it), the end of the pinned preparation exchange, the
+conversation up to the oldest screenshot still shown, and the conversation up to the
+newest placeholder, which is about where the previous request wrote. Anthropic looks
+for an earlier cache entry only about 20 content blocks back from a mark, and a turn
+with many tool calls has more, so the previous entry is read at a mark of its own.

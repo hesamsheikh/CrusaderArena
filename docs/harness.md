@@ -40,6 +40,13 @@ and loading screens, are shown as unavailable, never as zero.
 A profile is a display name, a model ID, an endpoint and a key. **Home → Configure**
 lists them; **+ Add** creates one.
 
+- **Endpoints.** `https://openrouter.ai/api/v1` and Moonshot's endpoint use the
+  OpenAI-compatible chat completions API. `https://api.anthropic.com` uses Anthropic's
+  own Messages API, for Claude models by their Anthropic IDs (such as
+  `claude-haiku-5-5`), with adaptive thinking: the reasoning level becomes Claude's
+  effort (`minimal` and `low` both become `low`). Any other endpoint is treated like
+  Moonshot's.
+
 - The default profile, Kimi K3, reads `MOONSHOT_API_KEY` (and optionally
   `MOONSHOT_MODEL`, `MOONSHOT_BASE_URL`) from `.env`. Restart after changing `.env`.
 - Keys typed into the dashboard are saved in `harness/runtime/config/models.json`, a
@@ -55,15 +62,16 @@ lists them; **+ Add** creates one.
 
   | Setting | Values | Meaning |
   | --- | --- | --- |
-  | Reasoning | `default`, `off`, `minimal`, `low`, `medium`, `high` | `default` sends no reasoning setting and lets the endpoint decide. `off` is OpenRouter only. Moonshot accepts only `default` |
+  | Reasoning | `default`, `off`, `minimal`, `low`, `medium`, `high` | `default` sends no reasoning setting and lets the endpoint decide. `off` is OpenRouter only. Moonshot accepts only `default`. On Anthropic a level is Claude's effort |
   | Max tokens | 1,024 to 131,072 (default 8,192) | Output tokens per reply, reasoning included. Used for gameplay, preparation and compaction (compaction never below 8,192) |
   | Providers, allow fallbacks | Provider names in order of preference | OpenRouter only: which upstream providers may serve the model. Empty lets OpenRouter choose for each request |
 
   Profiles created before these settings existed keep what the harness used to send:
   low reasoning on OpenRouter, the endpoint's default elsewhere, 8,192 tokens, no
   provider preference.
-- A profile can instead read `OPENROUTER_API_KEY` from `.env`, by creating it through
-  the API with `envKey: "OPENROUTER_API_KEY"`.
+- A profile can instead read `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY` from `.env`,
+  by creating it through the API with `envKey` set to that name; the endpoint must be
+  OpenRouter's or Anthropic's.
 - **Configure → Test saved model** sends one short, billed request.
 
 ## Manual control

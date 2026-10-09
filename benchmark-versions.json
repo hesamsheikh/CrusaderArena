@@ -30,6 +30,12 @@
       "fingerprint": "8c162fc9f4f6bc57021fc1e42bf7169a76821b586fc3ffbbd992f60f91839a84",
       "date": "2026-10-09",
       "note": "Version numbers follow semantic versioning (MAJOR.MINOR.PATCH); v1 is renamed 1.0.0. No change in behaviour."
+    },
+    {
+      "version": "1.0.0",
+      "fingerprint": "6e777c9972102277f47b8b1c75daf8a1afca29befab700d85bba45c11a4f2790",
+      "date": "2026-10-09",
+      "note": "Claude through Anthropic's own Messages API: adaptive thinking at the profile's effort, cache marks for that API"
     }
   ]
 }

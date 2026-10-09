@@ -93,6 +93,10 @@ between September and October 2026.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
   body the model library builds, not yet against a live provider.
+- Claude through Anthropic's own API: the request body (adaptive thinking at the
+  profile's effort, the output limit and the cache marks) is checked in code. One short
+  text request to Claude Haiku 5.5 at medium effort succeeded on 2026-10-09; no run has
+  used it yet.
 - Host shutdown ending a run with the final pause, and the host staying ready when a
   run cannot be set up.
 - Publishing runs ([Publishing](publishing.md)): packaging, scrubbing, the tables and the

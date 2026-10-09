@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import { createModels, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { Type, type TSchema } from "typebox";
@@ -9,7 +10,7 @@ const defineTool = <T extends TSchema>(tool: AgentTool<T>): AgentTool<any> =>
 import type { RunMemory } from "./run-memory.js";
 import type { ObservationCycle, Session } from "./session.js";
 import { requestTimeout } from "./session.js";
-import { placeCacheBreakpoints } from "./context.js";
+import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { atlasPage, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 import {
   buildableNames,
@@ -117,6 +118,7 @@ import {
   modelToolAction,
   allowedKeys,
   GAME_SPEED,
+  isAnthropic,
   isOpenRouter,
   modelSettings,
   TICKS_PER_GAME_SECOND,
@@ -131,10 +133,32 @@ const gameControls = readFileSync(
 
 export function modelConfig(
   profile?: ModelProfile,
-): Model<"openai-completions"> {
+): Model<"openai-completions" | "anthropic-messages"> {
   const baseUrl = profile?.baseUrl || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1";
   const settings = modelSettings({ ...profile, baseUrl });
   const openRouter = isOpenRouter(baseUrl);
+  if (profile && isAnthropic(baseUrl))
+    return {
+      id: profile.modelId,
+      name: profile.name,
+      provider: profile.id,
+      api: "anthropic-messages",
+      baseUrl,
+      reasoning: true,
+      // "default" sends no thinking setting, leaving it to the model's own default.
+      ...(settings.reasoning === "default" ? { thinkingLevelMap: { off: null } } : {}),
+      input: ["text", "image"],
+      contextWindow: 1048576,
+      maxTokens: settings.maxTokens,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      compat: {
+        // Claude 4.6 and later take adaptive thinking steered by effort, not a token budget.
+        forceAdaptiveThinking: true,
+        // The system prompt's breakpoint covers the tools before it; the four allowed breakpoints
+        // go where the conversation repeats (placeAnthropicCacheBreakpoints).
+        supportsCacheControlOnTools: false,
+      },
+    };
   return {
     id: profile?.modelId || process.env.MOONSHOT_MODEL || "kimi-k3",
     name: profile?.name || "Kimi K3",
@@ -177,12 +201,13 @@ function payloadHook(
 ) {
   return async (params: unknown, model: Model<any>) => {
     if (isOpenRouter(profile.baseUrl)) (params as { usage?: unknown }).usage = { include: true };
-    if (anthropicCaching(profile)) {
-      const pinned = runtime?.pinned?.() ?? new Set();
-      let count = 0;
-      while (count < messages.length && pinned.has(messages[count] as AgentMessage)) count++;
+    const pinned = runtime?.pinned?.() ?? new Set();
+    let count = 0;
+    while (count < messages.length && pinned.has(messages[count] as AgentMessage)) count++;
+    if (anthropicCaching(profile))
       placeCacheBreakpoints(params as Parameters<typeof placeCacheBreakpoints>[0], count);
-    }
+    if (isAnthropic(profile.baseUrl))
+      placeAnthropicCacheBreakpoints(params as Parameters<typeof placeAnthropicCacheBreakpoints>[0], count);
     return onPayload?.(params, model);
   };
 }
@@ -233,9 +258,11 @@ export const requestOptions = (profile: ModelProfile) => {
 function registry(profile: ModelProfile) {
   const models = createModels();
   models.setProvider({
-    ...(new URL(profile.baseUrl).hostname === "openrouter.ai"
+    ...(isOpenRouter(profile.baseUrl)
       ? openrouterProvider()
-      : moonshotaiProvider()),
+      : isAnthropic(profile.baseUrl)
+        ? anthropicProvider()
+        : moonshotaiProvider()),
     id: profile.id,
     name: profile.name,
     baseUrl: profile.baseUrl,

@@ -166,6 +166,8 @@ export type ModelProfile = {
 } & Partial<ModelSettings>;
 export const isOpenRouter = (baseUrl: string) => new URL(baseUrl).hostname === "openrouter.ai";
 export const isMoonshot = (baseUrl: string) => /^api\.moonshot\./.test(new URL(baseUrl).hostname);
+/** Anthropic's own Messages API (not its OpenAI-compatible layer). */
+export const isAnthropic = (baseUrl: string) => new URL(baseUrl).hostname === "api.anthropic.com";
 /**
  * A profile's settings with defaults. Missing values are what the harness sent before they were
  * settings (2026-10-08): low reasoning on OpenRouter, the endpoint's default elsewhere, 8192 tokens.

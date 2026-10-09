@@ -150,9 +150,10 @@ turn. The dashboard shows both to the operator live.
 ## Models
 
 The model must accept images and tool calls through an OpenAI-compatible chat
-completions endpoint. The default profile is Moonshot's Kimi K3. Moonshot and
-OpenRouter endpoints are tested; other endpoints are handled like Moonshot's and are
-untested. Each profile sets its reasoning level, its output limit per reply (8,192
-tokens by default) and, on OpenRouter, which upstream providers may serve it; every
-run records these. Requests time out after 90 seconds. See
+completions endpoint, or be a Claude model on Anthropic's own Messages API. The
+default profile is Moonshot's Kimi K3. Moonshot and OpenRouter endpoints are tested;
+other OpenAI-compatible endpoints are handled like Moonshot's and are untested. Each
+profile sets its reasoning level, its output limit per reply (8,192 tokens by
+default) and, on OpenRouter, which upstream providers may serve it; every run records
+these. Requests time out after 90 seconds. See
 [the harness](harness.md#model-profiles) for adding and configuring models.

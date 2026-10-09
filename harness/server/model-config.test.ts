@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
-import type { AssistantMessage, Context, Message } from "@earendil-works/pi-ai";
+import { streamSimple as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages";
+import type { AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { modelConfig, prepareModel, requestOptions } from "./model.js";
-import { placeCacheBreakpoints, pruneImages } from "./context.js";
+import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints, pruneImages } from "./context.js";
 import type { ModelProfile } from "../shared/protocol.js";
 
 /** The request body Pi would send for a profile; the request is stopped before any network use. */
@@ -13,8 +14,12 @@ async function payload(
   context: Context = { messages: [{ role: "user", content: "hello", timestamp: 0 }] },
 ) {
   let body: Record<string, unknown> | undefined;
-  const stream = streamSimple(
-    modelConfig(profile),
+  const model = modelConfig(profile);
+  const send = (model.api === "anthropic-messages" ? anthropicStream : streamSimple) as (
+    ...args: [Model<any>, Context, Parameters<typeof streamSimple>[2]]
+  ) => ReturnType<typeof streamSimple>;
+  const stream = send(
+    model,
     context,
     {
       ...requestOptions(profile),
@@ -174,4 +179,75 @@ test("other providers are not sent OpenRouter's usage option, and report no cost
   const { sent, costs } = await prepareAgainst(kimi, { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 });
   assert.equal(sent?.usage, undefined);
   assert.deepEqual(costs, []);
+});
+
+const haiku: ModelProfile = {
+  id: "h", name: "Claude Haiku 5.5", modelId: "claude-haiku-5-5", baseUrl: "https://api.anthropic.com", keyConfigured: true,
+};
+
+test("Anthropic requests use adaptive thinking at the profile's effort and its output limit", async () => {
+  const body = await payload({ ...haiku, reasoning: "medium", maxTokens: 32768 });
+  assert.equal(body.model, "claude-haiku-5-5");
+  assert.equal((body.thinking as { type: string }).type, "adaptive");
+  assert.deepEqual(body.output_config, { effort: "medium" });
+  assert.equal(body.max_tokens, 32768);
+  const plain = await payload({ ...haiku, reasoning: "default" });
+  assert.equal(plain.thinking, undefined, "default leaves thinking to the model");
+  assert.equal(plain.output_config, undefined);
+});
+
+type Block = { type: string; content?: Block[]; cache_control?: unknown };
+type AnthropicSent = { role: string; content: Block[] | string };
+/** A request to Anthropic with the cache markers placed as the harness does. */
+async function anthropicRequest(messages: Message[]) {
+  const body = await payload({ ...haiku, reasoning: "medium" }, { systemPrompt: "Rules.", messages, tools });
+  placeAnthropicCacheBreakpoints(body as { messages: AnthropicSent[] }, guide.length);
+  return body as { system: Block[]; messages: AnthropicSent[]; tools: Block[] };
+}
+const markedAt = (request: { messages: AnthropicSent[] }) =>
+  request.messages.flatMap((message, i) => (JSON.stringify(message).includes("cache_control") ? [i] : []));
+const unmarked = (message: AnthropicSent) =>
+  JSON.stringify(message, (key, value) => (key === "cache_control" ? undefined : value));
+
+/** A turn with many tool calls: more content blocks than Anthropic searches back for an earlier entry. */
+const bigTurn = (n: number, calls: number): Message[] => {
+  const ids = Array.from({ length: calls }, (_, i) => `call-${n}-${i}`);
+  return [
+    { ...reply(`Turn ${n}: reading everything.`), content: [{ type: "text", text: `Turn ${n}.` }, ...ids.map((id) => ({ type: "toolCall" as const, id, name: "observe", arguments: {} }))], stopReason: "toolUse" },
+    ...ids.map((id, i): Message => ({ role: "toolResult", toolCallId: id, toolName: "observe", content: [{ type: "text", text: `{"read":${i}}` }, ...(i === calls - 1 ? [image(n)] : [])], isError: false, timestamp: 0 })),
+    { role: "user", content: [{ type: "text", text: "Fresh screenshot from the host." }, image(100 + n)], timestamp: 0 },
+  ];
+};
+/** Content blocks in messages from..to, as Anthropic counts them for its look-back. */
+const blocksBetween = (request: { messages: AnthropicSent[] }, from: number, to: number) =>
+  request.messages.slice(from, to + 1).reduce((n, m) => n + (Array.isArray(m.content) ? m.content.length : 1), 0);
+
+test("Claude through Anthropic marks the system prompt, guide, this turn's and the last turn's conversation", async () => {
+  const pinned = new Set(guide);
+  const prune = (messages: Message[]) => pruneImages(messages, 2, pinned) as Message[];
+  let history = [...guide];
+  for (let n = 1; n <= 3; n++) history = prune([...history, ...turn(n)]);
+  const now = await anthropicRequest(history);
+  history = prune([...history, ...bigTurn(4, 20)]);
+  const next = await anthropicRequest(history);
+  for (const request of [now, next]) {
+    assert.ok(JSON.stringify(request.system).includes("cache_control"), "system prompt");
+    assert.ok(!JSON.stringify(request.tools).includes("cache_control"), "the system prompt's breakpoint covers the tools");
+    assert.ok(JSON.stringify(request).match(/cache_control/g)!.length <= 4, "Anthropic allows four breakpoints");
+    assert.equal(markedAt(request)[0], guide.length - 1, "end of the guide");
+    assert.ok(!markedAt(request).includes(request.messages.length - 1), "the last message changes next turn");
+  }
+  // The screenshots sit inside tool results, where the oldest kept one is found.
+  assert.ok(JSON.stringify(now.messages).includes('"type":"tool_result"'));
+  const written = markedAt(now).at(-1)!;
+  assert.ok(written > guide.length - 1);
+  // Next turn repeats everything up to this turn's breakpoint and writes further on.
+  assert.deepEqual(next.messages.slice(0, written + 1).map(unmarked), now.messages.slice(0, written + 1).map(unmarked));
+  const latest = markedAt(next).at(-1)!;
+  assert.ok(latest > written);
+  // After a long turn this turn's breakpoint is too far on to find that entry, but the one
+  // before the newest placeholder is within Anthropic's look-back of about 20 blocks.
+  assert.ok(blocksBetween(next, written + 1, latest) > 20);
+  const read = markedAt(next).find((i) => i >= written)!;
+  assert.ok(read < latest && blocksBetween(next, written + 1, read) <= 20, "the previous entry is found");
 });
