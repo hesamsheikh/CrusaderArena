@@ -4,11 +4,12 @@
 
 For each learning series (harness/runtime/series/<id>) or independent run it:
 
-1. checks that the runs can be published: finished on their budget, scored, recorded, made from
-   committed code that is on GitHub's main branch, with a benchmark version set at that commit
-   (tools/dataset/version.json), and like for like across the episodes of a series;
+1. checks that the runs can be published: each episode's result is a full-budget score or a
+   model failure, the series is complete, the runs were recorded and made from committed code
+   that is on GitHub's main branch, carry a benchmark version (stamped in run.json from
+   benchmark-versions.json), and are like for like across the episodes of a series;
 2. copies the files the dataset keeps into
-   harness/runtime/publish/<version>/<benchmark>/<model>/<id>/episode-<n>/, scrubbed of
+   harness/runtime/publish/v<major>.<minor>/<benchmark>/<model>/<id>/episode-<n>/, scrubbed of
    secrets and machine details (scrub.py), and re-renders a video whose logs needed changes;
 3. writes the tables (tables.py): series.parquet, and per episode episode.parquet and
    timeline.parquet (the game minute by minute, timeline.py); and manifest.json: each file's
@@ -40,20 +41,27 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNS = ROOT / 'harness/runtime/runs'
 SERIES = ROOT / 'harness/runtime/series'
 OUT = ROOT / 'harness/runtime/publish'
-VERSION_FILE = 'tools/dataset/version.json'
 UNVERSIONED = 'unversioned'
+# Benchmark versions are MAJOR.MINOR.PATCH; runs compare within one minor version (docs/benchmark.md).
+SEMVER = re.compile(r'(\d+)\.(\d+)\.(\d+)')
 
-REQUIRED = ['run.json', 'inputs.json', 'episode.json', 'events.jsonl', 'logs.jsonl', 'final-overview.jpg', 'video.mp4']
-OPTIONAL = ['notifications.jsonl', 'memory.json', 'notebook.md', 'playbook.md']
+REQUIRED = ['run.json', 'inputs.json', 'episode.json', 'events.jsonl', 'logs.jsonl', 'video.mp4']
+# The final overview is taken only when the final pause was confirmed and the camera is known.
+OPTIONAL = ['final-overview.jpg', 'notifications.jsonl', 'memory.json', 'notebook.md', 'playbook.md']
 # The video is rendered from these; text replaced in them may also be drawn in the video.
 VIDEO_SOURCES = ['run.json', 'episode.json', 'events.jsonl']
 # How a run whose episode.json predates `valid` must end: on its game-time budget.
 BUDGET_ENDINGS = {'game_time'}
+# Attempts a series keeps as an episode's result (harness/server/series.ts, counts): a
+# full-budget score, or a run the model itself ended. Stops and infrastructure failures are run again.
+COUNTING = {'valid', 'model_failure'}
 SUBMITTER = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,95}')
 # Run settings and model settings every episode of a series must share.
 LIKE_FOR_LIKE = [
     ('benchmark', lambda r: r.get('benchmarkType')),
-    ('harness commit', lambda r: (r.get('harness') or {}).get('commit')),
+    # By minor version, not fingerprint: patches and relocks keep runs comparable.
+    ('benchmark version', lambda r: comparable(version_of(r)) or (r.get('benchmark') or {}).get('version')),
+    ('preparation guide', lambda r: (r.get('benchmark') or {}).get('guide')),
     ('system prompt', lambda r: (r.get('harness') or {}).get('systemPromptSha256')),
     ('tools', lambda r: (r.get('harness') or {}).get('toolsSha256')),
     ('model', lambda r: {k: v for k, v in (r.get('model') or {}).items() if k not in ('id', 'name')}),
@@ -128,17 +136,6 @@ class Git:
         """Whether the commit is on origin/main as last fetched; None when git cannot tell."""
         return {0: True, 1: False}.get(self._run('merge-base', '--is-ancestor', commit, 'origin/main').returncode)
 
-    def version_at(self, commit: str) -> str | None:
-        """The benchmark version set at that commit, or None before one was set."""
-        result = self._run('show', f'{commit}:{VERSION_FILE}')
-        if result.returncode:
-            return None
-        try:
-            version = json.loads(result.stdout).get('version')
-        except (ValueError, AttributeError):
-            return None
-        return version if isinstance(version, str) and re.fullmatch(r'v\d+', version) else None
-
 
 def report_rows(dirs: list[Path]) -> dict[str, dict]:
     """What npm run report computes for these runs (harness/server/run-report.ts), by folder name."""
@@ -176,6 +173,9 @@ class Episode:
     number: int
     dir: Path | None
     error: str | None = None
+    attempt: int | None = None
+    # valid / model_failure for series that record outcomes; None for older series and single runs.
+    outcome: str | None = None
 
 
 @dataclass
@@ -198,16 +198,34 @@ def resolve(target: str, runs: Path = RUNS, series: Path = SERIES) -> Group:
     named = re.fullmatch(r'[A-Za-z0-9._-]+', target) and target not in ('.', '..')
     record = read_json(series / target / 'series.json') if named else {}
     if record:
-        results = {r.get('episode'): r for r in record.get('results', []) if isinstance(r, dict)}
+        attempts = [r for r in record.get('results', []) if isinstance(r, dict)]
+        # Series that record outcomes keep every attempt; an episode's result is its last counting one.
+        resumable = any('outcome' in a for a in attempts)
+        total = integer(record.get('episodes')) or len({a.get('episode') for a in attempts})
         episodes = []
-        for n in range(1, (integer(record.get('episodes')) or len(results)) + 1):
-            r = results.get(n)
-            if r is None:
-                episodes.append(Episode(n, None, 'not run (the series stopped early)'))
-            elif r.get('error') or not r.get('folder'):
-                episodes.append(Episode(n, None, f'failed: {r.get("error") or "no run folder"}'))
+        for n in range(1, total + 1):
+            mine = [a for a in attempts if a.get('episode') == n]
+            if resumable:
+                counting = [a for a in mine if a.get('outcome') in COUNTING]
+                r = counting[-1] if counting else None
+                if r is None:
+                    last = mine[-1] if mine else None
+                    why = (f'no result yet (last attempt: {last.get("outcome")}'
+                           f'{": " + str(last["reason"]) if last.get("reason") else ""})') if last else 'not run yet'
+                    episodes.append(Episode(n, None, why))
+                    continue
             else:
-                episodes.append(Episode(n, runs / r['folder']))
+                r = mine[-1] if mine else None
+                if r is None:
+                    episodes.append(Episode(n, None, 'not run (the series stopped early)'))
+                    continue
+                if r.get('error'):
+                    episodes.append(Episode(n, None, f'failed: {r["error"]}'))
+                    continue
+            if not r.get('folder'):
+                episodes.append(Episode(n, None, 'no run folder recorded'))
+            else:
+                episodes.append(Episode(n, runs / r['folder'], attempt=integer(r.get('attempt')), outcome=r.get('outcome')))
         return Group('series', target, episodes, series / target, record)
     run_dir = Path(target) if Path(target).is_dir() else runs / target
     if (run_dir / 'run.json').is_file():
@@ -215,24 +233,37 @@ def resolve(target: str, runs: Path = RUNS, series: Path = SERIES) -> Group:
     raise SystemExit(f'Not a series id (harness/runtime/series) or run folder (harness/runtime/runs): {target}')
 
 
-def check_code(harness: dict, git: Git, version: str | None) -> list[str]:
-    commit = harness.get('commit')
-    if not commit:
-        return ['the run recorded no harness commit']
+def check_code(runs: list[dict], git: Git) -> list[str]:
+    """Every commit the episodes ran: committed, and on origin/main so anyone can see it."""
     problems = []
-    if harness.get('dirty') is not False:
-        problems.append('the run used uncommitted code (harness.dirty is not false)')
-    on_main = git.on_main(commit)
-    if on_main is None:
-        problems.append(f'commit {commit[:7]} or origin/main is not known here; fetch and package again')
-    elif not on_main:
-        problems.append(f'commit {commit[:7]} is not on origin/main, so others cannot see the code that ran')
-    if version is None:
-        problems.append(f'no benchmark version is set at commit {commit[:7]} ({VERSION_FILE})')
+    for commit, dirty in dict.fromkeys(((r.get('harness') or {}).get('commit'), (r.get('harness') or {}).get('dirty'))
+                                       for r in runs):
+        if not commit:
+            problems.append('a run recorded no harness commit')
+            continue
+        if dirty is not False:
+            problems.append(f'commit {commit[:7]}: the run used uncommitted code (harness.dirty is not false)')
+        on_main = git.on_main(commit)
+        if on_main is None:
+            problems.append(f'commit {commit[:7]} or origin/main is not known here; fetch and package again')
+        elif not on_main:
+            problems.append(f'commit {commit[:7]} is not on origin/main, so others cannot see the code that ran')
     return problems
 
 
-def check_run(run_dir: Path, run: dict, row: dict | None) -> list[str]:
+def version_of(run: dict) -> str | None:
+    """The benchmark version the host stamped in run.json; None when the code was not a listed version."""
+    version = (run.get('benchmark') or {}).get('version')
+    return version if isinstance(version, str) and SEMVER.fullmatch(version) else None
+
+
+def comparable(version: str | None) -> str | None:
+    """The group a version compares within, v<major>.<minor>: patches are harness fixes."""
+    match = SEMVER.fullmatch(version or '')
+    return f'v{match[1]}.{match[2]}' if match else None
+
+
+def check_run(run_dir: Path, run: dict, row: dict | None, outcome: str | None = None) -> list[str]:
     if row is None:
         return ['npm run report could not read the run']
     problems = []
@@ -243,7 +274,8 @@ def check_run(run_dir: Path, run: dict, row: dict | None) -> list[str]:
         problems.append('no episode.json: only runs started by npm run episodes are scored')
     elif isinstance(episode.get('valid'), bool):
         # npm run episodes decides whether the net worth is a full-budget score, and says why not.
-        if not episode['valid']:
+        # A run the model itself ended is the episode's result all the same: published, marked invalid.
+        if not episode['valid'] and outcome != 'model_failure':
             reasons = [str(r) for r in episode.get('invalid') or []] or ['no reason recorded']
             problems += [f'not a full-budget score: {r}' for r in reasons]
     else:
@@ -273,6 +305,8 @@ def identity(run: dict, episode: dict, version, tier, submitter, series_id) -> d
     model, harness, config = run.get('model') or {}, run.get('harness') or {}, run.get('config') or {}
     return {
         'dataset_version': version,
+        'benchmark_fingerprint': (run.get('benchmark') or {}).get('fingerprint'),
+        'guide': (run.get('benchmark') or {}).get('guide'),
         'benchmark': run.get('benchmarkType') or episode.get('benchmark'),
         'map': episode.get('map'),
         'save': episode.get('save'),
@@ -299,7 +333,7 @@ def image(path: Path):
     return {'bytes': path.read_bytes(), 'path': path.name} if path.is_file() else None
 
 
-def episode_row(base: dict, episode_number: int, episodes: int, run: dict, episode: dict, row: dict,
+def episode_row(base: dict, ep: Episode, episodes: int, run: dict, episode: dict, row: dict,
                 staged: Path, rel_dir: str) -> dict:
     card, tokens = row.get('scorecard') or {}, row.get('tokens') or {}
     build, anchor = row.get('build') or {}, row.get('anchor') or {}
@@ -309,7 +343,9 @@ def episode_row(base: dict, episode_number: int, episodes: int, run: dict, episo
     return {
         **base,
         'run_id': run.get('id'),
-        'episode': episode_number,
+        'episode': ep.number,
+        'attempt': ep.attempt or integer((run.get('series') or {}).get('attempt')),
+        'outcome': ep.outcome,
         'episodes': episodes,
         'started_at': iso(run.get('startedAt')),
         'ended_at': iso(run.get('endedAt')),
@@ -424,31 +460,35 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
 
     prices = timeline.sell_prices()
     problems: list[str] = []
-    runs = {}
+    runs, chosen = {}, {}
     for ep in group.episodes:
         if ep.error:
             problems.append(f'episode {ep.number}: {ep.error}')
         elif ep.dir is None or not (ep.dir / 'run.json').is_file():
             problems.append(f'episode {ep.number}: run folder not found')
         else:
-            runs[ep.number] = ep.dir
+            runs[ep.number], chosen[ep.number] = ep.dir, ep
     if not runs:
         raise SystemExit(f'{group.id}: no episode has a run folder')
     meta = {n: read_json(d / 'run.json') for n, d in runs.items()}
     rows = rows_of(list(runs.values()))
     first = meta[min(meta)]
-    harness = first.get('harness') or {}
-    version = git.version_at(harness['commit']) if harness.get('commit') else None
+    version = version_of(first)
     benchmark = first.get('benchmarkType') or 'custom'
     model = first.get('model') or {}
-    rel = '/'.join([version or UNVERSIONED, slug(benchmark) or 'custom', model_slug(model.get('modelId') or model.get('name') or ''), group.id])
+    rel = '/'.join([comparable(version) or UNVERSIONED, slug(benchmark) or 'custom', model_slug(model.get('modelId') or model.get('name') or ''), group.id])
     dest = out / rel
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
 
-    problems += check_code(harness, git, version)
+    problems += check_code(list(meta.values()), git)
+    if version is None:
+        problems.append('no benchmark version: the code that ran is not a version listed in benchmark-versions.json')
     problems += check_like_for_like(meta)
+    status = group.record.get('status')
+    if group.kind == 'series' and status not in (None, 'completed'):
+        problems.append(f'the series is {status}, not completed; finish it before publishing')
     if group.kind == 'series' and group.record.get('stopped'):
         problems.append(f'the series stopped early: {group.record["stopped"]}')
     if group.kind == 'run' and isinstance(first.get('series'), dict):
@@ -462,7 +502,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
     episode_rows = []
     for n, run_dir in sorted(runs.items()):
         staged = dest / f'episode-{n}'
-        problems += [f'episode {n}: {p}' for p in check_run(run_dir, meta[n], rows.get(run_dir.name))]
+        problems += [f'episode {n}: {p}' for p in check_run(run_dir, meta[n], rows.get(run_dir.name), chosen[n].outcome)]
         for name in REQUIRED + OPTIONAL:
             if (run_dir / name).is_file():
                 scrubber.file(run_dir / name, staged / name, f'episode-{n}/{name}')
@@ -472,7 +512,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
                 problems.append(f'episode {n}: the logs needed scrubbing and {error}')
         run, episode = read_json(staged / 'run.json'), read_json(staged / 'episode.json')
         base = identity(run, episode, version, tier, submitter, series_id)
-        row = episode_row(base, n, len(group.episodes), run, episode, rows.get(run_dir.name) or {}, staged, f'{rel}/episode-{n}')
+        row = episode_row(base, chosen[n], len(group.episodes), run, episode, rows.get(run_dir.name) or {}, staged, f'{rel}/episode-{n}')
         # The report's error text and anything else read from the logs go through the scrub too.
         row = scrubber.value(row, f'episode-{n}/episode.parquet', 'row')
         row['final_image'] = image(staged / 'final-overview.jpg')
@@ -485,6 +525,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
             number(budget.get('usedGameSeconds')),
             prices,
             {k: row[k] for k in ('dataset_version', 'benchmark', 'model_id', 'series_id', 'run_id', 'episode')},
+            episode,
         ) if (staged / 'events.jsonl').is_file() else []
         if minutes:
             tables.write(minutes, tables.TIMELINE, staged / 'timeline.parquet')

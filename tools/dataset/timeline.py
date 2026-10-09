@@ -1,11 +1,12 @@
 """The game minute by minute: one row per game minute of an episode, read from its events.jsonl.
 
-Readings come from three places in the log, all taken while the agent played:
+Readings come from three places, all taken while the agent played:
 - host observations: the screenshot and stats the host sends after a turn, stamped with the
-  budget clock (run_clock.game_seconds_used);
+  budget clock (run_clock: game_time_used as "3 min 20 s", or game_seconds_used in older runs);
 - results of tools that read the game (details.readerStats), stamped with the reader's game
   tick, which is turned into budget seconds from the final reading;
-- the final reading after the game was paused.
+- the final reading after the game was paused: the final_observation event, or the episode's
+  scorecard (episode.json) when that event has no reading.
 
 Row m holds the latest reading at or before m game minutes into the budget (row 0 is the first
 reading, the last row the final one), with the tokens, cost, turns and tool calls spent up to
@@ -86,6 +87,36 @@ def from_reading(observation: dict) -> dict:
     }
 
 
+def clock_seconds(clock) -> float | None:
+    """Game seconds used from a run_clock: a number in older runs, "3 min 20 s" since 2026-10-08."""
+    if not isinstance(clock, dict):
+        return None
+    if _num(clock.get('game_seconds_used')) is not None:
+        return float(clock['game_seconds_used'])
+    text = clock.get('game_time_used')
+    match = re.fullmatch(r'\s*(?:(\d+)\s*min)?\s*(?:(\d+(?:\.\d+)?)\s*s)?\s*', text) if isinstance(text, str) else None
+    if not match or not (match[1] or match[2]):
+        return None
+    return int(match[1] or 0) * 60 + float(match[2] or 0)
+
+
+def from_scorecard(card: dict) -> dict:
+    """The episode's scorecard (episode.json), which lists only the goods it holds."""
+    date = card.get('date') if isinstance(card.get('date'), dict) else {}
+    return {
+        'gold': _num(card.get('gold')),
+        'population': _num(card.get('population')),
+        'housing': _num(card.get('housing')),
+        'popularity': _num(card.get('popularity')),
+        'total_food': _num(card.get('total_food')),
+        'structures': _num(card.get('structures_map_wide')),
+        'troops': _num(card.get('troops')),
+        'game_year': _num(date.get('year')),
+        'game_month': _num(date.get('month')),
+        'goods': _goods(card.get('goods')),
+    }
+
+
 def _text_json(content) -> list[dict]:
     out = []
     for part in content if isinstance(content, list) else []:
@@ -99,7 +130,7 @@ def _text_json(content) -> list[dict]:
     return out
 
 
-def samples(events: Path, used_seconds: float | None) -> list[dict]:
+def samples(events: Path, used_seconds: float | None, scorecard: dict | None = None) -> list[dict]:
     """Every reading in the log, in order, with the cumulative telemetry at that moment."""
     spent = {'tokens_total': 0, 'tokens_output': 0, 'cost_usd': 0.0, 'turns': 0, 'tool_calls': 0, 'tool_errors': 0}
     saw_cost = False
@@ -140,8 +171,7 @@ def samples(events: Path, used_seconds: float | None) -> list[dict]:
                 spent['tool_calls'] += 1
             elif kind == 'host_observation':
                 for value in _text_json((event.get('message') or {}).get('content')):
-                    clock, stats = value.get('run_clock'), value.get('stats')
-                    seconds = _num((clock or {}).get('game_seconds_used'))
+                    seconds, stats = clock_seconds(value.get('run_clock')), value.get('stats')
                     if seconds is not None and isinstance(stats, dict) and stats.get('status') == 'ok':
                         snapshot(seconds, None, 'host_observation', from_summary(stats))
                         break
@@ -151,7 +181,7 @@ def samples(events: Path, used_seconds: float | None) -> list[dict]:
                 result = event.get('result') or {}
                 reading = (result.get('details') or {}).get('readerStats') or {}
                 if reading.get('status') == 'ok' and isinstance(reading.get('observation'), dict):
-                    clocks = [_num((v.get('run_clock') or {}).get('game_seconds_used')) for v in _text_json(result.get('content'))]
+                    clocks = [clock_seconds(v.get('run_clock')) for v in _text_json(result.get('content'))]
                     seconds = next((c for c in clocks if c is not None), None)
                     tick = _num(reading['observation'].get('game_time'))
                     snapshot(seconds, tick, 'tool_result', from_reading(reading['observation']))
@@ -162,6 +192,10 @@ def samples(events: Path, used_seconds: float | None) -> list[dict]:
                 if reading.get('status') == 'ok' and isinstance(reading.get('observation'), dict):
                     final_tick = _num(reading['observation'].get('game_time'))
                     snapshot(used_seconds, final_tick, 'final_reading', from_reading(reading['observation']))
+                elif scorecard and _num(scorecard.get('game_time')) is not None:
+                    # The event came back without a reading; the scorecard read the paused game.
+                    final_tick = _num(scorecard['game_time'])
+                    snapshot(used_seconds, final_tick, 'final_reading', from_scorecard(scorecard))
 
     # Tool readings carry a game tick, not the budget clock: the final reading anchors the two.
     if final_tick is not None and used_seconds is not None:
@@ -173,19 +207,20 @@ def samples(events: Path, used_seconds: float | None) -> list[dict]:
 
 
 def rows(events: Path, budget_seconds: float | None, used_seconds: float | None,
-         prices: dict[str, int], base: dict) -> list[dict]:
+         prices: dict[str, int], base: dict, scorecard: dict | None = None) -> list[dict]:
     """One row per game minute of the budget."""
-    found = sorted(samples(events, used_seconds), key=lambda s: s['seconds'])
+    found = sorted(samples(events, used_seconds, scorecard), key=lambda s: s['seconds'])
     if not found:
         return []
-    end = max(budget_seconds or 0, found[-1]['seconds'])
-    minutes = max(1, math.ceil(end / 60 - 1e-9))
+    # The grid follows the budget; readings placed a moment past it do not add a minute.
+    final = next((s for s in reversed(found) if s['source'] == 'final_reading'), found[-1])
+    minutes = max(1, math.ceil((budget_seconds or final['seconds']) / 60 - 1e-9))
     out = []
     for minute in range(minutes + 1):
         if minute == 0:
             sample = found[0]
         elif minute == minutes:
-            sample = found[-1]
+            sample = final
         else:
             before = [s for s in found if s['seconds'] <= minute * 60 + 0.5]
             if not before:

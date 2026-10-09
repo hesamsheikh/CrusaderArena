@@ -42,7 +42,7 @@ git identity or other git configuration.
 | `src/windows/` | The C++ reader: launcher, DLL and probe, cross-compiled for Windows and run under Proton | [reader](docs/reader.md) |
 | `tools/ubuntu/` | Game-machine helpers: window bridge, reader stream, memory guard, recorder, control monitor, setup scripts | [setup](docs/setup.md), [harness](docs/harness.md) |
 | `tools/video/` | Run video renderer | [harness](docs/harness.md#run-videos) |
-| `tools/dataset/` | Packaging, scrubbing and uploading runs to the Hugging Face dataset; the dataset card and benchmark version | [publishing](docs/publishing.md) |
+| `tools/dataset/` | Packaging, scrubbing and uploading runs to the Hugging Face dataset; the dataset card | [publishing](docs/publishing.md) |
 | `tests/` | C++ and Python tests for the reader and its tools | |
 | `docs/` | The documentation; [docs/status.md](docs/status.md) says what is verified | |
 

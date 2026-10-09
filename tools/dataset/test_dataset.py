@@ -33,17 +33,14 @@ def machine():
 
 
 class FakeGit:
-    def __init__(self, version='v1', on_main=True):
-        self.version, self.main = version, on_main
+    def __init__(self, on_main=True):
+        self.main = on_main
 
     def head(self):
         return 'f' * 40
 
     def on_main(self, commit):
         return self.main
-
-    def version_at(self, commit):
-        return self.version
 
 
 def line(at, event):
@@ -67,18 +64,21 @@ def usage(total, output=10):
     return {'input': total - output, 'output': output, 'cacheRead': 0, 'cacheWrite': 0, 'totalTokens': total}
 
 
-def make_run(runs: Path, n: int, *, events_extra='', logs_extra='', dirty=False, video=True) -> str:
-    folder = f'Test-Model-Oasis-by-the-Sea-construction-20261008-14{n}000Z-2026-10-08T14-{n}0-00-000Z-0000000{n}'
+def make_run(runs: Path, n: int, *, events_extra='', logs_extra='', dirty=False, video=True, version='1.0.0',
+             suffix=None, attempt=1) -> str:
+    suffix = suffix or f'0000000{n}'  # ends in the episode number, which the fake report reads
+    folder = f'Test-Model-Oasis-by-the-Sea-construction-20261008-14{n}000Z-2026-10-08T14-{n}0-00-000Z-{suffix}'
     d = runs / folder
     d.mkdir(parents=True)
     run = {
-        'id': f'0000000{n}-run', 'name': 'Test', 'benchmarkType': 'Oasis by the Sea construction',
+        'id': f'{suffix}-run',
+        'benchmark': {'version': version, 'fingerprint': 'b' * 64, 'guide': None}, 'name': 'Test', 'benchmarkType': 'Oasis by the Sea construction',
         'prompt': 'Grow the economy.', 'status': 'completed', 'startedAt': 1791470000000, 'endedAt': 1791470300000,
         'model': {'id': 'profile', 'name': 'Test Model', 'modelId': 'test/model-1', 'baseUrl': 'https://openrouter.ai/api/v1',
                   'reasoning': 'low', 'maxTokens': 8192, 'providers': [], 'allowFallbacks': True},
         'config': {'gameMinutes': 2, 'wallLimitMinutes': 60, 'recordVideo': video},
         'harness': {'commit': 'a' * 40, 'dirty': dirty, 'systemPromptSha256': 'p' * 64, 'toolsSha256': 't' * 64},
-        'series': {'id': SERIES_ID, 'episode': n, 'episodes': 2},
+        'series': {'id': SERIES_ID, 'episode': n, 'episodes': 2, 'attempt': attempt},
         'progress': {'budget': {'gameSeconds': 120, 'usedGameSeconds': 120.0, 'endedBy': 'game_time'}},
     }
     (d / 'run.json').write_text(json.dumps(run, indent=2))
@@ -148,12 +148,25 @@ class Fixture(unittest.TestCase):
         folders = [make_run(self.runs, n, **kwargs) for n in (1, 2)]
         d = self.series / SERIES_ID
         d.mkdir(parents=True)
-        (d / 'series.json').write_text(json.dumps({
+        self.write_series({
             'id': SERIES_ID, 'save': 'Oasis by the Sea-1', 'benchmark': 'Oasis by the Sea construction', 'model': 'Test Model',
-            'episodes': 2, 'results': [{'episode': n, 'folder': f, 'status': 'completed'} for n, f in enumerate(folders, 1)]}))
+            'episodes': 2, 'status': 'completed',
+            'results': [{'episode': n, 'attempt': 1, 'outcome': 'valid', 'folder': f, 'status': 'completed'}
+                        for n, f in enumerate(folders, 1)]})
         for n in (1, 2):
             (d / f'playbook-after-episode-{n}.md').write_text(f'Playbook {n}: build farms early.\n')
         return folders
+
+    def read_series(self):
+        return json.loads((self.series / SERIES_ID / 'series.json').read_text())
+
+    def write_series(self, record):
+        (self.series / SERIES_ID / 'series.json').write_text(json.dumps(record))
+
+    def load(self, path):
+        from datasets import load_dataset, disable_progress_bars
+        disable_progress_bars()
+        return load_dataset('parquet', data_files={'train': str(path)}, split='train')
 
     def package(self, git=None, render=None, submitter='tester-hf'):
         self.renders = []
@@ -175,7 +188,7 @@ class PackageTest(Fixture):
         m = result.manifest
         self.assertEqual(m['problems'], [])
         self.assertTrue(m['publishable'])
-        self.assertEqual(result.rel, f'v1/oasis-by-the-sea-construction/test--model-1/{SERIES_ID}')
+        self.assertEqual(result.rel, f'v1.0/oasis-by-the-sea-construction/test--model-1/{SERIES_ID}')
         self.assertEqual({f['path'] for f in m['files']} >= {'series.parquet', 'series.json', 'playbook-after-episode-2.md',
                                                             'episode-1/episode.parquet', 'episode-1/timeline.parquet',
                                                             'episode-1/video.mp4', 'episode-2/events.jsonl'}, True)
@@ -224,9 +237,9 @@ class PackageTest(Fixture):
         self.assertEqual(minutes['tool_calls'], [0, 0, 1])
 
     def test_problems_block_the_upload_and_never_show_the_value(self):
-        self.make_series(dirty=True, video=False,
+        self.make_series(dirty=True, video=False, version=None,
                          logs_extra=line(2, {'kind': 'error', 'text': f'auth {SECRET} for alice from 192.168.1.20'}))
-        m = self.package(git=FakeGit(version=None, on_main=False), submitter=None).manifest
+        m = self.package(git=FakeGit(on_main=False), submitter=None).manifest
         problems = '\n'.join(m['problems'])
         self.assertFalse(m['publishable'])
         for expected in ('uncommitted code', 'not on origin/main', 'no benchmark version', 'no --submitter',
@@ -259,18 +272,62 @@ class PackageTest(Fixture):
         row = load_dataset('parquet', data_files={'train': str(result.dest / 'episode-2/episode.parquet')}, split='train')[0]
         self.assertEqual((row['valid'], row['invalid']), (False, ['ended by wall_limit', 'final pause not confirmed']))
 
+    def test_patches_of_one_minor_version_compare_and_share_a_folder(self):
+        folders = self.make_series()
+        path = self.runs / folders[1] / 'run.json'
+        run = json.loads(path.read_text())
+        run['benchmark']['version'] = '1.0.3'
+        path.write_text(json.dumps(run))
+        result = self.package()
+        self.assertEqual(result.manifest['problems'], [])
+        self.assertTrue(result.rel.startswith('v1.0/'))
+        run['benchmark']['version'] = '1.1.0'
+        path.write_text(json.dumps(run))
+        self.assertIn('the episodes differ in benchmark version', self.package().manifest['problems'])
+
     def test_a_failed_episode_and_episode_differences_are_problems(self):
         folders = self.make_series()
         run = json.loads((self.runs / folders[1] / 'run.json').read_text())
         run['model']['reasoning'] = 'high'
         (self.runs / folders[1] / 'run.json').write_text(json.dumps(run))
-        record = json.loads((self.series / SERIES_ID / 'series.json').read_text())
-        record['episodes'] = 3
-        record['results'].append({'episode': 3, 'error': 'Timed out waiting for the save to load.'})
-        (self.series / SERIES_ID / 'series.json').write_text(json.dumps(record))
+        record = self.read_series()
+        record.update(episodes=3, status='paused')
+        record['results'].append({'episode': 3, 'attempt': 1, 'outcome': 'infrastructure',
+                                  'reason': 'Timed out waiting for the save to load.'})
+        self.write_series(record)
         problems = self.package().manifest['problems']
         self.assertIn('the episodes differ in model', problems)
-        self.assertIn('episode 3: failed: Timed out waiting for the save to load.', problems)
+        self.assertIn('the series is paused, not completed; finish it before publishing', problems)
+        self.assertIn('episode 3: no result yet (last attempt: infrastructure: Timed out waiting for the save to load.)', problems)
+
+    def test_each_episode_publishes_its_counting_attempt(self):
+        folders = self.make_series()
+        retry = make_run(self.runs, 1, suffix='a0000001', attempt=2)
+        record = self.read_series()
+        record['results'] = [
+            {'episode': 1, 'attempt': 1, 'outcome': 'infrastructure', 'reason': 'memory guard', 'folder': folders[0]},
+            {'episode': 1, 'attempt': 2, 'outcome': 'valid', 'folder': retry},
+            {'episode': 2, 'attempt': 1, 'outcome': 'stopped', 'folder': folders[1]},
+            {'episode': 2, 'attempt': 2, 'outcome': 'model_failure', 'reason': 'No tool calls in 4 replies in a row',
+             'folder': folders[1]},
+        ]
+        self.write_series(record)
+        # The model ended episode 2: its scorecard says so, and it is still the episode's result.
+        path = self.runs / folders[1] / 'episode.json'
+        episode = json.loads(path.read_text())
+        episode.update(valid=False, invalid=['run error (No tool calls in 4 replies in a row)'])
+        path.write_text(json.dumps(episode))
+        result = self.package()
+        self.assertEqual(result.manifest['problems'], [])
+        self.assertEqual(json.loads((result.dest / 'episode-1/run.json').read_text())['id'], 'a0000001-run')
+        first = self.load(result.dest / 'episode-1/episode.parquet')[0]
+        self.assertEqual((first['attempt'], first['outcome'], first['valid']), (2, 'valid', True))
+        second = self.load(result.dest / 'episode-2/episode.parquet')[0]
+        self.assertEqual((second['attempt'], second['outcome'], second['valid']), (2, 'model_failure', False))
+        series = self.load(result.dest / 'series.parquet')[0]
+        self.assertEqual((series['valid'], series['valid_by_episode']), (False, [True, False]))
+        self.assertEqual(series['dataset_version'], '1.0.0')
+        self.assertEqual(series['benchmark_fingerprint'], 'b' * 64)
 
 
 class UploadTest(Fixture):
@@ -353,6 +410,39 @@ class ScrubTest(unittest.TestCase):
 
 
 class TimelineTest(unittest.TestCase):
+    def test_the_clock_reads_both_formats(self):
+        self.assertEqual(timeline.clock_seconds({'game_seconds_used': 13.5}), 13.5)
+        self.assertEqual(timeline.clock_seconds({'game_time_used': '3 min 20 s'}), 200)
+        self.assertEqual(timeline.clock_seconds({'game_time_used': '1 s'}), 1)
+        self.assertEqual(timeline.clock_seconds({'game_time_used': '25 min'}), 1500)
+        self.assertIsNone(timeline.clock_seconds({'game_time_used': 'soon'}))
+
+    def test_a_final_event_without_a_reading_falls_back_to_the_scorecard(self):
+        goods = {'bread': 40}
+        with tempfile.TemporaryDirectory() as tmp:
+            events = Path(tmp) / 'events.jsonl'
+            events.write_text(''.join([
+                line(1, {'type': 'host_observation', 'message': {'content': [{'type': 'text', 'text': json.dumps({
+                    'run_clock': {'game_time_used': '1 s'}, 'stats': {'status': 'ok', 'gold': 430, 'goods': goods}})}]}}),
+                line(2, {'type': 'tool_execution_end', 'toolName': 'observe', 'result': {
+                    'content': [], 'details': {'readerStats': reading(9000 + 50 * 30, 500, 3, goods)}}}),
+                line(3, {'type': 'message_end', 'message': {'role': 'assistant', 'usage': usage(900)}}),
+                # Placed a fraction of a second past the budget: no extra minute, not the last row.
+                line(4, {'type': 'tool_execution_end', 'toolName': 'observe', 'result': {
+                    'content': [], 'details': {'readerStats': reading(9000 + 120 * 30 + 2, 1190, 10, goods)}}}),
+                line(5, {'type': 'final_observation', 'stats': {'status': 'unavailable', 'observation': None}}),
+                line(6, {'type': 'reflection_usage', 'usage': usage(500)}),
+            ]))
+            card = {'game_time': 9000 + 120 * 30, 'gold': 1200, 'population': 10, 'goods': {'bread': 40},
+                    'date': {'month': 9, 'year': 1194}}
+            minutes = timeline.rows(events, 120, 120.0, {'bread': 4}, {}, card)
+        self.assertEqual([m['game_minute'] for m in minutes], [0, 1, 2])
+        self.assertEqual([m['sample_source'] for m in minutes], ['host_observation', 'tool_result', 'final_reading'])
+        self.assertEqual([m['sample_game_seconds'] for m in minutes], [1.0, 50.0, 120.0])
+        self.assertEqual([m['gold'] for m in minutes], [430, 500, 1200])
+        self.assertEqual(minutes[2]['net_worth'], 1200 + 160)
+        self.assertEqual(minutes[2]['tokens_total'], 900)  # spent by the final reading, before the reflection
+
     def test_sell_prices_are_read_from_the_harness(self):
         prices = timeline.sell_prices()
         self.assertEqual(len(prices), 20)

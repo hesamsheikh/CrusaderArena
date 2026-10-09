@@ -49,7 +49,7 @@ def verify(bundle: Path, out: Path = OUT) -> tuple[dict, list[str]]:
         problems.append(f'the bundle is not in the staging folder {out}')
     if rel is not None and manifest.get('path') != rel:
         problems.append('manifest.json names another path; stage it again')
-    if not re.fullmatch(r'v\d+', str(manifest.get('dataset_version'))):
+    if not re.fullmatch(r'\d+\.\d+\.\d+', str(manifest.get('dataset_version'))):
         problems.append('the bundle has no benchmark version')
     if not manifest.get('publishable') or manifest.get('problems'):
         problems.append(f'packaging found {len(manifest.get("problems") or [])} problem(s); they are listed in manifest.json')
@@ -98,7 +98,7 @@ def upload(bundle: Path, manifest: dict, repo: str, *, pr: bool, card: bool, api
 def main(argv=None, api=None):
     env = {**read_env(ROOT / '.env'), **os.environ}
     parser = argparse.ArgumentParser(description='Upload staged bundles to the Hugging Face dataset (a dry run without --yes).')
-    parser.add_argument('bundles', nargs='+', help='staged folders, harness/runtime/publish/<version>/<benchmark>/<model>/<id>')
+    parser.add_argument('bundles', nargs='+', help='staged folders, harness/runtime/publish/v<major>.<minor>/<benchmark>/<model>/<id>')
     parser.add_argument('--repo', default=env.get('HF_DATASET_REPO') or None, help='dataset repository, ORG/NAME (default HF_DATASET_REPO)')
     parser.add_argument('--pr', action='store_true', help='open a pull request instead of committing')
     parser.add_argument('--card', action='store_true', help='also upload the dataset card')

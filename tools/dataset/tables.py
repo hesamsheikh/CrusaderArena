@@ -22,6 +22,8 @@ COUNTS = [{'name': Value('string'), 'count': Value('int64')}]
 # Columns both tables share: what was run, with which code and settings, and who sent it.
 IDENTITY = {
     'dataset_version': Value('string'),
+    'benchmark_fingerprint': Value('string'),
+    'guide': Value('string'),
     'benchmark': Value('string'),
     'map': Value('string'),
     'save': Value('string'),
@@ -47,6 +49,8 @@ EPISODE = Features({
     **IDENTITY,
     'run_id': Value('string'),
     'episode': Value('int64'),
+    'attempt': Value('int64'),
+    'outcome': Value('string'),
     'episodes': Value('int64'),
     'started_at': Value('string'),
     'ended_at': Value('string'),
