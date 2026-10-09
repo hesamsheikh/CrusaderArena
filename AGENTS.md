@@ -56,8 +56,9 @@ git identity or other git configuration.
   make.
 - **Version behavioural changes.** A change to what a run plays or scores (harness,
   prompt, tools, game-machine helpers, reader) needs a new entry in
-  `benchmark-versions.json` in the same commit: `npm run benchmark-version -- bump "…"`,
-  or `relock "…"` when behaviour is unchanged. `npm test` fails until it has one. See
+  `benchmark-versions.json` in the same commit: `npm run benchmark-version -- bump
+  patch|minor|major "…"` (semantic versioning), or `relock "…"` when behaviour is
+  unchanged. `npm test` fails until it has one. See
   [Versions](docs/benchmark.md#versions).
 - **Keep the system prompt fixed within a run.** It must stay byte-identical for
   provider caching; per-turn information travels in observations and tool results.

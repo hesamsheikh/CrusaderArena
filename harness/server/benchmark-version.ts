@@ -5,9 +5,17 @@
  * fingerprint the benchmark accepts is listed with its version in benchmark-versions.json, and a
  * test fails when the files change without a new entry. Each run records its version.
  *
- *   npm run benchmark-version -- check                  # is the current code a known version?
- *   npm run benchmark-version -- bump "what changed"    # a behavioural change: next version
- *   npm run benchmark-version -- relock "why"           # same behaviour (comments, refactors)
+ * Versions follow semantic versioning, MAJOR.MINOR.PATCH:
+ * - major: the task or the scoring changes; scores are not comparable across majors;
+ * - minor: what the model is told or can do changes (prompts, tools, run rules); compare runs
+ *   within one minor version;
+ * - patch: a fix that changes how the harness behaves, not the task, the prompts, the tools'
+ *   definitions or the scoring; runs stay comparable across patches;
+ * - relock: no change in behaviour (comments, refactors, failure handling); the version stays.
+ *
+ *   npm run benchmark-version -- check                          # is the current code a known version?
+ *   npm run benchmark-version -- bump patch|minor|major "what"  # behaviour changed: next version
+ *   npm run benchmark-version -- relock "why"                   # same behaviour
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -102,15 +110,20 @@ export function readBenchmarkStamp(): BenchmarkStamp {
   return { version, fingerprint, guide: guideFingerprint() };
 }
 
-function nextVersion(current: string) {
-  const n = Number(/^v(\d+)$/.exec(current)?.[1]);
-  if (!Number.isInteger(n)) throw new Error(`Unexpected version name ${JSON.stringify(current)}; versions are v1, v2, …`);
-  return `v${n + 1}`;
+export const LEVELS = ["major", "minor", "patch"] as const;
+export type Level = (typeof LEVELS)[number];
+
+/** The version after `current` at `level`; the first version is 1.0.0. */
+export function nextVersion(current: string, level: Level) {
+  if (!current) return "1.0.0";
+  const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(current)?.slice(1).map(Number);
+  if (!parts) throw new Error(`Unexpected version ${JSON.stringify(current)}; versions are MAJOR.MINOR.PATCH, such as 1.0.0.`);
+  const [major, minor, patch] = parts;
+  return level === "major" ? `${major + 1}.0.0` : level === "minor" ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`;
 }
 
 function main() {
   const [command, ...words] = process.argv.slice(2);
-  const note = words.join(" ").trim();
   const fingerprint = benchmarkFingerprint();
   const versions: Versions = existsSync(VERSIONS_FILE) ? readVersions() : { current: "", history: [] };
   const known = versionOf(fingerprint, versions);
@@ -119,10 +132,14 @@ function main() {
     process.exitCode = known === versions.current ? 0 : 1;
     return;
   }
-  if (command !== "bump" && command !== "relock") throw new Error("Commands: check, bump \"note\", relock \"note\".");
-  if (!note) throw new Error(`Say what changed: npm run benchmark-version -- ${command} "..."`);
+  if (command !== "bump" && command !== "relock") throw new Error('Commands: check, bump patch|minor|major "note", relock "note".');
+  const level = command === "bump" ? words.shift() : undefined;
+  const note = words.join(" ").trim();
+  if (command === "bump" && !LEVELS.includes(level as Level))
+    throw new Error('Say which part changes: bump patch, bump minor or bump major (see harness/server/benchmark-version.ts).');
+  if (!note) throw new Error(`Say what changed: npm run benchmark-version -- ${command}${level ? ` ${level}` : ""} "..."`);
   if (known) throw new Error(`The current files are already ${known}; nothing to record.`);
-  const version = command === "bump" ? (versions.current ? nextVersion(versions.current) : "v1") : versions.current;
+  const version = command === "bump" ? nextVersion(versions.current, level as Level) : versions.current;
   if (!version) throw new Error("There is no version to relock yet; use bump for the first one.");
   versions.current = version;
   versions.history.push({ version, fingerprint, date: new Date().toISOString().slice(0, 10), note });

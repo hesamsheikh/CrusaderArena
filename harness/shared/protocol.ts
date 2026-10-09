@@ -289,7 +289,7 @@ export type HarnessVersion = {
 };
 /** The benchmark version a host runs (harness/server/benchmark-version.ts). */
 export type BenchmarkStamp = {
-  /** v1, v2, …; null when benchmark-versions.json lists no version for the fingerprint. */
+  /** MAJOR.MINOR.PATCH, such as 1.0.0; null when benchmark-versions.json lists no version for the fingerprint. */
   version: string | null;
   /** SHA-256 of the files that decide how a run plays and is scored. */
   fingerprint: string;

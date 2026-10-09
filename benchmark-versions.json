@@ -1,29 +1,35 @@
 {
-  "current": "v1",
+  "current": "1.0.0",
   "history": [
     {
-      "version": "v1",
+      "version": "1.0.0",
       "fingerprint": "b29429743a0faeb45df72c135ce6587763fb75cbab9fff90fbb1fd87f6ffca34",
       "date": "2026-10-08",
       "note": "First versioned benchmark. Oasis by the Sea construction (and the diagnostic benchmarks) at 25 game minutes on a fixed game speed of 40, minimum turn 8 game seconds, default wait 5, context budget 120,000; reading-only replies cost game time from the 12th in a row; 4 replies without a tool call end the run; growth measured from the do-nothing baseline; resumable series with infrastructure failures run again."
     },
     {
-      "version": "v1",
+      "version": "1.0.0",
       "fingerprint": "107c9ceef99f90c7ecf5a9658de6059ce362d705d9d176f03e5b86718b329193",
       "date": "2026-10-08",
       "note": "The uncommitted-change check (harness.dirty) covers only the fingerprinted files; play and scoring are unchanged."
     },
     {
-      "version": "v1",
+      "version": "1.0.0",
       "fingerprint": "f1be10a5cdcc2ddf4cd395c2fcd44c862449f432d60b2019a9aff554e15f2582",
       "date": "2026-10-08",
       "note": "Clearer stop reason in the series record and runner log; play and scoring are unchanged."
     },
     {
-      "version": "v1",
+      "version": "1.0.0",
       "fingerprint": "36d68b1aa6914a3b7218aeb83efd64a6085d058b9fcecef9e3dd31b3df44a797",
       "date": "2026-10-08",
       "note": "Broken provider streams (OpenRouter's \"JSON error injected into SSE stream\") and plain 429 rate limits are retried like other transient errors; what the model sees and the scoring are unchanged."
+    },
+    {
+      "version": "1.0.0",
+      "fingerprint": "8c162fc9f4f6bc57021fc1e42bf7169a76821b586fc3ffbbd992f60f91839a84",
+      "date": "2026-10-09",
+      "note": "Version numbers follow semantic versioning (MAJOR.MINOR.PATCH); v1 is renamed 1.0.0. No change in behaviour."
     }
   ]
 }

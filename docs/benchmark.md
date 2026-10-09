@@ -21,9 +21,9 @@ game accepts, keep workers fed and housed, and grow.
   reads, so a slow model is not penalised in game time. A real-time limit (6 hours by
   default) only stops runs that have gone badly wrong; the record shows when it ended a
   run.
-- **Same version.** Every run records its [benchmark version](#versions) (`v1`,
-  `v2`, …), which fixes the prompts, tools, run rules, scoring and the code behind
-  them. Compare runs only within one version. Each run also records the harness commit,
+- **Same version.** Every run records its [benchmark version](#versions) (such as
+  `1.0.0`), which fixes the prompts, tools, run rules, scoring and the code behind
+  them. Compare runs that share a major and minor version. Each run also records the harness commit,
   hashes of its prompt and tools, the preparation images and the model's settings.
 
 ## Scenarios
@@ -59,8 +59,17 @@ them by hand. The scorecard reports troop counts.
 ## Versions
 
 A benchmark version names one fixed benchmark: the same prompts, tools, run rules,
-scoring and the code that carries them out. Runs of different versions are not
-comparable.
+scoring and the code that carries them out. Versions follow semantic versioning,
+`MAJOR.MINOR.PATCH`, starting at `1.0.0`:
+
+| Part | Raised when | Comparable runs |
+| --- | --- | --- |
+| Major | The task or the scoring changes | Not across majors |
+| Minor | What the model is told or can do changes: prompts, tool definitions, run rules | Within one minor version |
+| Patch | A fix changes how the harness behaves, but not the task, prompts, tool definitions or scoring | Across patches of one minor version |
+
+A change that leaves behaviour as it was (comments, refactors, how a failed request is
+retried) keeps the version and is recorded as a relock.
 
 - **Fingerprint.** The harness hashes every file that decides how a run plays or is
   scored: `harness/server` and `harness/shared` (except tests, the report and the video
@@ -73,14 +82,12 @@ comparable.
   it in the same commit:
 
   ```bash
-  npm run benchmark-version -- check                 # which version is this code?
-  npm run benchmark-version -- bump "what changed"   # behaviour changed: next version
-  npm run benchmark-version -- relock "why"          # same behaviour (comments, refactors)
+  npm run benchmark-version -- check                           # which version is this code?
+  npm run benchmark-version -- bump patch "what changed"       # or minor, or major (table above)
+  npm run benchmark-version -- relock "why"                    # same behaviour, same version
   ```
 
-  Anything that can change what a model sees or does, or how a run is scored, is a
-  bump. A relock is for changes that cannot: comments, renames, refactors that keep
-  behaviour, and it says why.
+  Every entry says what changed or why behaviour did not.
 - **Each run** records `benchmark` in `run.json`: the version (null when the files are
   not a listed version), the fingerprint, and a hash of the private preparation images
   (null when the guide is text only), which are not in the repository and so not in

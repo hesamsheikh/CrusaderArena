@@ -63,10 +63,10 @@ between September and October 2026.
   granary by itself.
 
 - Stopping and resuming a series, in a learning series of two 1-game-minute GLM 5.3
-  Flash episodes on 2026-10-08 at benchmark v1: Ctrl-C during episode 1 stopped the
+  Flash episodes on 2026-10-08 at benchmark 1.0.0: Ctrl-C during episode 1 stopped the
   dashboard run, closed the game and paused the series within 2 seconds; `--resume`
   ran episode 1 again as attempt 2 and then episode 2 from its playbook, and the report
-  counted episode 1 by its second attempt. Every run recorded v1, its attempt and a clean
+  counted episode 1 by its second attempt. Every run recorded its version, attempt and a clean
   commit, and the runner's check of the game machine's files caught an out-of-date one
   before the run.
 

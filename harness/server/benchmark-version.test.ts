@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { behaviourFiles, benchmarkFingerprint, readVersions, versionOf } from "./benchmark-version.js";
+import { behaviourFiles, benchmarkFingerprint, nextVersion, readVersions, versionOf } from "./benchmark-version.js";
 
 test("the benchmark files are a recorded version (bump or relock it with the change)", () => {
   const versions = readVersions();
@@ -15,7 +15,15 @@ test("the benchmark files are a recorded version (bump or relock it with the cha
   );
   assert.equal(latest.version, versions.current);
   assert.equal(versionOf(fingerprint, versions), versions.current);
-  assert.match(versions.current, /^v\d+$/);
+  assert.match(versions.current, /^\d+\.\d+\.\d+$/);
+});
+
+test("versions follow semantic versioning", () => {
+  assert.equal(nextVersion("", "patch"), "1.0.0");
+  assert.equal(nextVersion("1.0.0", "patch"), "1.0.1");
+  assert.equal(nextVersion("1.2.3", "minor"), "1.3.0");
+  assert.equal(nextVersion("1.2.3", "major"), "2.0.0");
+  assert.throws(() => nextVersion("v1", "patch"), /MAJOR\.MINOR\.PATCH/);
 });
 
 test("the fingerprint covers what runs and leaves out tests, reports and video rendering", () => {
