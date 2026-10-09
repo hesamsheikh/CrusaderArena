@@ -23,6 +23,9 @@ this file lists every version in `benchmark-versions.json`, with its date.
 
 - The repository's package version is the benchmark version, and
   `npm run benchmark-version -- bump` sets it.
+- Published runs are smaller: packaging writes the images in `events.jsonl` once each as
+  WebP files in `images/`, drops the token deltas of streaming replies and scales the
+  video to 720p. `npm run upload -- --replace` replaces a bundle already in the dataset.
 
 ## [1.1.0] - 2026-10-09
 

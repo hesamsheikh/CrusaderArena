@@ -2,15 +2,19 @@
 
     python3 -m unittest discover -s tools/dataset
 """
+import base64
 import io
 import json
+import random
 import shutil
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import media
 import package
 import timeline
 import upload
@@ -18,9 +22,23 @@ from scrub import Machine, Scrubber, machine_values
 
 HERE = Path(__file__).resolve().parent
 SECRET = 'sk-test-not-a-real-key-000000000000'
-# A screenshot as the logs hold it: pure base64 that happens to contain a user name.
+# Pure base64 that is not an image and happens to contain a user name.
 IMAGE_DATA = 'A' * 700 + 'alice' + 'B' * 100
 SERIES_ID = '20261008T140646-dfacebd1'
+
+
+def picture(size, fmt, **save) -> bytes:
+    """A noisy image, the hardest kind to compress."""
+    from PIL import Image
+    rng = random.Random(1)
+    buffer = io.BytesIO()
+    Image.frombytes('RGB', size, bytes(rng.randrange(256) for _ in range(size[0] * size[1] * 3))).save(buffer, fmt, **save)
+    return buffer.getvalue()
+
+
+# Images as the logs hold them, base64: a screenshot and a tool's PNG crop.
+SCREENSHOT = base64.b64encode(picture((96, 54), 'JPEG', quality=95)).decode()
+CROP = base64.b64encode(picture((40, 20), 'PNG')).decode()
 
 
 def machine():
@@ -96,18 +114,24 @@ def make_run(runs: Path, n: int, *, events_extra='', logs_extra='', dirty=False,
         line(3, {'type': 'host_observation', 'message': {'role': 'user', 'content': [
             {'type': 'text', 'text': 'Timed play has started.'},
             {'type': 'text', 'text': summary(0.4, 140, 1, goods)},
-            {'type': 'image', 'data': IMAGE_DATA, 'mimeType': 'image/jpeg'}]}}),
+            {'type': 'image', 'data': SCREENSHOT, 'mimeType': 'image/jpeg'}]}}),
         line(4, {'type': 'turn_start'}),
+        line(5, {'type': 'message_update', 'delta': {'type': 'text_delta', 'delta': 'Let me look.'}}),
+        line(5, {'type': 'message_update', 'delta': {'type': 'text_end'}}),
         line(5, {'type': 'message_end', 'message': {'role': 'assistant', 'usage': usage(1000, 50)}}),
         line(6, {'type': 'tool_execution_start', 'toolCallId': 'c1', 'toolName': 'observe', 'args': {}}),
         line(7, {'type': 'tool_execution_end', 'toolCallId': 'c1', 'toolName': 'observe', 'isError': False,
-                 'result': {'content': [{'type': 'text', 'text': '{"ok":true}'}],
+                 'result': {'content': [{'type': 'text', 'text': '{"ok":true}'},
+                                        {'type': 'image', 'data': CROP, 'mimeType': 'image/png'}],
                             'details': {'readerStats': reading(3000 + 70 * 30, 900, 6, goods),
                                         'frame': {'data': IMAGE_DATA, 'pid': 87264, 'windowId': 85983235}}}}),
+        *(line(7, {'type': kind, 'message': {'role': 'toolResult', 'toolCallId': 'c1', 'content': [
+            {'type': 'image', 'data': CROP, 'mimeType': 'image/png'}]}}) for kind in ('message_start', 'message_end')),
         line(8, {'type': 'memory_sample', 'gameRssMiB': 3000, 'system': {'MemFree': 1}, 'graphics': {'driver': 'i915'}}),
         line(9, {'type': 'recording_stopped', 'frames': 10, 'directory': '/Users/tester/runs/x/recording'}),
         events_extra,
-        line(10, {'type': 'final_observation', 'stats': reading(3000 + 120 * 30, 1200, 10, goods)}),
+        line(10, {'type': 'final_observation', 'stats': reading(3000 + 120 * 30, 1200, 10, goods),
+                  'frame': {'image': SCREENSHOT}}),
         line(11, {'type': 'reflection_usage', 'usage': usage(500)}),
     ])
     (d / 'events.jsonl').write_text(events)
@@ -169,16 +193,21 @@ class Fixture(unittest.TestCase):
         return load_dataset('parquet', data_files={'train': str(path)}, split='train')
 
     def package(self, git=None, render=None, submitter='tester-hf'):
-        self.renders = []
+        self.renders, self.shrunk = [], []
 
         def fake_render(run_dir, staged):
             self.renders.append(run_dir)
             return None
 
+        def fake_shrink(video):
+            self.shrunk.append(video.relative_to(self.out))
+            return None
+
         group = package.resolve(SERIES_ID, runs=self.runs, series=self.series)
         rows = lambda dirs: {d.name: report_row(d.name, int(d.name[-1])) for d in dirs}
         return package.package(group, out=self.out, scrubber=Scrubber(machine()), git=git or FakeGit(),
-                               rows_of=rows, render=render or fake_render, tier='official', submitter=submitter)
+                               rows_of=rows, render=render or fake_render, shrink=fake_shrink,
+                               tier='official', submitter=submitter)
 
 
 class PackageTest(Fixture):
@@ -198,12 +227,39 @@ class PackageTest(Fixture):
         events = (staged / 'events.jsonl').read_text()
         for gone in ('"pid"', '"windowId"', '"graphics"', '"system"', '/Users/tester', '"directory"'):
             self.assertNotIn(gone, events)
-        self.assertIn(IMAGE_DATA, events)  # screenshots untouched, user name inside them not a finding
+        self.assertIn(IMAGE_DATA, events)  # base64 that is no image stays, user name inside it not a finding
         self.assertIn('<game-root>/tools', (staged / 'logs.jsonl').read_text())
         original = (self.runs / folders[0] / 'events.jsonl').read_text().splitlines()
         self.assertIn(original[3], events.splitlines())  # lines needing no change are copied byte for byte
         self.assertEqual(self.renders, [])  # nothing the video is drawn from was replaced
+        self.assertEqual(self.shrunk, [Path(result.rel, f'episode-{n}', 'video.mp4') for n in (1, 2)])
         self.assertEqual(m['scrub']['dropped_fields'], {'directory': 2, 'graphics': 2, 'pid': 2, 'system': 2, 'windowId': 2})
+
+    def test_images_leave_the_logs_once_each_and_token_deltas_are_dropped(self):
+        from PIL import Image
+        self.make_series()
+        result = self.package()
+        staged = result.dest / 'episode-1'
+        events = [json.loads(text)['event'] for text in (staged / 'events.jsonl').read_text().splitlines()]
+        self.assertNotIn('message_update', {e['type'] for e in events})
+        self.assertNotIn(SCREENSHOT[:200], json.dumps(events))
+        screenshot = next(e for e in events if e['type'] == 'host_observation')['message']['content'][2]
+        self.assertEqual(set(screenshot), {'type', 'mimeType', 'path'})
+        self.assertRegex(screenshot['path'], r'^images/[0-9a-f]{16}\.webp$')
+        self.assertEqual(screenshot['mimeType'], 'image/webp')
+        with Image.open(staged / screenshot['path']) as image:
+            self.assertEqual(image.size, (96, 54))  # full size
+        # The final frame holds the same screenshot: its path, and no second file.
+        self.assertEqual(next(e for e in events if e['type'] == 'final_observation')['frame']['image'], screenshot['path'])
+        crops = {c['path'] for e in events for c in ((e.get('message') or e.get('result') or {}).get('content') or [])
+                 if e['type'] in ('tool_execution_end', 'message_start', 'message_end') and c['type'] == 'image'}
+        self.assertEqual(len(crops), 1)  # one tool screenshot, logged three times
+        self.assertEqual(sorted(p.name for p in (staged / 'images').iterdir()),
+                         sorted(Path(p).name for p in crops | {screenshot['path']}))
+        self.assertEqual(result.manifest['slimmed'],
+                         {'image_references': 10, 'image_files': 4, 'deltas_dropped': 4, 'video_height': 720})
+        self.assertIn(f'episode-1/{screenshot["path"]}', {f['path'] for f in result.manifest['files']})
+        self.assertEqual(upload.verify(result.dest, self.out)[1], [])
 
     def test_tables_load_with_their_columns_and_image(self):
         from datasets import load_dataset, disable_progress_bars
@@ -354,7 +410,7 @@ class UploadTest(Fixture):
         api.create_commit.assert_not_called()
         api.file_exists.assert_not_called()
 
-    def test_yes_commits_the_bundle_once_and_never_replaces_one(self):
+    def test_yes_commits_the_bundle_once_and_replaces_one_only_when_asked(self):
         result = self.staged()
         api = mock.Mock()
         api.file_exists.return_value = False
@@ -371,6 +427,15 @@ class UploadTest(Fixture):
         api.file_exists.return_value = True
         with self.assertRaises(SystemExit), redirect_stdout(io.StringIO()):
             upload.main([str(result.dest), '--repo', 'org/runs', '--yes', '--out', str(self.out)], api=api)
+        with redirect_stdout(io.StringIO()):
+            upload.main([str(result.dest), '--repo', 'org/runs', '--replace', '--yes', '--out', str(self.out)], api=api)
+        kwargs = api.create_commit.call_args.kwargs
+        first = kwargs['operations'][0]
+        # The old folder is deleted in the same commit, before the new files are added.
+        self.assertEqual((type(first).__name__, first.path_in_repo, first.is_folder),
+                         ('CommitOperationDelete', f'{result.rel}/', True))
+        self.assertEqual(len(kwargs['operations']), len(result.manifest['files']) + 2)
+        self.assertTrue(kwargs['commit_message'].startswith(f'Replace series {SERIES_ID}'))
 
     def test_a_bundle_with_problems_is_refused(self):
         self.make_series(video=False)
@@ -382,6 +447,36 @@ class UploadTest(Fixture):
         if 'TODO' in upload.CARD.read_text():
             with self.assertRaises(SystemExit):
                 upload.card_text('org/runs')
+
+
+class MediaTest(unittest.TestCase):
+    def test_only_images_are_decoded(self):
+        raw = base64.b64decode(SCREENSHOT)
+        self.assertEqual(media.decode(SCREENSHOT), raw)
+        self.assertEqual(media.decode('data:image/jpeg;base64,' + SCREENSHOT), raw)
+        self.assertIsNone(media.decode(IMAGE_DATA))  # base64, but not an image
+        self.assertIsNone(media.decode(SCREENSHOT[:400]))  # too short to be one
+
+    def test_an_image_webp_cannot_shrink_keeps_its_bytes(self):
+        raw = picture((96, 54), 'JPEG', quality=5)
+        self.assertEqual(media.compress(raw), (raw, 'jpg'))
+        webp, extension = media.compress(base64.b64decode(SCREENSHOT))
+        self.assertEqual((extension, media.image_type(webp)), ('webp', 'webp'))
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'needs ffmpeg')
+    def test_the_video_is_scaled_to_720p_and_never_up(self):
+        def height(video):
+            return int(subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries',
+                                       'stream=height', '-of', 'csv=p=0', str(video)],
+                                      capture_output=True, text=True, check=True).stdout.strip())
+        with tempfile.TemporaryDirectory() as tmp:
+            for size, expected in (('1920x1080', 720), ('640x360', 360)):
+                video = Path(tmp) / f'{size}.mp4'
+                subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', f'testsrc=size={size}:rate=5:duration=1',
+                                '-pix_fmt', 'yuv420p', str(video)], check=True)
+                self.assertIsNone(media.shrink_video(video))
+                self.assertEqual(height(video), expected)
+            self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), ['1920x1080.mp4', '640x360.mp4'])
 
 
 class ScrubTest(unittest.TestCase):

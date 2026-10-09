@@ -171,7 +171,8 @@ ends.
   each thinking pause briefly, the paused game beside the model's reasoning as it
   types out. The game fills 1600 × 900; beside it are the plan and the turn's tool
   calls, below it game time and the main stats. It ends on the result: the final
-  overview beside the score. A 2-game-minute run renders to about 1:40 and 11 MB.
+  overview beside the score. A 2-game-minute run renders to about 1:40 and 11 MB. The
+  dataset's copy is scaled to 720p ([Publishing](publishing.md#smaller-than-the-run)).
 
 Re-render or change the edit by hand (needs Pillow and ffmpeg with libx264):
 

@@ -101,11 +101,12 @@ v1.0/                                     benchmark version, major.minor
           episode.parquet                 one row: score, game state, telemetry, final image
           timeline.parquet                one row per game minute: economy and telemetry so far
           final-overview.jpg              the settlement at the end, zoomed out
-          video.mp4                       the run, edited: actions at real speed, idle time fast
+          video.mp4                       the run, edited, 720p: actions at real speed, idle time fast
           run.json                        model, settings, harness version, budget, outcome
           inputs.json                     exactly what the model was given
           episode.json                    the scorecard
-          events.jsonl                    every model message, tool call and result, with screenshots
+          events.jsonl                    every model message, tool call and result
+          images/                         the screenshots and reference images events.jsonl points to
           logs.jsonl                      the readable log
           notifications.jsonl             messages the game showed
           memory.json, notebook.md, playbook.md   the agent's own notes
@@ -125,7 +126,7 @@ holds the attempt the series kept (`attempt`, `outcome`: `valid` or `model_failu
 
 `tier` is `official` for runs made by the maintainers and `community` for submitted runs.
 A submitted score comes from the submitter's machine; the video, the screenshots in
-`events.jsonl` and the reader samples make it checkable, not verified.
+`images/` and the reader samples make it checkable, not verified.
 
 ## Columns
 
@@ -173,12 +174,16 @@ Missing values are null, never zero.
 ## What is in the files
 
 The logs keep everything the model was given and did: its messages and reasoning text, every
-tool call and result, and the screenshots it saw, as base64 images inside `events.jsonl`. In
-runs made with the image guide (`guide` is not null), the preparation message in
-`events.jsonl` also holds two reference images: a guide to the game's construction menus,
-made from game screenshots, and a screenshot of a developed settlement from an earlier human
-game on another map. Screenshots and videos
-show only the game window.
+tool call and result, and the screenshots it saw. Images are files in the episode's `images/`
+folder, and `events.jsonl` holds their paths: an image block reads
+`{"type": "image", "mimeType": "image/webp", "path": "images/<hash>.webp"}`. They are the
+model's images at full size, compressed to WebP at quality 70 (kept as they were when that is
+no smaller), and each is stored once although the log may refer to it several times. In runs
+made with the image guide (`guide` is not null), the preparation message also holds two
+reference images: a guide to the game's construction menus, made from game screenshots, and a
+screenshot of a developed settlement from an earlier human game on another map. The token
+deltas of streaming replies are left out; each reply's `message_end` holds all of it.
+Screenshots and videos show only the game window.
 
 Before upload every text file is scrubbed: the game machine's address and paths, home
 directories and host names are replaced with placeholders such as `<home>`; the game's process
@@ -216,11 +221,11 @@ risk and with their own copy of the game. The game is not included.
 - **Logs, tables, playbooks and model outputs**, everything in this dataset except the game
   footage below: [Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/).
   Credit "Crusader Arena" and link to this dataset or the repository.
-- **Game footage**: the screenshots in `events.jsonl`, the reference images in the preparation
-  message, `final-overview.jpg` and `video.mp4` show Stronghold Crusader: Definitive Edition,
+- **Game footage**: the screenshots and reference images in `images/`,
+  `final-overview.jpg` and `video.mp4` show Stronghold Crusader: Definitive Edition,
   © Firefly Studios. They are not covered by the license above. They are shared, unaltered
-  apart from the video's editing and overlays, for non-commercial research and to document how
-  the agents played. Crusader Arena is not affiliated with or endorsed by Firefly Studios.
+  apart from compression and the video's editing and overlays, for non-commercial research
+  and to document how the agents played. Crusader Arena is not affiliated with or endorsed by Firefly Studios.
   Rights holders can ask for removal through the repository's
   [issues](https://github.com/hesamsheikh/CrusaderArena/issues).
 - **The code** that produced the runs is in the

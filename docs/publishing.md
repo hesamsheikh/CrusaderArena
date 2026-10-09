@@ -5,7 +5,7 @@
 Runs are published to the Hugging Face dataset
 [hesamation/crusader-arena-runs](https://huggingface.co/datasets/hesamation/crusader-arena-runs),
 not to this repository: they contain game footage, and a recorded 25-game-minute series takes
-about 550 MB. This repository holds the tools that prepare and upload
+about 230 MB. This repository holds the tools that prepare and upload
 them (`tools/dataset/`) and the dataset card (`tools/dataset/card.md`). Bundles are staged in
 `harness/runtime/publish/`, which git ignores.
 
@@ -30,7 +30,8 @@ npm run upload -- harness/runtime/publish/v1.0/<benchmark>/<model>/<series id> -
 3. **Upload.** `npm run upload` prints what it would send. With `--yes` it makes one commit
    per bundle; with `--pr` it opens a pull request instead, which is how anyone without
    write access to the dataset submits runs. `--tier official` is for runs made by the
-   maintainers; everyone else's are `community`.
+   maintainers; everyone else's are `community`. `--replace` replaces a bundle already in
+   the dataset, for one packaged again after a packaging change.
 
 The token is `HF_TOKEN` (environment or `.env`), else the login from `hf auth login`. The
 dataset is `--repo ORG/NAME` or `HF_DATASET_REPO`.
@@ -55,8 +56,9 @@ Packaging records a problem, and the upload refuses the bundle, unless:
 - the scrub (below) found nothing to report.
 
 The upload also refuses a bundle without a version, and one whose files changed after
-packaging: every file's size and SHA-256 must match `manifest.json`. It never replaces a
-bundle already in the dataset.
+packaging: every file's size and SHA-256 must match `manifest.json`. It replaces a bundle
+already in the dataset only with `--replace`, which deletes the old folder in the same commit,
+so files the new bundle no longer has go too. The old files stay in the dataset's history.
 
 ## Versions and attempts
 
@@ -98,6 +100,26 @@ need no change are copied byte for byte. If text the video is drawn from (`run.j
 `episode.json`, `events.jsonl`) was replaced, the video is rendered again from the scrubbed
 files and the original `recording/`; without `recording/` that is a problem.
 
+## Smaller than the run
+
+After the scrub, packaging makes each episode smaller (`tools/dataset/media.py`). The run
+folder keeps the originals.
+
+- **Images leave `events.jsonl`.** Every image the log holds as base64 (the screenshots,
+  the preparation message's reference images and the final frames) is written once to
+  `images/<hash>.webp`: WebP at quality 70 and full size, or the original bytes when those
+  are smaller. An image block `{"type": "image", "data": …}` becomes
+  `{"type": "image", "mimeType": …, "path": "images/…"}`, and any other field that held an
+  image (the final frames' `frame.image`) holds the path. A tool's screenshot is logged three
+  times, in the tool's result and at the start and end of the message that carries it, so
+  one file serves all three.
+- **Token deltas are dropped.** `message_update` events stream a reply as it is written; the
+  reply's `message_end` holds all of it.
+- **The video is 720p**, scaled from the run's 1080p render (after re-rendering it, when the
+  scrub changed the logs it is drawn from) with the renderer's encoder settings.
+
+`manifest.json` counts what this did under `slimmed`.
+
 ## The dataset
 
 ```
@@ -107,6 +129,7 @@ v<major>.<minor>/<benchmark>/<model ID with "/" as "--">/<series id>/
     episode.parquet  timeline.parquet  final-overview.jpg  video.mp4
     run.json  inputs.json  episode.json  events.jsonl  logs.jsonl  notifications.jsonl
     memory.json  notebook.md  playbook.md
+    images/<hash>.webp
 ```
 
 A single run that is not part of a series is staged as `run-<start time>-<id>/episode-1/`.
@@ -141,5 +164,6 @@ python3 -m unittest discover -s tools/dataset
 ```
 
 The tests build a small series and check the layout, the tables, the timeline, the scrub, the
-problems that block an upload, and the upload itself against a fake Hub client. One test runs
+images and token deltas leaving the logs, the video scaled to 720p, the problems that block an
+upload, and the upload itself, replacing a bundle included, against a fake Hub client. One test runs
 `npm run report`'s code on a made-up run to check the fields packaging reads.

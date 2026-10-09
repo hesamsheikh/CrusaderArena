@@ -11,7 +11,9 @@ For each learning series (harness/runtime/series/<id>) or independent run it:
 2. copies the files the dataset keeps into
    harness/runtime/publish/v<major>.<minor>/<benchmark>/<model>/<id>/episode-<n>/, scrubbed of
    secrets and machine details (scrub.py), and re-renders a video whose logs needed changes;
-3. writes the tables (tables.py): series.parquet, and per episode episode.parquet and
+3. makes each episode smaller (media.py): the images in events.jsonl become WebP files in
+   images/, the token deltas are dropped and the video is scaled to 720p;
+4. writes the tables (tables.py): series.parquet, and per episode episode.parquet and
    timeline.parquet (the game minute by minute, timeline.py); and manifest.json: each file's
    size and SHA-256, what the scrub changed, and the problems that block the upload.
 
@@ -35,6 +37,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
 
+import media
 from scrub import Scrubber, machine_values
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -454,6 +457,8 @@ class Result:
 def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
             rows_of: Callable[[list[Path]], dict[str, dict]] = report_rows,
             render: Callable[[Path, Path], str | None] = render_video,
+            shrink: Callable[[Path], str | None] = media.shrink_video,
+            slim: Callable[[Path], dict] = media.slim_events,
             tier: str = 'community', submitter: str | None = None) -> Result:
     import tables  # needs the datasets library; imported here so --help works without it
     import timeline
@@ -500,6 +505,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
 
     series_id = group.id if group.kind == 'series' else None
     episode_rows = []
+    slimmed: Counter[str] = Counter()
     for n, run_dir in sorted(runs.items()):
         staged = dest / f'episode-{n}'
         problems += [f'episode {n}: {p}' for p in check_run(run_dir, meta[n], rows.get(run_dir.name), chosen[n].outcome)]
@@ -510,6 +516,13 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
             error = render(run_dir, staged)
             if error:
                 problems.append(f'episode {n}: the logs needed scrubbing and {error}')
+        # After the re-render, which reads the final frames from the log.
+        if (staged / 'video.mp4').is_file():
+            error = shrink(staged / 'video.mp4')
+            if error:
+                problems.append(f'episode {n}: {error}')
+        if (staged / 'events.jsonl').is_file():
+            slimmed.update(slim(staged / 'events.jsonl'))
         run, episode = read_json(staged / 'run.json'), read_json(staged / 'episode.json')
         base = identity(run, episode, version, tier, submitter, series_id)
         row = episode_row(base, chosen[n], len(group.episodes), run, episode, rows.get(run_dir.name) or {}, staged, f'{rel}/episode-{n}')
@@ -549,7 +562,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
     problems += summarize_findings(scrubber.findings)
     files = sorted(p for p in dest.rglob('*') if p.is_file())
     manifest = {
-        'format': 1,
+        'format': 2,
         'path': rel,
         'kind': group.kind,
         'id': group.id,
@@ -564,6 +577,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
         'publishable': not problems,
         'problems': problems,
         'scrub': scrubber.summary(),
+        'slimmed': {**slimmed, 'video_height': media.VIDEO_HEIGHT},
         'files': [{'path': p.relative_to(dest).as_posix(), 'bytes': p.stat().st_size, 'sha256': sha256(p)} for p in files],
     }
     (dest / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
@@ -583,6 +597,9 @@ def report(result: Result) -> str:
         f'{size(sum(f["bytes"] for f in m["files"]))}',
         f'  {result.dest.relative_to(ROOT) if result.dest.is_relative_to(ROOT) else result.dest}',
         f'  Scrub: dropped {dropped}; replaced {replaced} machine-specific value(s)',
+        f'  Slimmed: {m["slimmed"].get("image_references", 0)} images in the logs as '
+        f'{m["slimmed"].get("image_files", 0)} files, {m["slimmed"].get("deltas_dropped", 0)} token deltas dropped, '
+        f'videos at {m["slimmed"]["video_height"]}p',
     ]
     if m['publishable']:
         lines.append('  Ready to upload: npm run upload -- ' + str(result.dest.relative_to(ROOT) if result.dest.is_relative_to(ROOT) else result.dest))
