@@ -2,8 +2,10 @@
 
 [← Documentation](README.md)
 
-Runs are published to a Hugging Face dataset, not to this repository: they contain game
-footage and take tens of MB each. This repository holds the tools that prepare and upload
+Runs are published to the Hugging Face dataset
+[hesamation/crusader-arena-runs](https://huggingface.co/datasets/hesamation/crusader-arena-runs),
+not to this repository: they contain game footage, and a recorded 25-game-minute series takes
+about 550 MB. This repository holds the tools that prepare and upload
 them (`tools/dataset/`) and the dataset card (`tools/dataset/card.md`). Bundles are staged in
 `harness/runtime/publish/`, which git ignores.
 

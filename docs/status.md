@@ -96,8 +96,9 @@ between September and October 2026.
 - Host shutdown ending a run with the final pause, and the host staying ready when a
   run cannot be set up.
 - Publishing runs ([Publishing](publishing.md)): packaging, scrubbing, the tables and the
-  upload checks are tested in code; packaging and the scrub also ran on the 2026-10-08 runs
-  without any upload. Nothing has been uploaded to Hugging Face yet.
+  upload checks are tested in code. The first series (GLM 5.3 Flash, benchmark 1.0.0,
+  20261008T191852-c1d986e9) was uploaded to the Hugging Face dataset on 2026-10-09, and its
+  three tables load from the Hub with `load_dataset`.
 
 ## Not verified or not built
 
