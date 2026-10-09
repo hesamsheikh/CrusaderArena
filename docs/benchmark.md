@@ -96,6 +96,8 @@ retried) keeps the version and is recorded as a relock.
   `## [Unreleased]`. A test fails while a version in
   `benchmark-versions.json` has no section or a different date, so add the section in
   the commit that bumps the version. The format is fixed so the website can read it.
+- **Package version.** `package.json` and `package-lock.json` carry the benchmark
+  version; `bump` sets them before taking the fingerprint, and a test checks they match.
 - **Tags.** The git tag `vMAJOR.MINOR.PATCH` marks the commit each version was
   released at, and each tag has a GitHub release whose notes are its changelog
   section.

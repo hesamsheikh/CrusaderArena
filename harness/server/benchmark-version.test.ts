@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { behaviourFiles, benchmarkFingerprint, nextVersion, readVersions, versionOf } from "./benchmark-version.js";
 
 test("the benchmark files are a recorded version (bump or relock it with the change)", () => {
@@ -16,6 +17,14 @@ test("the benchmark files are a recorded version (bump or relock it with the cha
   assert.equal(latest.version, versions.current);
   assert.equal(versionOf(fingerprint, versions), versions.current);
   assert.match(versions.current, /^\d+\.\d+\.\d+$/);
+});
+
+test("the repository's package version is the current benchmark version", () => {
+  const { current } = readVersions();
+  const json = (file: string) => JSON.parse(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
+  assert.equal(json("package.json").version, current, "npm run benchmark-version -- bump sets it");
+  assert.equal(json("package-lock.json").version, current);
+  assert.equal(json("package-lock.json").packages[""].version, current);
 });
 
 test("versions follow semantic versioning", () => {

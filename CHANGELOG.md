@@ -17,6 +17,13 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- The repository's package version is the benchmark version, and
+  `npm run benchmark-version -- bump` sets it.
+
 ## [1.1.0] - 2026-10-09
 
 Not comparable with 1.0.0: the agent sees storage readings and a changed prompt.

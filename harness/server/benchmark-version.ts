@@ -16,6 +16,9 @@
  *   npm run benchmark-version -- check                          # is the current code a known version?
  *   npm run benchmark-version -- bump patch|minor|major "what"  # behaviour changed: next version
  *   npm run benchmark-version -- relock "why"                   # same behaviour
+ *
+ * The repository's version is the benchmark's: bump writes it into package.json and
+ * package-lock.json before taking the fingerprint (the lock file is part of it).
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -110,6 +113,17 @@ export function readBenchmarkStamp(): BenchmarkStamp {
   return { version, fingerprint, guide: guideFingerprint() };
 }
 
+/** Sets the version in package.json and package-lock.json (both npm's two-space JSON). */
+export function setPackageVersion(version: string) {
+  for (const file of ["package.json", "package-lock.json"]) {
+    const target = path.join(root, file);
+    const data = JSON.parse(readFileSync(target, "utf8"));
+    data.version = version;
+    if (data.packages?.[""]) data.packages[""].version = version;
+    writeFileSync(target, JSON.stringify(data, null, 2) + "\n");
+  }
+}
+
 export const LEVELS = ["major", "minor", "patch"] as const;
 export type Level = (typeof LEVELS)[number];
 
@@ -141,10 +155,12 @@ function main() {
   if (known) throw new Error(`The current files are already ${known}; nothing to record.`);
   const version = command === "bump" ? nextVersion(versions.current, level as Level) : versions.current;
   if (!version) throw new Error("There is no version to relock yet; use bump for the first one.");
+  if (command === "bump") setPackageVersion(version);
+  const recorded = command === "bump" ? benchmarkFingerprint() : fingerprint;
   versions.current = version;
-  versions.history.push({ version, fingerprint, date: new Date().toISOString().slice(0, 10), note });
+  versions.history.push({ version, fingerprint: recorded, date: new Date().toISOString().slice(0, 10), note });
   writeFileSync(VERSIONS_FILE, JSON.stringify(versions, null, 2) + "\n");
-  console.log(`${version}: recorded fingerprint ${fingerprint.slice(0, 12)}. Commit benchmark-versions.json with the change.`);
+  console.log(`${version}: recorded fingerprint ${recorded.slice(0, 12)}. Commit benchmark-versions.json${command === "bump" ? ", package.json and package-lock.json" : ""} with the change${command === "bump" ? ", and add the version's section to CHANGELOG.md" : "; note it in CHANGELOG.md under [Unreleased] if users should know"}.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

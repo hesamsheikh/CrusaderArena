@@ -42,6 +42,12 @@
       "fingerprint": "19121beba808ff53579a7399d99118e38af7f19074a91e7b5add9b27f1cd59f0",
       "date": "2026-10-09",
       "note": "Stockpile and granary storage (piles, room per good, full notes) in observations and status; the stockpile pile rule in the prompt; place_near and expand_storage anchor by building type, so stockpiles expand on every side; market_trade says whether gold or storage stopped a purchase; a raw building-record diagnostic in the probe; the prompt says only quarries use oxen, several ox tethers can serve one quarry and stone piling up at a quarry means more are needed"
+    },
+    {
+      "version": "1.1.0",
+      "fingerprint": "e6391d4505052927c2782c445c4fbea07a2ae1c183e9bead8b5768db14da67a4",
+      "date": "2026-10-09",
+      "note": "The package version (package.json, package-lock.json) is the benchmark version, and bump sets it; no change in behaviour."
     }
   ]
 }
