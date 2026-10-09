@@ -57,7 +57,7 @@ running the game through Steam and Proton.
   made from game screenshots, is not distributed; without it the agent gets the same
   guide as text.
 
-[Full status and known issues →](docs/status.md)
+[Full status and known issues →](docs/status.md) · [Roadmap →](ROADMAP.md)
 
 ## Documentation
 

@@ -16,6 +16,7 @@ Start with **How it works**, then read whichever part you need.
 | [Setup](setup.md) | Installing the game machine and the host |
 | [The reader](reader.md) | How game state is read, what it contains and its limits |
 | [Status](status.md) | What is verified, what is not, and known issues |
+| [Roadmap](../ROADMAP.md) | What is planned next |
 
 The prompts the model receives are in [`prompt/`](../prompt): the controls guide,
 the game reference and the benchmark rules.

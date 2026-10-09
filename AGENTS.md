@@ -45,6 +45,7 @@ git identity or other git configuration.
 | `tools/dataset/` | Packaging, scrubbing and uploading runs to the Hugging Face dataset; the dataset card | [publishing](docs/publishing.md) |
 | `tests/` | C++ and Python tests for the reader and its tools | |
 | `docs/` | The documentation; [docs/status.md](docs/status.md) says what is verified | |
+| `ROADMAP.md` | Planned work. The project website shows it, so keep its format; take an item off when it is done | |
 
 ## How to work here
 
