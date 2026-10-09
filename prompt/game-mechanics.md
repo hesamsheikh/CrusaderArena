@@ -55,7 +55,9 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
 ## Buildings: economy, food and services
 
 Farms, mines, quarries and pitch rigs need matching terrain (see the placement rules).
-Leave walking access between buildings and their storage.
+Leave walking access between buildings and their storage. A building with workers needs
+at least one whole side of open ground for them to go in and out; closed in on all four
+sides, it stays empty.
 
 Where to build: workers walk, so woodcutters, quarries, mines, farms and hunters work
 best close to their resource and to the stockpile or granary they deliver to. Hovels

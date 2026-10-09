@@ -1,5 +1,5 @@
 {
-  "current": "1.1.0",
+  "current": "1.1.1",
   "history": [
     {
       "version": "1.0.0",
@@ -48,6 +48,12 @@
       "fingerprint": "e6391d4505052927c2782c445c4fbea07a2ae1c183e9bead8b5768db14da67a4",
       "date": "2026-10-09",
       "note": "The package version (package.json, package-lock.json) is the benchmark version, and bump sets it; no change in behaviour."
+    },
+    {
+      "version": "1.1.1",
+      "fingerprint": "8735e0dabcc91e9372812b7b941e0ba3e00fa9993c8c20d294c917dfd4ff2770",
+      "date": "2026-10-09",
+      "note": "Buildings with workers keep one open side: spot finding, retries and a check of build_structure targets; tile map read in the background while paused"
     }
   ]
 }

@@ -35,10 +35,10 @@ Brewery, Inn. Castle and military buildings are not offered.
 
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
-| `build_structure` | `placements`: 1–4 of `{name, x, y, exact?}` | For each placement: opens the menu, selects the building, clicks the target pixel, then checks with the reader whether it was placed. Retries a silently blocked spot nearby unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement |
+| `build_structure` | `placements`: 1–4 of `{name, x, y, exact?}` | For each placement: opens the menu, selects the building, clicks the target pixel, then checks with the reader whether it was placed. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement |
 | `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
-| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Reads the tile map for the current view and lists free spots where the building fits, as screen pixels. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots as pixels | No |
+| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map for the current view and lists free spots where the building fits and keeps an open side (see Open sides), as screen pixels. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots as pixels | No |
 
 A stockpile is not one building in the tile map but four 2×2 piles at the corners of a
 5×5 square; the tile map joins each four into its square. `place_near` and
@@ -69,11 +69,26 @@ moves, placement mode ends or the screenshot is 25 seconds old. If the map shows
 spot free but nothing was placed and the stock cannot pay, it stops with
 `not_enough_resources` and lists what is `missing`.
 
+**Open sides.** A building with workers (every building except hovels, the
+marketplace, stockpiles and granaries) needs one whole side of open ground: its workers
+go in and out there, and one closed in on all four sides stays empty. In the tile map
+a side is open when every tile along it is buildable ground with nothing on it, or the
+keep's courtyard; trees, bushes, rocks, water, cliffs, farm fields and buildings close
+it. Every spot the host chooses (`find_sites`, `place_near`, `expand_storage`, retries)
+leaves the new building an open side if it has workers, and takes no neighbour's last
+open side; several spots in one list leave each other one too. Existing buildings of
+types the harness cannot name are kept open as well. A `build_structure` target that fails the check is
+moved like a blocked one without being clicked, and the placement reports `access`
+(`no_open_side` or `closes_neighbour`); with `exact` it is placed as asked and `access`
+warns.
+
 **Tile map.** An external read of the game's own tile layers for the current view
 (about 2 seconds, read-only). It knows where structures, trees and rock are, which
 ground suits farms, quarries, iron mines and pitch rigs, and the no-build zone around
-the signpost. `find_sites`, `place_near`, `expand_storage` and `build_structure`
-retries use it.
+the signpost. `find_sites`, `place_near`, `expand_storage` and `build_structure` use
+it. Each observation starts a read for its view in the background while the game is
+paused for the model; `find_sites` and `build_structure` use that read, and
+`build_structure` waits for it before the game is unpaused, so it costs no game time.
 
 ## Move the camera
 

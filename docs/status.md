@@ -103,6 +103,14 @@ between September and October 2026.
   paths, with fake models and game devices (`npm test`). This includes the retries
   added before the first 25-game-minute run: failed handoff and playbook requests,
   cut-off replies with tool calls, and unconfirmed pause toggles.
+- Open sides for buildings with workers (see [Tools](tools.md#build)), live on Oasis
+  by the Sea (2026-10-09): a woodcutter aimed at a 3×3 hole boxed in by four hovels
+  came back `access: "no_open_side"` and was built 4 tiles away without the hole being
+  clicked, and `find_sites` did not offer the hole. Placed there with `exact`, it warned,
+  showed the game's no-entry sign, read "no access to keep" and got no worker while 19
+  peasants stood idle; the moved one was staffed and working. Hovels are engine type 1.
+  Spot choice, the check before clicking and the background tile read are also tested
+  with tile fixtures and the simulated game (`npm test`).
 - Tool changes made before the first 25-game-minute run, not yet used live: woodcutter
   spots ranked by nearby trees, placement checks waiting for a valid reader sample, and
   `cost` in placement results.

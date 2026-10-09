@@ -17,7 +17,22 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.1.1] - 2026-10-09
+
+Comparable with 1.1.0: a placement fix.
+
+### Benchmark
+
+- Buildings with workers keep one whole side of open ground, where their workers go in
+  and out; houses, the marketplace, stockpiles and granaries need none. `find_sites`,
+  `place_near`, `expand_storage` and placement retries choose only spots that leave the
+  new building an open side and take no neighbour's last one. A `build_structure`
+  target that fails is moved like a blocked one without being clicked and reports
+  `access`; with `exact` it is placed and `access` warns. The prompt explains the rule
+  and suggests two rows back to back or blocks of four.
+- The tile map for each observed view is read in the background while the game is
+  paused for the model. `find_sites` and `build_structure` use it, so the check and
+  `build_structure` retries no longer read the map while the game runs.
 
 ### Harness
 

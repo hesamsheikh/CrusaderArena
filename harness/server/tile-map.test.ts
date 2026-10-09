@@ -208,3 +208,81 @@ test("storage anchors on the stockpile, not the keep beside it at the camera cen
     assert.ok(touches && !(f.x1 <= square.x2 && square.x1 <= f.x2 && f.y1 <= square.y2 && square.y1 <= f.y2), `${side} touches without overlapping`);
   }
 });
+
+test("a building with workers keeps one whole side of open ground; houses need none", () => {
+  // A bakery (4×4) on tile 100 covers 98..101; trees close its up-left, down-right and up-right sides.
+  const closeSides = (set: Parameters<Parameters<typeof region>[0] & {}>[0], sides: string[]) => {
+    if (sides.includes("up-left")) fill(set, "organism", 97, 98, 97, 101, 1);
+    if (sides.includes("down-right")) fill(set, "organism", 102, 98, 102, 101, 1);
+    if (sides.includes("up-right")) fill(set, "organism", 98, 97, 101, 97, 1);
+    if (sides.includes("down-left")) fill(set, "organism", 98, 102, 101, 102, 1);
+  };
+  const three = new TileMap(region((set) => closeSides(set, ["up-left", "down-right", "up-right"])), camera, frame);
+  assert.equal(three.openSides(footprintRect({ x: 100, y: 100 }, 4)), 1);
+  assert.deepEqual(three.access("Bakery", { x: 100, y: 100 }), { ok: true });
+  const four = new TileMap(region((set) => closeSides(set, ["up-left", "down-right", "up-right", "down-left"])), camera, frame);
+  assert.deepEqual(four.access("Bakery", { x: 100, y: 100 }), { ok: false, reason: "no_open_side" });
+  assert.deepEqual(four.access("Iron Mine", { x: 100, y: 100 }), { ok: false, reason: "no_open_side" });
+  assert.deepEqual(four.access("Hovel", { x: 100, y: 100 }), { ok: true }, "no workers go in and out of a house");
+  // One tree on a side closes the whole side; a planned footprint closes it too.
+  const one = new TileMap(region((set) => { closeSides(set, ["up-left", "down-right", "up-right"]); set("organism", 99, 102, 1); }), camera, frame);
+  assert.equal(one.access("Bakery", { x: 100, y: 100 }).reason, "no_open_side");
+  assert.equal(three.access("Bakery", { x: 100, y: 100 }, [{ x1: 98, y1: 102, x2: 101, y2: 105 }]).reason, "no_open_side");
+  assert.equal(four.sitesNear("Bakery", { x: 100, y: 100 }, 1, 0).length, 0, "find_sites does not offer it");
+  assert.equal(three.sitesNear("Bakery", { x: 100, y: 100 }, 1, 0).length, 1);
+});
+
+test("a new building may not take a neighbour's last open side; storage, the keep and its courtyard need none", () => {
+  // Building 30 (4×4, 104..107 × 98..101) with only its up-left side (x = 103) open.
+  const neighbour = (set: Parameters<Parameters<typeof region>[0] & {}>[0]) => {
+    fill(set, "structure", 104, 98, 107, 101, 30);
+    fill(set, "organism", 108, 98, 108, 101, 1);
+    fill(set, "organism", 104, 97, 107, 97, 1);
+    fill(set, "organism", 104, 102, 107, 102, 1);
+  };
+  // A hovel on tile 102 covers 100..103 and so takes x = 103.
+  const unknown = new TileMap(region(neighbour), camera, frame);
+  assert.deepEqual(unknown.access("Hovel", { x: 102, y: 100 }), { ok: false, reason: "closes_neighbour" }, "a building the harness cannot name is kept open");
+  assert.deepEqual(unknown.access("Hovel", { x: 101, y: 100 }), { ok: true }, "one tile back leaves the side open");
+  const pile = new TileMap({ ...region(neighbour), structure_types: { "30": STRUCTURE_TYPES.pile } }, camera, frame);
+  assert.deepEqual(pile.access("Hovel", { x: 102, y: 100 }), { ok: true });
+  const hovel = new TileMap({ ...region(neighbour), structure_types: { "30": STRUCTURE_TYPES.hovel } }, camera, frame);
+  assert.deepEqual(hovel.access("Bakery", { x: 102, y: 100 }), { ok: true }, "a house needs no open side");
+  const workshop = new TileMap({ ...region(neighbour), structure_types: { "30": 3 } }, camera, frame);
+  assert.equal(workshop.access("Hovel", { x: 102, y: 100 }).reason, "closes_neighbour", "a woodcutter (type 3) is kept open");
+  // Already closed in: placing next to it does not make it worse, so it is allowed.
+  const closed = new TileMap(region((set) => { neighbour(set); fill(set, "organism", 103, 98, 103, 98, 1); }), camera, frame);
+  assert.deepEqual(closed.access("Hovel", { x: 101, y: 102 }), { ok: true });
+  // The keep's courtyard is open ground for a side.
+  const courtyard = new TileMap({
+    ...region((set) => { fill(set, "organism", 97, 98, 97, 101, 1); fill(set, "organism", 102, 98, 102, 101, 1); fill(set, "organism", 98, 102, 101, 102, 1); fill(set, "structure", 95, 90, 104, 97, 55); }),
+    structure_types: { "55": STRUCTURE_TYPES.courtyard },
+  }, camera, frame);
+  assert.deepEqual(courtyard.access("Bakery", { x: 100, y: 100 }), { ok: true });
+  // A building placed during this call is kept open like a built one.
+  const map = new TileMap(region((set) => { fill(set, "organism", 97, 98, 97, 101, 1); fill(set, "organism", 98, 97, 101, 97, 1); fill(set, "organism", 98, 102, 101, 102, 1); }), camera, frame);
+  map.claim("Bakery", { x: 100, y: 100 }, 0, true);
+  assert.equal(map.access("Hovel", { x: 104, y: 100 }).reason, "closes_neighbour");
+  map.claim("Bakery", { x: 100, y: 110 });
+  assert.deepEqual(map.access("Hovel", { x: 104, y: 110 }), { ok: true }, "a refused spot is not a building");
+});
+
+test("sites in a one-building strip leave each other an open side; two rows back to back each keep one", () => {
+  // Open land only in the strip y = 98..101, x = 80..120: bakeries fit in one row there.
+  const strip = new TileMap(region((set) => {
+    const { x0, y0, w, h } = TileMap.regionFor(camera);
+    fill(set, "organism", x0, y0, x0 + w - 1, y0 + h - 1, 1);
+    fill(set, "organism", 80, 98, 120, 101, 0);
+  }), camera, frame);
+  const sites = strip.sitesNear("Bakery", { x: 100, y: 100 }, 5, 20);
+  const rects = sites.map((s) => footprintRect(s.tile, 4));
+  assert.ok(sites.length >= 2, JSON.stringify(sites));
+  for (const [i, r] of rects.entries())
+    assert.ok(strip.openSides(r, rects.filter((_, j) => j !== i)) >= 1, `site ${i} keeps an open side`);
+  // Two rows back to back on open land: the second row's bakery leaves the first its outer side.
+  const open = new TileMap(region(), camera, frame);
+  open.claim("Bakery", { x: 100, y: 100 }, 0, true);
+  open.claim("Bakery", { x: 104, y: 100 }, 0, true);
+  assert.deepEqual(open.access("Bakery", { x: 100, y: 104 }), { ok: true });
+  assert.deepEqual(open.access("Bakery", { x: 104, y: 104 }), { ok: true });
+});

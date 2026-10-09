@@ -98,6 +98,10 @@ take targets only from a new screenshot.
   refused for its ground or a building is "too close" to the signpost. `at` and
   `offsetTiles` say where it was placed instead; `not_placed` with `retries` means no
   nearby spot worked, so choose other ground. Pass `exact: true` to forbid retries.
+- `access: "no_open_side"` or `"closes_neighbour"`: your target would leave a building
+  with workers no open side (see the rules below), so the harness moved it without
+  clicking there, as for a blocked spot. With `exact: true` it is placed as asked and
+  `access` warns you.
 - `retrySkipped: "not_enough_resources"` with `missing` (for example `{"wood": 4}`):
   you cannot pay for it yet.
 - `rejected`: the game showed a new error for it. `possibly_rejected`: an error was
@@ -125,6 +129,12 @@ Game rules for placement:
   carry its stone to the stockpile, taking whatever is ready at any quarry. Add tethers
   when the quarry is far from the stockpile or stone piles up at it. An iron mine needs
   iron ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
+- A building with workers (everything but hovels, the marketplace, stockpiles and
+  granaries) needs at least one whole side of open ground: its workers go in and out
+  there, and one closed in on all four sides by buildings, trees, rocks, water or cliffs
+  stays empty. Pack them in two rows back to back or in blocks of four, so each keeps an
+  outer side. `find_sites`, `place_near`, `expand_storage` and the retries only use spots
+  that keep this for the new building and its neighbours.
 - Leave walking routes between buildings and their storage, and room to expand storage.
 
 ## Camera and keys

@@ -52,10 +52,26 @@ const resourceGround: Record<string, { bit: number; min: number; reason: string 
  * Engine building types, as the tile probe reports them per instance (structure_types; the open
  * panel's type uses the same numbers). A stockpile is not one building: it is four 2×2 piles
  * (type 10) at the corners of a 5×5 square with a one-tile walkway between them, each holding one
- * good (live on Oasis by the Sea, 2026-10-09).
+ * good (live on Oasis by the Sea, 2026-10-09). The keep's campfire courtyard is its own building;
+ * hovels are type 1 (live, 2026-10-09).
  */
-export const STRUCTURE_TYPES = { pile: 10, granary: 19, market: 26, keep: 41, signpost: 52 } as const;
+export const STRUCTURE_TYPES = { hovel: 1, pile: 10, granary: 19, market: 26, keep: 41, signpost: 52, courtyard: 55 } as const;
 const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
+/**
+ * Buildings without workers walking in and out. Every other building needs one whole side of open
+ * ground: its workers go in and out there, and one closed in on all four sides stays empty (live,
+ * 2026-10-09: a woodcutter boxed in by four hovels showed the no-entry sign and "no access to keep"
+ * and got no worker while 19 peasants stood idle; one beside it with an open side was staffed). Two
+ * rows back to back, or blocks of four, leave each an outer side.
+ */
+const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary"]);
+export const needsOpenSide = (building: string) => !noWorkers.has(building);
+/**
+ * Engine types that need no open side. Buildings of other types in the map, including ones the
+ * harness cannot name, are kept with an open side too.
+ */
+const noOpenSideTypes = new Set<number>([STRUCTURE_TYPES.hovel, STRUCTURE_TYPES.pile, STRUCTURE_TYPES.granary,
+  STRUCTURE_TYPES.market, STRUCTURE_TYPES.keep, STRUCTURE_TYPES.courtyard, SIGNPOST_TYPE]);
 /** Placement groups the game never runs the signpost check for. */
 const signpostExempt = new Set(["Woodcutter", "Ox Tether", "Stockpile", "Granary", "Armoury", "Quarry", "Iron Mine", "Pitch Rig", ...farmNames]);
 
@@ -64,6 +80,8 @@ type Camera = TileCamera;
 type Size = { width: number; height: number };
 export type Tile = { x: number; y: number };
 export type Rect = { x1: number; y1: number; x2: number; y2: number };
+/** A building's footprint, and whether its workers need an open side (see needsOpenSide). */
+export type Footprint = Rect & { needsOpenSide?: boolean };
 export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number };
 /** Tiles around a woodcutter site in which find_sites counts trees. */
 export const WOODCUTTER_REACH = 12;
@@ -73,6 +91,8 @@ export function footprintRect(centre: Tile, size: number): Rect {
   return { x1: centre.x - a, y1: centre.y - a, x2: centre.x - a + size - 1, y2: centre.y - a + size - 1 };
 }
 const overlaps = (a: Rect, b: Rect) => a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2;
+const inside = (t: Tile, r: Rect) => t.x >= r.x1 && t.x <= r.x2 && t.y >= r.y1 && t.y <= r.y2;
+const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
 /**
  * The pixel a click must hit for the game to pick tile t. The camera formula gives the
@@ -91,9 +111,10 @@ export function onScreen(frame: Size, p: { x: number; y: number }) {
 }
 
 export class TileMap {
-  private claimed: Rect[] = [];
+  private claimed: Footprint[] = [];
   private signposts?: Tile[];
   private trees?: Tile[];
+  private buildings?: Footprint[];
   constructor(
     readonly region: TileRegion,
     readonly camera: Camera,
@@ -112,14 +133,67 @@ export class TileMap {
     if (t.x < x0 || t.y < y0 || t.x >= x0 + w || t.y >= y0 + h) return undefined;
     return this.region.layers[layer][(t.y - y0) * w + (t.x - x0)];
   }
-  /** Buildable: inside the read region, no building, no organism, ordinary land. */
+  /** Buildable: inside the read region, no building, no organism, no animal, ordinary land. */
   free(t: Tile) {
+    return (this.value("occupancy", t) ?? 0) >= 0 && this.ground(t);
+  }
+  /** Inside the read region, no building or organism, ordinary land, not claimed. */
+  private ground(t: Tile) {
     const logic = this.value("logic", t);
     if (logic === undefined) return false;
     if (this.value("structure", t) || this.value("organism", t)) return false;
-    if ((this.value("occupancy", t) ?? 0) < 0) return false;
     if (!(logic & GROUND) || (logic >>> 0) & ~BUILDABLE) return false;
-    return !this.claimed.some((r) => t.x >= r.x1 && t.x <= r.x2 && t.y >= r.y1 && t.y <= r.y2);
+    return !this.claimed.some((r) => inside(t, r));
+  }
+  /**
+   * Ground workers can cross that nothing stands on: buildable land (animals move away) or the
+   * keep's courtyard, outside `closed`. Conservative: trees, bushes, rocks, water, cliffs and farm
+   * fields count as closed.
+   */
+  private open(t: Tile, closed: readonly Rect[]) {
+    if (closed.some((r) => inside(t, r))) return false;
+    const id = this.value("structure", t);
+    if (id) return this.region.structure_types?.[id] === STRUCTURE_TYPES.courtyard;
+    return this.ground(t);
+  }
+  /** How many of a footprint's four sides have open ground along their whole length. */
+  openSides(r: Rect, closed: readonly Rect[] = []) {
+    const xs = span(r.x1, r.x2), ys = span(r.y1, r.y2);
+    return [
+      ys.map((y) => ({ x: r.x1 - 1, y })), ys.map((y) => ({ x: r.x2 + 1, y })),
+      xs.map((x) => ({ x, y: r.y1 - 1 })), xs.map((x) => ({ x, y: r.y2 + 1 })),
+    ].filter((side) => side.every((t) => this.open(t, closed))).length;
+  }
+  /** Footprints of the buildings in the region, each marked whether it needs an open side. */
+  private existing(): Footprint[] {
+    if (this.buildings) return this.buildings;
+    const { x0, y0, w, layers, structure_types: types } = this.region;
+    const rects = new Map<number, Rect>();
+    layers.structure.forEach((id, i) => {
+      if (!id) return;
+      const x = x0 + (i % w), y = y0 + Math.floor(i / w);
+      const r = rects.get(id);
+      rects.set(id, r
+        ? { x1: Math.min(r.x1, x), y1: Math.min(r.y1, y), x2: Math.max(r.x2, x), y2: Math.max(r.y2, y) }
+        : { x1: x, y1: y, x2: x, y2: y });
+    });
+    this.buildings = [...rects].map(([id, r]) => ({ ...r, needsOpenSide: !noOpenSideTypes.has(types?.[id] ?? -1) }));
+    return this.buildings;
+  }
+  /**
+   * Whether `building` at `centre` keeps an open side if it has workers, and leaves one to every
+   * neighbour with workers that has one now: built, placed during this call, or `planned` (about to
+   * be placed, not in the map yet).
+   */
+  access(building: string, centre: Tile, planned: readonly Footprint[] = []): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" } {
+    const rect = footprintRect(centre, footprintOf(building));
+    if (needsOpenSide(building) && !this.openSides(rect, planned)) return { ok: false, reason: "no_open_side" };
+    const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
+    for (const n of [...this.existing(), ...this.claimed, ...planned]) {
+      if (!n.needsOpenSide || !overlaps(n, ring) || overlaps(n, rect)) continue;
+      if (this.openSides(n, planned) && !this.openSides(n, [...planned, rect])) return { ok: false, reason: "closes_neighbour" };
+    }
+    return { ok: true };
   }
   /** Raw layer values at one tile (diagnostics). */
   describe(t: Tile) {
@@ -253,30 +327,36 @@ export class TileMap {
     return oasis >= FARM_MIN_OASIS_TILES ? { ok: true, oasisShare } : { ok: false, oasisShare, reason: "not_fertile" };
   }
   /**
-   * Mark a footprint as taken (a building just placed, or a spot the game refused), grown by
+   * Mark a footprint as taken (a building just `placed`, or a spot the game refused), grown by
    * `margin` tiles: "Too close to signpost to build." refuses a zone the layers do not show, so
-   * nearby spots would fail the same way (run 7, 2026-09-29).
+   * nearby spots would fail the same way (run 7, 2026-09-29). A placed building with workers keeps
+   * an open side as later placements are chosen.
    */
-  claim(building: string, centre: Tile, margin = 0) {
+  claim(building: string, centre: Tile, margin = 0, placed = false) {
     const r = footprintRect(centre, footprintOf(building));
-    this.claimed.push({ x1: r.x1 - margin, y1: r.y1 - margin, x2: r.x2 + margin, y2: r.y2 + margin });
+    this.claimed.push({
+      x1: r.x1 - margin, y1: r.y1 - margin, x2: r.x2 + margin, y2: r.y2 + margin,
+      ...(placed ? { needsOpenSide: needsOpenSide(building) } : {}),
+    });
   }
-  private site(building: string, t: Tile): Site | null {
+  private site(building: string, t: Tile, planned: readonly Footprint[] = []): Site | null {
     if (!this.clickable(t)) return null;
     const fit = this.fits(building, t);
-    return fit.ok ? { tile: t, ...this.pixel(t), ...(fit.oasisShare !== undefined ? { oasisShare: fit.oasisShare } : {}) } : null;
+    if (!fit.ok || !this.access(building, t, planned).ok) return null;
+    return { tile: t, ...this.pixel(t), ...(fit.oasisShare !== undefined ? { oasisShare: fit.oasisShare } : {}) };
   }
   /**
-   * Valid sites nearest `near` (default: the camera centre), within `radius` tiles,
-   * mutually non-overlapping. Farms prefer the most fertile squares among close ones.
+   * Valid sites nearest `near` (default: the camera centre), within `radius` tiles, mutually
+   * non-overlapping, each leaving the others an open side. Farms prefer the most fertile squares
+   * among close ones. `avoid`: footprints about to be placed.
    */
-  sitesNear(building: string, near?: Tile, count = 3, radius = 20, avoid: Rect[] = []): Site[] {
+  sitesNear(building: string, near?: Tile, count = 3, radius = 20, avoid: Footprint[] = []): Site[] {
     const found = this.candidates(building, near, radius, avoid);
     // Farms: nearest first but by 2-tile distance bands, most fertile within a band.
     found.sort((a, b) => farmNames.has(building)
       ? Math.floor(a.d / 2) - Math.floor(b.d / 2) || (b.oasisShare ?? 0) - (a.oasisShare ?? 0)
       : a.d - b.d);
-    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count);
+    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count, avoid);
   }
   /**
    * Woodcutter sites closest to trees (in 4-tile bands of the distance to the nearest tree), the
@@ -299,7 +379,7 @@ export class TileMap {
     return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count);
   }
   /** Every site within `radius` tiles of `near` (default: the camera centre), with its distance. */
-  private candidates(building: string, near?: Tile, radius = 20, avoid: Rect[] = []) {
+  private candidates(building: string, near?: Tile, radius = 20, avoid: Footprint[] = []) {
     const c = near ?? { x: this.camera.centre_tile_x, y: this.camera.centre_tile_y };
     const size = footprintOf(building);
     const found: (Site & { d: number })[] = [];
@@ -307,7 +387,7 @@ export class TileMap {
       for (let dy = -radius; dy <= radius; dy++) {
         const t = { x: c.x + dx, y: c.y + dy };
         if (avoid.some((r) => overlaps(r, footprintRect(t, size)))) continue;
-        const s = this.site(building, t);
+        const s = this.site(building, t, avoid);
         if (s) found.push({ ...s, d: Math.max(Math.abs(dx), Math.abs(dy)) });
       }
     return found;
@@ -353,14 +433,18 @@ export class TileMap {
       }
     return this.distinct(building, found, count);
   }
-  private distinct(building: string, sites: Site[], count: number) {
+  /** Sites in order that neither overlap nor close each other's last open side. */
+  private distinct(building: string, sites: Site[], count: number, planned: readonly Footprint[] = []) {
     const size = footprintOf(building);
     const chosen: Site[] = [];
+    const taken: Footprint[] = [];
     for (const s of sites) {
       if (chosen.length >= count) break;
       const r = footprintRect(s.tile, size);
-      if (chosen.some((c) => overlaps(r, footprintRect(c.tile, size)))) continue;
+      if (taken.some((c) => overlaps(r, c))) continue;
+      if (taken.length && !this.access(building, s.tile, [...planned, ...taken]).ok) continue;
       chosen.push(s);
+      taken.push({ ...r, needsOpenSide: needsOpenSide(building) });
     }
     return chosen;
   }

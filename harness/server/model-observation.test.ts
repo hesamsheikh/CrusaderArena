@@ -723,6 +723,32 @@ test("a farm refused for its ground is retried on oasis grass from the tile map"
   assert.ok(r.x1 >= 104 && r.x2 <= 116 && r.y1 >= 94 && r.y2 <= 106, "the whole farm is on the oasis");
 });
 
+test("build_structure moves a workplace that would have no open side, without clicking its target", async () => {
+  const view = tileView();
+  const target = view.pixel({ x: 100, y: 100 });
+  // A woodcutter (3×3) on tile 100 covers 99..101; bushes on all four sides close it in.
+  const ring = (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+    for (let i = 99; i <= 101; i++) {
+      set("organism", 98, i, 1); set("organism", 102, i, 1); set("organism", i, 98, 1); set("organism", i, 102, 1);
+    }
+  };
+  const game = simulatedGame({ tiles: ring });
+  const report = await game.build([{ name: "Woodcutter", ...target }]);
+  const p = report.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.access, "no_open_side");
+  assert.equal(p.retryMethod, "tile_map");
+  assert.notDeepEqual(p.at, { x: target.x, y: target.y });
+  assert.ok(!game.actions.some((a) => a.button === 1 && a.x === target.x && a.y === target.y), "the closed-in target is never clicked");
+  assert.equal(game.tileReads(), 1, "the map read at observe time is reused");
+  // exact: true places it as asked and warns.
+  const exact = simulatedGame({ tiles: ring });
+  const [e] = (await exact.build([{ name: "Woodcutter", ...target, exact: true }])).placements;
+  assert.equal(e.status, "placed");
+  assert.equal(e.access, "no_open_side");
+  assert.equal(e.at, undefined);
+});
+
 test("find_sites lists non-overlapping fitting spots with the farm's oasis share", async () => {
   const game = simulatedGame({
     tiles: (set) => { for (let x = 100; x <= 121; x++) for (let y = 95; y <= 106; y++) set("logic2", x, y, -128); },

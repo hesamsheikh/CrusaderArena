@@ -112,7 +112,7 @@ export interface AgentRuntime {
 
 import { footprintOf } from "./footprints.js";
 import { shortfall } from "./building-info.js";
-import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, onScreen, tilePixel, type TileCamera } from "./tile-map.js";
+import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, needsOpenSide, onScreen, tilePixel, type TileCamera } from "./tile-map.js";
 import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
@@ -309,6 +309,10 @@ export function makeAgent(
       return null;
     }
   };
+  // The observed view's tile map, read in the background from each observation while the game is
+  // paused for the model, so find_sites and build_structure use it without spending game time.
+  let viewTiles: { frame: Frame; map: Promise<TileMap | null> } | null = null;
+  const tilesFor = (frame: Frame) => (viewTiles?.frame === frame ? viewTiles.map : readTileMap(frame, observedCameraSample));
   let turns = 0;
   let eventCursor = device.events.cursor();
   let lastDeliveryAt = Date.now();
@@ -378,6 +382,7 @@ export function makeAgent(
     observedCamera = cameraKey(cameraSample);
     observedSpan = cameraSpanOf(cameraSample);
     observedCameraSample = observedCamera ? (cameraSample?.camera as TileCamera) : null;
+    viewTiles = { frame: observed, map: readTileMap(observed, observedCameraSample) };
     runtime?.session.check();
     runtime?.cycle.observe();
     refresh(observed);
@@ -566,7 +571,7 @@ export function makeAgent(
       name: "build_structure",
       label: "Build a named structure",
       description:
-        "Place 1–4 named buildings at x/y pixels of the latest screenshot (the same coordinates as game_action). It opens the construction menu and selects each building for you; all targets come from that one screenshot. Returns text only, one status per placement: placed (evidence: cost deducted, or the map-wide structure count rose), not_placed (nothing happened: the spot was blocked), rejected (new game error text), possibly_rejected (error text that may be older), not_selected (the menu did not select it; nothing clicked), camera_moved (the view changed; the rest was skipped), unverified (no evidence either way). A blocked target, a farm refused for its ground or a building too close to the signpost is retried at the nearest spots where the game's tile data shows the footprint free (up to 6 per placement and 12 per call; exact: true forbids it); `at` and `offsetTiles` then say where it went, `retries` how many spots were tried, and `retrySkipped: not_enough_resources` with `missing` that you cannot pay. Ends with a right-click to leave placement mode. Also places the setup-phase Granary. Needs the 16:9 game layout.",
+        "Place 1–4 named buildings at x/y pixels of the latest screenshot (the same coordinates as game_action). It opens the construction menu and selects each building for you; all targets come from that one screenshot. Returns text only, one status per placement: placed (evidence: cost deducted, or the map-wide structure count rose), not_placed (nothing happened: the spot was blocked), rejected (new game error text), possibly_rejected (error text that may be older), not_selected (the menu did not select it; nothing clicked), camera_moved (the view changed; the rest was skipped), unverified (no evidence either way). A blocked target, a farm refused for its ground or a building too close to the signpost is retried at the nearest spots where the game's tile data shows the footprint free (up to 6 per placement and 12 per call; exact: true forbids it); `at` and `offsetTiles` then say where it went, `retries` how many spots were tried, and `retrySkipped: not_enough_resources` with `missing` that you cannot pay. A building with workers needs one whole side of open ground for them: a target that would leave it none, or take a neighbour's last one, is moved the same way without clicking it (`access` says why; with exact: true it is placed as asked and `access` warns). Ends with a right-click to leave placement mode. Also places the setup-phase Granary. Needs the 16:9 game layout.",
       parameters: Type.Object({
         placements: Type.Array(
           Type.Object({
@@ -606,9 +611,9 @@ export function makeAgent(
         const readerReadyAtStart = placer.readerReady;
         // Retries of silently blocked targets are harness clicks like the menu clicks, bounded per call.
         let retryBudget = RETRIES_PER_CALL;
-        // Read once, on the first retry, for the observed view.
-        let tileMap: TileMap | null | undefined;
-        const placedAt: { x: number; y: number; size: number }[] = [];
+        // The observed view's map, read while paused; without one, read once on the first retry.
+        let tileMap: TileMap | null | undefined = viewTiles?.frame === frame ? (await viewTiles.map) ?? undefined : undefined;
+        const placedAt: { x: number; y: number; size: number; name: string }[] = [];
         const results: Record<string, unknown>[] = [];
         // Stock and structure changes around each click, kept for the logs only (see `cost` below).
         const stockChanges: unknown[] = [];
@@ -632,7 +637,14 @@ export function makeAgent(
               results.push({ building: plan.name, x: plan.x, y: plan.y, status: "not_selected" });
               continue;
             }
-            let result = await placer.click(plan.name, plan, carried, eventStart);
+            // A building with workers needs one whole side of open ground for them, and must not take a
+            // neighbour's last one: a target that fails is moved like a blocked one without clicking it;
+            // exact: true places it as asked, with a warning.
+            const access = tileMap ? tileMap.access(plan.name, tileMap.tileAt(plan)) : { ok: true };
+            const moveForAccess = !access.ok && !plan.exact;
+            let result: Awaited<ReturnType<Placer["click"]>> = moveForAccess
+              ? { outcome: { status: "not_placed" }, feedback: [], visible: [], after: null }
+              : await placer.click(plan.name, plan, carried, eventStart);
             let at: { x: number; y: number; offsetTiles: [number, number] } | undefined;
             let retries = 0;
             let retryStopped: string | undefined;
@@ -662,14 +674,14 @@ export function makeAgent(
                 // The tile map shows the whole footprint free, yet nothing was placed. When the reader's
                 // stock cannot pay the manual cost, another spot would fail the same way; otherwise a
                 // rule the map does not model blocked it (e.g. "Too close to signpost"), so try others.
-                if (result.outcome.status === "not_placed" && map.fits(plan.name, origin).ok) {
-                  tileDebug = { tile: origin, centre: map.describe(origin) };
+                if (result.outcome.status === "not_placed" && (moveForAccess || map.fits(plan.name, origin).ok)) {
+                  if (!moveForAccess) tileDebug = { tile: origin, centre: map.describe(origin) };
                   missing = shortfall(plan.name, device.currentStats().observation) ?? undefined;
                   if (missing) retrySkipped = "not_enough_resources";
                 }
                 const avoid = [
-                  ...plans.slice(index + 1).map((p) => footprintRect(map.tileAt(p), footprintOf(p.name))),
-                  ...placedAt.map((p) => footprintRect(map.tileAt(p), p.size)),
+                  ...plans.slice(index + 1).map((p) => ({ ...footprintRect(map.tileAt(p), footprintOf(p.name)), needsOpenSide: needsOpenSide(p.name) })),
+                  ...placedAt.map((p) => ({ ...footprintRect(map.tileAt(p), p.size), needsOpenSide: needsOpenSide(p.name) })),
                 ];
                 // Each refused spot (the target first) is claimed, with a margin after "Too close to …",
                 // and the nearest remaining fit is computed afresh.
@@ -709,7 +721,10 @@ export function makeAgent(
               if (retryStopped === "camera_moved") observed = null;
             }
             const { outcome, feedback, visible } = result;
-            if (outcome.status === "placed") placedAt.push({ ...(at ?? plan), size: footprintOf(plan.name) });
+            if (outcome.status === "placed") {
+              placedAt.push({ ...(at ?? plan), size: footprintOf(plan.name), name: plan.name });
+              tileMap?.claim(plan.name, tileMap.tileAt(at ?? plan), 0, true);
+            }
             const price = buildingCost(plan.name);
             const cost = price && [price.wood && `${price.wood} wood`, price.gold && `${price.gold} gold`].filter(Boolean).join(", ");
             stockChanges.push(outcome.change ?? null);
@@ -722,6 +737,7 @@ export function makeAgent(
               // Where the reported status happened when a retry moved off the requested target.
               ...(at && outcome.status !== "not_placed" ? { at: { x: at.x, y: at.y }, offsetTiles: at.offsetTiles } : {}),
               ...(retries ? { retries, retryMethod } : {}),
+              ...(access.ok ? {} : { access: access.reason }),
               ...(!retries && retryable(result) && !plan.exact ? { retrySkipped: retrySkipped ?? "no_free_spot_nearby" } : {}),
               ...(missing ? { missing } : tileDebug ? { tileDebug } : {}),
               ...(retryMethod === "offsets" && tileMapError ? { tileMapError } : {}),
@@ -943,7 +959,7 @@ export function makeAgent(
       name: "find_sites",
       label: "Find free building spots",
       description:
-        "List up to `count` non-overlapping spots in the latest observed view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns image pixels to pass to build_structure, nearest to near_x/near_y if given (else the view centre), with each farm's oasis share. Woodcutter spots come closest to trees first, each with the trees within " + WOODCUTTER_REACH + " tiles (in this view): a woodcutter far from trees walks a long way for each log. Takes about 2 s (no game time before any action in your reply) and no screenshot. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
+        "List up to `count` non-overlapping spots in the latest observed view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); a building with workers keeps one whole side of open ground, and no spot takes a neighbour's last one; farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns image pixels to pass to build_structure, nearest to near_x/near_y if given (else the view centre), with each farm's oasis share. Woodcutter spots come closest to trees first, each with the trees within " + WOODCUTTER_REACH + " tiles (in this view): a woodcutter far from trees walks a long way for each log. Takes about 2 s (no game time before any action in your reply) and no screenshot. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
       parameters: Type.Object({
         building: Type.Union(buildableNames.map((name) => Type.Literal(name))),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
@@ -957,7 +973,7 @@ export function makeAgent(
         const current = cameraKey(device.currentStats().observation);
         if (current && observedCamera && current !== observedCamera)
           throw new Error("The camera moved since the last observation; observe before finding sites.");
-        const map = await readTileMap(observed, observedCameraSample);
+        const map = await tilesFor(observed);
         const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: {} });
         if (!map) return text({ status: "unavailable", error: tileMapError ?? "No reader camera for the observed view." });
         const near = args.near_x !== undefined && args.near_y !== undefined ? map.tileAt({ x: args.near_x, y: args.near_y }) : undefined;
@@ -988,7 +1004,7 @@ export function makeAgent(
       name: "place_near",
       label: "Place a building next to an anchor",
       description:
-        "Centre on an anchor building (as center_on) and place 1–3 of a named click-to-place building flush against it. The harness reads the game's tile data and clicks spots whose whole footprint is free, your preferred side first (probing outward one tile at a time only if the tile data is unavailable); a refused spot is skipped for the next one, and it stops when you cannot pay (missing resources). Keep doors and routes in mind. Returns text only (placed spots in the new view's pixels, side, clicks used); the camera stays on the anchor and your next observation shows it.",
+        "Centre on an anchor building (as center_on) and place 1–3 of a named click-to-place building flush against it. The harness reads the game's tile data and clicks spots whose whole footprint is free, your preferred side first (probing outward one tile at a time only if the tile data is unavailable); a refused spot is skipped for the next one, and it stops when you cannot pay (missing resources). Spots leave a building with workers, and each neighbour, one whole side of open ground. Returns text only (placed spots in the new view's pixels, side, clicks used); the camera stays on the anchor and your next observation shows it.",
       parameters: Type.Object({
         building: Type.Union(buildableNames.map((name) => Type.Literal(name))),
         anchor: Type.Union(anchorNames.map((name) => Type.Literal(name))),
@@ -1304,6 +1320,8 @@ export function makeAgent(
       if (!runtime) return;
       try {
         runtime.session.check();
+        // build_structure checks its targets against the view's tile map: finish reading it while paused.
+        if (toolCall.name === "build_structure" && observed && viewTiles?.frame === observed) await viewTiles.map;
         if (!READING_TOOLS.has(toolCall.name)) await runtime.beforeToolCall?.();
         runtime.cycle.tools++;
         return;

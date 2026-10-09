@@ -114,7 +114,7 @@ async function placeFromMap(
     const result = await placer.click(building, site, carried, ctx.device.events.cursor());
     // Placed or refused, the spot is used up for this call; a "Too close to …" refusal also rules
     // out its surroundings.
-    map.claim(building, site.tile, result.feedback.some((f) => /too close/i.test(f)) ? TOO_CLOSE_MARGIN : 0);
+    map.claim(building, site.tile, result.feedback.some((f) => /too close/i.test(f)) ? TOO_CLOSE_MARGIN : 0, result.outcome.status === "placed");
     if (result.outcome.status === "placed") {
       placed.push({ x: site.x, y: site.y, side: site.side as Side, tilesOut: site.gap });
       if (storage) touching.push(footprintRect(site.tile, size));
