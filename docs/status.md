@@ -121,6 +121,11 @@ between September and October 2026.
   upload checks are tested in code. The first series (GLM 5.3 Flash, benchmark 1.0.0,
   20261008T191852-c1d986e9) was uploaded to the Hugging Face dataset on 2026-10-09, and its
   three tables load from the Hub with `load_dataset`.
+  Making bundles smaller (images as WebP files, token deltas dropped, 720p video) is tested
+  in code. Both series then in the dataset (that one, and Claude Haiku 5.5 on 1.1.0,
+  20261009T100849-21b4ea9d) were packaged again with it and replaced with `--replace` on
+  2026-10-09: their tables came out the same, they went from 546 to 227 MB and from 770 to
+  249 MB, the files on the Hub match their manifests, and the tables load from the Hub.
 
 ## Not verified or not built
 
