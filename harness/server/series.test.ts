@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Run } from "../shared/protocol.js";
-import { classify, counts, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesSettings } from "./series.js";
+import { SAVE_NAME_LIMIT, classify, counts, episodeSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesSettings } from "./series.js";
 
 const run = (status: Run["status"], progress: Partial<NonNullable<Run["progress"]>> = {}) =>
   ({ status, progress } as unknown as Run);
@@ -55,4 +55,16 @@ test("a resume refuses another benchmark version, commit, guide or model setting
     "code commit abc1234 → def5678",
     'model reasoning "medium" → "high"',
   ]);
+});
+
+test("an episode's game save is named by model, version, series and episode, within the game's 32 characters", () => {
+  const run = { id: "042f20a0-c39c-4619-98c7-5e8a83dbc38b", model: { name: "GLM 5.3 Flash", modelId: "z-ai/glm-5.3-flash", baseUrl: "" }, benchmark: { version: "1.1.1", fingerprint: "", guide: null } } as Pick<Run, "id" | "model" | "benchmark" | "series">;
+  const series = (episode: number, attempt: number) => ({ id: "20261009T122236-3aae6fc4", episode, episodes: 3, attempt });
+  assert.equal(episodeSaveName({ ...run, series: series(3, 2) }), "glm 5-3 flash 1-1-1 ae6fc4 e3a2");
+  assert.equal(episodeSaveName({ ...run, series: series(1, 1) }), "glm 5-3 flash 1-1-1 ae6fc4 e1");
+  const long = episodeSaveName({ ...run, model: { ...run.model, name: "Claude Sonnet 5.5 (Anthropic)" }, series: series(2, 1) });
+  assert.equal(long, "claude sonnet 5 1-1-1 ae6fc4 e2", "cut to fit, without a dangling hyphen");
+  assert.ok(long.length <= SAVE_NAME_LIMIT, long);
+  assert.equal(episodeSaveName({ ...run, benchmark: undefined }), "glm 5-3 flash dev 042f20");
+  for (const name of [long, episodeSaveName(run)]) assert.match(name, /^[a-z0-9][a-z0-9 -]*$/);
 });

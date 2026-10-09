@@ -34,9 +34,10 @@ import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
 import { idleBaseline } from "./baselines.js";
 import { renderVideo, type VideoResult } from "./video.js";
+import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { behaviourFiles } from "./benchmark-version.js";
-import { classify, counts, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
+import { classify, counts, episodeSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
 import { TICKS_PER_GAME_SECOND, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
 const { values: opts } = parseArgs({
@@ -124,11 +125,16 @@ async function api<T = any>(route: string, body?: unknown): Promise<T> {
 }
 
 /** tools/ubuntu/game-session.py on the game host; returns its JSON line. */
-function gameSession(command: "status" | "launch" | "activate" | "close", timeout = 180) {
+function gameSession(
+  command: "status" | "launch" | "activate" | "close" | "saves" | "backup-save" | "restore-save" | "export-save",
+  timeout = 180,
+  names: string[] = [],
+) {
   const { host, root } = gameHost();
+  const nameArgs = names.map((name) => ` --name ${quote(name)}`).join("");
   return new Promise<any>((resolve, reject) => {
     const child = spawn("ssh", ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=10", host,
-      `${quote(`${root}/.venv-control/bin/python`)} ${quote(`${root}/tools/ubuntu/game-session.py`)} ${command} --timeout ${timeout}`]);
+      `${quote(`${root}/.venv-control/bin/python`)} ${quote(`${root}/tools/ubuntu/game-session.py`)} ${command} --timeout ${timeout}${nameArgs}`]);
     let out = "";
     child.stdout.on("data", (d) => (out += d));
     child.on("error", reject);
@@ -424,16 +430,30 @@ async function episode(
       ? path.join("harness/runtime/runs", run.folder)
       : path.join("harness/runtime/episodes");
     mkdirSync(dir, { recursive: true });
+    // The finished game, saved to load and watch later: after scoring, while the game is paused.
+    let gameSave: GameSave | undefined;
+    if (run && !stopRequested && final.stats?.status === "ok" && final.stats.observation?.paused) {
+      gameSave = await saveGame({
+        key: (key) => act({ type: "key", key: key as never }),
+        click: clickScaled,
+        settle: (seconds) => waitForStillScreen(seconds).then(() => {}),
+        sleep,
+        session: (command, names) => gameSession(command, 60, names),
+        write: (file, data) => writeFileSync(path.join(dir, file), data),
+      }, episodeSaveName(run), plan.save, keysFor);
+      log(gameSave.error ? `Game save failed: ${gameSave.error}` : `Game saved as "${gameSave.name}" (${gameSave.file})`);
+    }
     const file = path.join(dir, run ? "episode.json" : `${opts.idle ? "idle" : "dry-run"}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     writeFileSync(file, JSON.stringify({
       episode: n, save: plan.save, benchmark: plan.benchmark, ...(series ? { series } : {}),
       ...(opts.idle ? { idle: { gameMinutes: plan.config.gameMinutes, gameSpeed: idleSpeed } } : {}), ...card,
+      ...(gameSave ? { game_save: gameSave } : {}),
     }, null, 2));
     log(`Scorecard: ${file}`);
     // Renders run one at a time on this Mac, in the background of the next episode.
     if (run?.config?.recordVideo && run.progress?.recording?.frames)
       renders.push(renderVideo(dir, (text) => log(`Episode ${n}: ${text}`)));
-    return { card, run };
+    return { card, run, gameSave };
   } finally {
     await api("disconnect", {}).catch(() => {});
     if (opts["keep-game"]) log("Game left running (--keep-game); close it after inspection.");
@@ -573,6 +593,8 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
   };
   // An infrastructure failure is run again once at once; a second one pauses the series.
   let retried = false;
+  // Saving the finished game changed the benchmark save: stop before another episode loads it.
+  let benchmarkSaveChanged: string | undefined;
   for (let n = nextEpisode(record); n !== null; n = nextEpisode(record)) {
     try {
       await checkDashboardFresh();
@@ -589,7 +611,8 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     const series = settings.learning ? { id: record.id, episode: n, episodes: record.episodes, attempt } : undefined;
     let result: Attempt;
     try {
-      const { card, run } = await episode(n, record.episodes, plan, series, playbook);
+      const { card, run, gameSave } = await episode(n, record.episodes, plan, series, playbook);
+      benchmarkSaveChanged = gameSave?.benchmarkSaveChanged ? gameSave.error : undefined;
       console.log(JSON.stringify(card));
       result = {
         episode: n, attempt, ...classify({ run, valid: card.valid, invalid: card.invalid, stopRequested }),
@@ -608,6 +631,10 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     record.results.push(result);
     writeSeries(record);
     log(`Episode ${n}, attempt ${attempt}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
+    if (benchmarkSaveChanged) {
+      pause(`after episode ${n}: ${benchmarkSaveChanged}; check the benchmark save before continuing`);
+      break;
+    }
     if (counts(result)) {
       retried = false;
       continue;

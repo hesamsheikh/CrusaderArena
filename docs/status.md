@@ -103,6 +103,13 @@ between September and October 2026.
   paths, with fake models and game devices (`npm test`). This includes the retries
   added before the first 25-game-minute run: failed handoff and playbook requests,
   cut-off replies with tool calls, and unconfirmed pause toggles.
+- Saving the finished game (see [Running episodes](benchmark.md#running-episodes)), live
+  on Oasis by the Sea (2026-10-09) through the same routine the runner calls: Game
+  Options → Save, the name typed over the loaded save's, the file copied off the game
+  machine (3.5 MB) and the benchmark save's hash unchanged; the game stayed paused. The
+  name field takes 32 characters (a longer name was cut), and saves made this way load
+  from the in-game Load dialog. Not yet run at the end of a real episode. The
+  overwrite guard (copy, hash check, restore) is tested with a simulated save folder.
 - Open sides for buildings with workers (see [Tools](tools.md#build)), live on Oasis
   by the Sea (2026-10-09): a woodcutter aimed at a 3×3 hole boxed in by four hovels
   came back `access: "no_open_side"` and was built 4 tiles away without the hole being

@@ -1,5 +1,5 @@
 {
-  "current": "1.1.1",
+  "current": "1.1.2",
   "history": [
     {
       "version": "1.0.0",
@@ -54,6 +54,12 @@
       "fingerprint": "8735e0dabcc91e9372812b7b941e0ba3e00fa9993c8c20d294c917dfd4ff2770",
       "date": "2026-10-09",
       "note": "Buildings with workers keep one open side: spot finding, retries and a check of build_structure targets; tile map read in the background while paused"
+    },
+    {
+      "version": "1.1.2",
+      "fingerprint": "6c6d5b617a605f66a783b78b79d46795a4e71418c14f28b155cb84a7546923dd",
+      "date": "2026-10-09",
+      "note": "Each finished episode is saved in the game and copied into the run folder; no change in what a run plays or scores"
     }
   ]
 }

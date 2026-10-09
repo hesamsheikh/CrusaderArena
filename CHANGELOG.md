@@ -17,6 +17,19 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.1.2] - 2026-10-09
+
+Comparable with 1.1.1: runs play and score the same.
+
+### Harness
+
+- `npm run episodes` saves each finished episode in the game, named by model, version,
+  series and episode (for example `glm 5-3 flash 1-1-1 ae6fc4 e3a2`), and copies the save
+  file into the run's folder, to load and watch later. Saving uses the game's Save
+  dialog, which starts with the benchmark save's name: a copy of the benchmark save is
+  kept on the game machine, its hash is checked after every save, and a changed one is
+  put back and pauses the series. Save files are not published.
+
 ## [1.1.1] - 2026-10-09
 
 Comparable with 1.1.0: a placement fix.

@@ -5,13 +5,22 @@
   launch    start the game through Steam (steam://rungameid) unless it runs; wait for its window
   activate  ask the window manager to focus the game window (one _NET_ACTIVE_WINDOW request)
   close     send SIGTERM to the game process and wait for it to exit
+  saves     size and SHA-256 of the named saves (--name, repeatable) in the game's save folder
+  backup-save   keep a copy of a save (--name) in ~/.local/state/crusader-arena, once; report
+                whether the save still matches it
+  restore-save  put that copy back (--name)
+  export-save   print a save (--name) as base64, to copy it off the machine
 
-Never sends keyboard or mouse input, never saves, and touches no other window.
+Never sends keyboard or mouse input, never saves a game itself, and touches no other window.
 Run as the logged-in game user over SSH.
 """
 import argparse
+import base64
+import hashlib
 import json
 import os
+import re
+import shutil
 from pathlib import Path
 import signal
 import subprocess
@@ -22,6 +31,8 @@ APP_ID = '3024040'
 EXE = 'Stronghold Crusader Definitive Edition.exe'
 TITLE = 'Stronghold Crusader Definitive Edition'
 CLASS = f'steam_app_{APP_ID}'
+# The save folder inside the game's Proton prefix (the Save dialog's "Open Saves Folder").
+SAVES = 'pfx/drive_c/users/steamuser/AppData/LocalLow/Firefly Studios/Stronghold Crusader Definitive Edition/Saves'
 
 
 def games():
@@ -140,14 +151,80 @@ def close(timeout):
     raise RuntimeError('The game did not exit after SIGTERM.')
 
 
+def saves_dir():
+    """The game's save folder: in the running game's Proton prefix, else Steam's default one."""
+    running = games()
+    compat = running[0][1].get('STEAM_COMPAT_DATA_PATH') if len(running) == 1 else None
+    return Path(compat or Path.home() / '.local/share/Steam/steamapps/compatdata' / APP_ID) / SAVES
+
+
+def save_file(name):
+    # Names as the harness types them into the game; nothing that could leave the folder.
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9 -]{0,79}', name or ''):
+        raise ValueError(f'Unsupported save name: {name!r}')
+    return saves_dir() / f'{name}.sav'
+
+
+def describe(path):
+    if not path.is_file():
+        return {'exists': False}
+    data = path.read_bytes()
+    return {'exists': True, 'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+
+
+def saves(names):
+    return {'saves': {name: describe(save_file(name)) for name in names}}
+
+
+def backup_file(name):
+    """Kept outside the game's folders, in the user's state directory."""
+    state = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state')
+    return state / 'crusader-arena/save-backups' / save_file(name).name
+
+
+def backup_save(name):
+    original, backup = save_file(name), backup_file(name)
+    if not original.is_file():
+        raise RuntimeError(f'No save named {name!r}.')
+    if not backup.is_file():
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(original, backup)
+    return {'backup': describe(backup), 'matches': describe(original) == describe(backup)}
+
+
+def restore_save(name):
+    backup = backup_file(name)
+    if not backup.is_file():
+        raise RuntimeError(f'No backup of {name!r}.')
+    shutil.copy2(backup, save_file(name))
+    return {'restored': describe(save_file(name))}
+
+
+def export_save(name):
+    path = save_file(name)
+    if not path.is_file():
+        raise RuntimeError(f'No save named {name!r}.')
+    data = path.read_bytes()
+    return {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'data': base64.b64encode(data).decode()}
+
+
+def one_name(names):
+    if len(names) != 1:
+        raise ValueError('Pass one --name.')
+    return names[0]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('command', choices=['status', 'launch', 'activate', 'close'])
+    parser.add_argument('command', choices=['status', 'launch', 'activate', 'close', 'saves', 'backup-save', 'restore-save', 'export-save'])
     parser.add_argument('--timeout', type=float, default=120)
+    parser.add_argument('--name', action='append', default=[])
     args = parser.parse_args()
     try:
         result = {'status': status, 'activate': activate,
-                  'launch': lambda: launch(args.timeout), 'close': lambda: close(args.timeout)}[args.command]()
+                  'launch': lambda: launch(args.timeout), 'close': lambda: close(args.timeout),
+                  'saves': lambda: saves(args.name), 'backup-save': lambda: backup_save(one_name(args.name)),
+                  'restore-save': lambda: restore_save(one_name(args.name)), 'export-save': lambda: export_save(one_name(args.name))}[args.command]()
         print(json.dumps({'ok': True, **result}), flush=True)
         return 0
     except Exception as error:

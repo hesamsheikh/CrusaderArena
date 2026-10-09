@@ -159,7 +159,18 @@ operator. For each episode it:
 3. Pauses the game and starts the agent run with the given budget.
 4. When the run ends, takes the final reading and writes the scorecard,
    `episode.json`, into the run's folder.
-5. Disconnects and closes the game. With `--record`, renders the run video.
+5. If the game is still running and paused, saves it in the game (Game Options → Save)
+   as `<model> <version> <series id end> e<episode>[a<attempt>]`, for example
+   `glm 5-3 flash 1-1-1 ae6fc4 e3a2` (the game takes 32 characters, so a long model name
+   is shortened), and copies the file into the run's folder
+   as `<name>.sav`, to load and watch later. The Save dialog starts with the loaded
+   save's name, so saving without replacing it would overwrite the benchmark save. Before
+   the first save the runner keeps a copy of the benchmark save on the game machine
+   (`~/.local/state/crusader-arena/save-backups/`). It compares the benchmark save's hash
+   after every save, puts the copy back if it changed, and then pauses the series. A
+   failed save does not affect the score; `game_save` in `episode.json` records the
+   name and file, or the error. The `.sav` files are not published.
+6. Disconnects and closes the game. With `--record`, renders the run video.
 
 Each episode ends in one of four ways ([series.ts](../harness/server/series.ts)):
 
@@ -273,6 +284,8 @@ attempt number. Runs started from the dashboard are never part of a series.
 - `source`: `final` for a reading taken after the final pause, or `last_observed` when
   the game was gone at the end (for example after a memory-guard stop) and the last
   valid reading from the run was used instead;
+- `game_save`: the in-game save of the finished episode (`name`, `file`, `bytes`,
+  `sha256`), or the `error` that stopped it;
 - `valid`: whether `net_worth` is a full-budget score. It is `false`, with the reasons
   in `invalid`, when the run did not complete, a limit other than the game-time budget
   ended it, the final pause was not confirmed, or `source` is `last_observed`. Only

@@ -122,3 +122,19 @@ export function settingsDifferences(series: SeriesSettings, now: { version: Seri
     if (!same(series.model[key], now.model[key])) differences.push(`model ${key} ${JSON.stringify(series.model[key])} → ${JSON.stringify(now.model[key])}`);
   return differences;
 }
+
+/** The Save dialog's name field takes 32 characters; longer names are cut (live 2026-10-09). */
+export const SAVE_NAME_LIMIT = 32;
+/**
+ * The in-game save name for a finished episode: the model (shortened to fit), benchmark version,
+ * the series id's last 6 characters and the episode (or the run id's first 6). Lower-case letters,
+ * digits, spaces and hyphens, as typed into the game's Save dialog.
+ */
+export function episodeSaveName(run: Pick<Run, "id" | "model" | "benchmark" | "series">) {
+  const words = (text: string) => text.toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9 -]+/g, " ").replace(/\s+/g, " ").trim();
+  const where = run.series
+    ? `${run.series.id.slice(-6)} e${run.series.episode}${(run.series.attempt ?? 1) > 1 ? `a${run.series.attempt}` : ""}`
+    : run.id.slice(0, 6);
+  const suffix = ` ${words(run.benchmark?.version ?? "dev")} ${words(where)}`;
+  return words(run.model.name).slice(0, SAVE_NAME_LIMIT - suffix.length).replace(/[ -]+$/, "") + suffix;
+}
