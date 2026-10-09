@@ -90,9 +90,9 @@ between September and October 2026.
   conversation the previous one wrote (70–72% of all input from the cache), and the
   handoff and playbook requests read it too. Anthropic reports no cost; the costs of
   that day's ten Claude runs were worked out afterwards with `npm run cost` from their
-  recorded tokens at Anthropic's list prices (about $0.60 in all, $0.38 for the
-  three-episode series 20261009T100849-21b4ea9d), not checked against Anthropic's
-  billing. A 60,000-token
+  recorded tokens at Anthropic's list prices (about $0.60 in all; $0.31 for the three
+  published episodes of series 20261009T100849-21b4ea9d, $0.38 with the attempt that
+  was run again), not checked against Anthropic's billing. A 60,000-token
   budget is too small for Claude: its fresh conversation after a compaction (about
   39,300 tokens) did not fit under 65% of it, which ended that run with an error.
 
