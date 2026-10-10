@@ -134,8 +134,14 @@ between September and October 2026.
   Options → Save, the name typed over the loaded save's, the file copied off the game
   machine (3.5 MB) and the benchmark save's hash unchanged; the game stayed paused. The
   name field takes 32 characters (a longer name was cut), and saves made this way load
-  from the in-game Load dialog. Not yet run at the end of a real episode. The
-  overwrite guard (copy, hash check, restore) is tested with a simulated save folder.
+  from the in-game Load dialog. Real episodes have since saved themselves at their end
+  (GPT-6 Luna on 1.1.3, GLM 5.3 Flash on 1.1.4). The overwrite guard (copy, hash check,
+  restore) is tested with a simulated save folder.
+- Reference games (`--human`, see [Scoring](benchmark.md#scoring-net-worth)), live on
+  Oasis by the Sea (2026-10-10) with a 30-game-second budget and the unpause sent as a
+  player would: the runner paused the game after 31 game seconds, wrote the scorecard
+  and a 1920×1080 screenshot, saved the game and closed it; the benchmark save's hash
+  was unchanged. Not yet used for a full game.
 - Open sides for buildings with workers (see [Tools](tools.md#build)), live on Oasis
   by the Sea (2026-10-09): a woodcutter aimed at a 3×3 hole boxed in by four hovels
   came back `access: "no_open_side"` and was built 4 tiles away without the hole being

@@ -72,6 +72,12 @@
       "fingerprint": "5591c2d3057635db206887cb10c6c7b1ea27fd0d64bb5ab1cc4bbfdb482baf36",
       "date": "2026-10-10",
       "note": "The reader forces a garbage collection when the game's collector stalls (no collection for 20 s while the managed heap grew 64 MiB) and records the collector's state; memory samples carry the managed heap and forced collections are logged as gc_watchdog events. The task, prompts, tools and scoring are unchanged."
+    },
+    {
+      "version": "1.1.4",
+      "fingerprint": "8eb44a0e90cdd43e1d50eff2fb19a6b7d9551f344a5f264c11470b06299aa984",
+      "date": "2026-10-10",
+      "note": "Adds npm run episodes -- --human, a reference game played by a person: loaded, paused when the game-time budget is used up, scored, screenshotted and saved. Agent runs play and score the same."
     }
   ]
 }

@@ -125,16 +125,24 @@ export function settingsDifferences(series: SeriesSettings, now: { version: Seri
 
 /** The Save dialog's name field takes 32 characters; longer names are cut (live 2026-10-09). */
 export const SAVE_NAME_LIMIT = 32;
+/** Text as typed into the Save dialog: lower-case letters, digits, spaces and hyphens. */
+const saveWords = (text: string) => text.toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9 -]+/g, " ").replace(/\s+/g, " ").trim();
+/** `head` cut so that it and `suffix` fit the Save dialog, without a dangling space or hyphen. */
+const fitSaveName = (head: string, suffix: string) => head.slice(0, SAVE_NAME_LIMIT - suffix.length).replace(/[ -]+$/, "") + suffix;
+
 /**
  * The in-game save name for a finished episode: the model (shortened to fit), benchmark version,
- * the series id's last 6 characters and the episode (or the run id's first 6). Lower-case letters,
- * digits, spaces and hyphens, as typed into the game's Save dialog.
+ * the series id's last 6 characters and the episode (or the run id's first 6).
  */
 export function episodeSaveName(run: Pick<Run, "id" | "model" | "benchmark" | "series">) {
-  const words = (text: string) => text.toLowerCase().replace(/\./g, "-").replace(/[^a-z0-9 -]+/g, " ").replace(/\s+/g, " ").trim();
   const where = run.series
     ? `${run.series.id.slice(-6)} e${run.series.episode}${(run.series.attempt ?? 1) > 1 ? `a${run.series.attempt}` : ""}`
     : run.id.slice(0, 6);
-  const suffix = ` ${words(run.benchmark?.version ?? "dev")} ${words(where)}`;
-  return words(run.model.name).slice(0, SAVE_NAME_LIMIT - suffix.length).replace(/[ -]+$/, "") + suffix;
+  return fitSaveName(saveWords(run.model.name), ` ${saveWords(run.benchmark?.version ?? "dev")} ${saveWords(where)}`);
+}
+
+/** The in-game save name for a --human game: "human", the save (shortened to fit) and when it ended. */
+export function humanSaveName(save: string, at: Date) {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return fitSaveName(`human ${saveWords(save)}`, ` ${two(at.getMonth() + 1)}${two(at.getDate())}-${two(at.getHours())}${two(at.getMinutes())}`);
 }

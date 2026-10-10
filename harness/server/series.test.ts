@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Run } from "../shared/protocol.js";
-import { SAVE_NAME_LIMIT, classify, counts, episodeSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesSettings } from "./series.js";
+import { SAVE_NAME_LIMIT, classify, counts, episodeSaveName, humanSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesSettings } from "./series.js";
 
 const run = (status: Run["status"], progress: Partial<NonNullable<Run["progress"]>> = {}) =>
   ({ status, progress } as unknown as Run);
@@ -67,4 +67,11 @@ test("an episode's game save is named by model, version, series and episode, wit
   assert.ok(long.length <= SAVE_NAME_LIMIT, long);
   assert.equal(episodeSaveName({ ...run, benchmark: undefined }), "glm 5-3 flash dev 042f20");
   for (const name of [long, episodeSaveName(run)]) assert.match(name, /^[a-z0-9][a-z0-9 -]*$/);
+});
+
+test("a human game's save name: the save, cut to fit, and when it ended", () => {
+  const at = new Date(2026, 9, 10, 9, 5);
+  assert.equal(humanSaveName("Oasis by the Sea-1", at), "human oasis by the sea 1010-0905");
+  assert.equal(humanSaveName("Dunes", at), "human dunes 1010-0905");
+  assert.ok(humanSaveName("A Very Long Save Name For Testing", at).length <= SAVE_NAME_LIMIT);
 });

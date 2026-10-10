@@ -17,6 +17,15 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- `npm run episodes -- --human` runs a reference game played by a person: the save is
+  loaded and left paused at the benchmark speed, and when the game-time budget is used
+  up the game is paused, scored, screenshotted and saved. See
+  [Reference games](docs/benchmark.md#scoring-net-worth).
+
 ## [1.1.4] - 2026-10-10
 
 Comparable with 1.1.3: a fix for runs the memory guard ended.

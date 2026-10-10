@@ -143,6 +143,24 @@ the game to place the granary end lower: 1,225, with all the bread eaten.
 shows what a run achieved beyond leaving the game alone. The measured baselines are in
 `harness/server/baselines.ts`; a run whose save and budget have none has no growth.
 
+**Reference games.** `npm run episodes -- --save "…" --map "…" --human` is a game played
+by a person at the game machine, scored like an agent's:
+
+1. The runner launches the game, loads the save, sets the benchmark speed and leaves
+   the game paused.
+2. The player clicks the game and presses `P` to start. The budget counts game time,
+   so time spent paused is free, as an agent's thinking is. The runner logs each game
+   minute with the net worth so far.
+3. When the budget is used up, the runner pauses the game. It then reads the scorecard,
+   keeps a screenshot of the screen, and saves the game in the Save dialog as `human`,
+   the save and the date and time (for example `human oasis by the sea 1010-1432`).
+4. Everything goes to `harness/runtime/episodes/human-<time>/`: `scorecard.json`
+   (with `human.playedSeconds` and `human.ended`), `screenshot.jpg` and the `.sav`.
+
+The player is not bound by an agent's limits, such as the minimum turn. If the reader
+has no valid sample for 2 minutes (the memory guard may have closed the game), the
+scorecard uses the last reading and `human.ended` is `readings_lost`.
+
 Population, popularity, food and buildings are reported beside the score but do not
 count. Buildings matter only through what they produce. Buying at the marketplace
 lowers net worth (the buy price is higher than the sell price); selling leaves it
@@ -213,19 +231,20 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--map` | none | Map name the reader must report after loading |
 | `--benchmark` | `Custom` | Benchmark name (selects the rules file) |
 | `--model` | | Name of a saved model profile with a key |
-| `--prompt`, `--prompt-file` | | The operator instruction (one is required unless `--dry-run` or `--idle`) |
+| `--prompt`, `--prompt-file` | | The operator instruction (one is required unless `--dry-run`, `--idle` or `--human`) |
 | `--game-minutes` | 25 | Game-time budget |
 | `--wall-limit-minutes` | 360 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
 | `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
 | `--context-budget` | 120000 | Working context budget in tokens |
-| `--episodes` | 3 | Episodes in the series, one after another, each with a fresh game launch |
+| `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |
 | `--no-playbook` | off | Run the episodes as independent runs, with no playbook (still resumable) |
 | `--record` | off | Record the run and render a video |
 | `--resume` | | Continue a paused series by its ID, with its own settings |
 | `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs; for trials only |
 | `--dry-run` | off | Everything except the agent run; no model cost |
 | `--idle` | off | The do-nothing baseline: no agent; the game runs untouched at the benchmark speed for the game-time budget |
+| `--human` | off | A [reference game](#scoring-net-worth) played by a person; paused, scored, screenshotted and saved when the budget is used up |
 | `--restart` | off | Close a game that is already running instead of stopping |
 | `--keep-game` | off | Leave the game running and paused afterwards |
 | `--port` | 4317 | Dashboard port |

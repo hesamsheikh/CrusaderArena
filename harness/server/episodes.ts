@@ -19,6 +19,11 @@
  * --idle measures the do-nothing baseline: no agent, the game runs untouched at the benchmark's
  * speed for the same game time, then the scorecard is read.
  *
+ * --human is a reference game played by a person at the game machine: the runner loads the save,
+ * sets the benchmark's speed and leaves the game paused; the player unpauses it, and when the
+ * game-time budget is used up the runner pauses it, reads the scorecard, keeps a screenshot and
+ * saves the game. One game unless --episodes says more.
+ *
  * --dry-run does everything except the agent run (no model cost); --keep-game leaves
  * the game running (paused) afterwards for manual inspection; --record records the game
  * while the agent acts and renders video.mp4 into the run folder after the scorecard.
@@ -37,7 +42,7 @@ import { renderVideo, type VideoResult } from "./video.js";
 import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { behaviourFiles } from "./benchmark-version.js";
-import { classify, counts, episodeSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
+import { classify, counts, episodeSaveName, humanSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
 import { TICKS_PER_GAME_SECOND, costProblem, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
 const { values: opts } = parseArgs({
@@ -62,6 +67,7 @@ const { values: opts } = parseArgs({
     unversioned: { type: "boolean", default: false },
     "dry-run": { type: "boolean", default: false },
     idle: { type: "boolean", default: false },
+    human: { type: "boolean", default: false },
     restart: { type: "boolean", default: false },
     "keep-game": { type: "boolean", default: false },
     port: { type: "string", default: process.env.PORT || "4317" },
@@ -74,7 +80,7 @@ const DEFAULTS = {
 const setting = (name: keyof typeof DEFAULTS) => opts[name] ?? DEFAULTS[name];
 const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-file", "game-minutes", "wall-limit-minutes",
   "default-wait", "min-turn-seconds", "context-budget", "episodes", "no-playbook", "record"] as const;
-/** What an episode is run with: a series' settings, or the flags for --idle and --dry-run. */
+/** What an episode is run with: a series' settings, or the flags for --idle, --human and --dry-run. */
 type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
 const base = `http://127.0.0.1:${opts.port}/api/`;
@@ -394,8 +400,12 @@ async function episode(
     let run: Run | undefined;
     let lastGood: State | undefined;
     let idleSpeed: GameSpeedSetting | undefined;
+    let humanGame: HumanGame | undefined;
     if (opts.idle) idleSpeed = await idle(plan.config.gameMinutes, plan.config.wallLimitMinutes);
-    else if (!opts["dry-run"]) {
+    else if (opts.human) {
+      humanGame = await human(plan.config.gameMinutes, plan.config.wallLimitMinutes);
+      lastGood = humanGame.lastGood;
+    } else if (!opts["dry-run"]) {
       checkStop();
       const { runId } = await api<{ runId: string }>("agent/run", {
         benchmarkType: plan.benchmark,
@@ -426,13 +436,22 @@ async function episode(
     const card = final.stats?.status === "ok" || !lastGood
       ? scorecard(final, run, "final", baseline)
       : scorecard(lastGood, run, "last_observed", baseline);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const dir = run
       ? path.join("harness/runtime/runs", run.folder)
-      : path.join("harness/runtime/episodes");
+      : path.join("harness/runtime/episodes", humanGame ? `human-${stamp}` : "");
     mkdirSync(dir, { recursive: true });
+    if (humanGame)
+      log(`Your game: net worth ${card.net_worth}${card.net_worth_growth !== undefined ? `, ${card.net_worth_growth} above doing nothing` : ""}${card.source === "final" ? "" : " (the last reading before the game was lost)"}`);
+    // A human game's end as it looked when the budget ran out, before the Save dialog opens.
+    let screenshot: string | undefined;
+    if (humanGame && final.stats?.status === "ok") {
+      screenshot = "screenshot.jpg";
+      writeFileSync(path.join(dir, screenshot), Buffer.from((await frame()).image, "base64"));
+    }
     // The finished game, saved to load and watch later: after scoring, while the game is paused.
     let gameSave: GameSave | undefined;
-    if (run && !stopRequested && final.stats?.status === "ok" && final.stats.observation?.paused) {
+    if ((run || humanGame) && !stopRequested && final.stats?.status === "ok" && final.stats.observation?.paused) {
       gameSave = await saveGame({
         key: (key) => act({ type: "key", key: key as never }),
         click: clickScaled,
@@ -440,13 +459,16 @@ async function episode(
         sleep,
         session: (command, names) => gameSession(command, 60, names),
         write: (file, data) => writeFileSync(path.join(dir, file), data),
-      }, episodeSaveName(run), plan.save, keysFor);
+      }, run ? episodeSaveName(run) : humanSaveName(plan.save, new Date()), plan.save, keysFor);
       log(gameSave.error ? `Game save failed: ${gameSave.error}` : `Game saved as "${gameSave.name}" (${gameSave.file})`);
     }
-    const file = path.join(dir, run ? "episode.json" : `${opts.idle ? "idle" : "dry-run"}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    const file = path.join(dir, run ? "episode.json" : humanGame ? "scorecard.json" : `${opts.idle ? "idle" : "dry-run"}-${stamp}.json`);
     writeFileSync(file, JSON.stringify({
       episode: n, save: plan.save, benchmark: plan.benchmark, ...(series ? { series } : {}),
-      ...(opts.idle ? { idle: { gameMinutes: plan.config.gameMinutes, gameSpeed: idleSpeed } } : {}), ...card,
+      ...(opts.idle ? { idle: { gameMinutes: plan.config.gameMinutes, gameSpeed: idleSpeed } } : {}),
+      ...(humanGame ? { human: { gameMinutes: plan.config.gameMinutes, gameSpeed: humanGame.speed, playedSeconds: humanGame.playedSeconds, ended: humanGame.ended } } : {}),
+      ...card,
+      ...(screenshot ? { screenshot } : {}),
       ...(gameSave ? { game_save: gameSave } : {}),
     }, null, 2));
     log(`Scorecard: ${file}`);
@@ -472,33 +494,103 @@ async function episode(
 async function idle(gameMinutes: number, wallLimitMinutes: number) {
   log(`Idle baseline: the game runs untouched for ${gameMinutes} game minute(s)`);
   await setPaused(false);
-  const reading = async () => {
-    const stats = (await api<State>("state")).stats;
-    const tick = stats?.observation?.game_time;
-    return stats?.status === "ok" && typeof tick === "number" && typeof stats.captured_unix_ms === "number"
-      ? { tick, at: stats.captured_unix_ms }
-      : null;
-  };
-  const speed = await setGameSpeed({ clock: reading, press: (key) => act({ type: "key", key }), sleep });
-  log(`Game speed set to ${speed.target}: measured ${speed.after} ticks/s (was ${speed.before}; ${speed.presses} key presses)`);
+  const speed = await setBenchmarkSpeed();
   const started = Date.now();
-  let first: number | undefined;
-  for (let i = 0; i < 30 && first === undefined; i++) {
-    first = (await reading())?.tick;
-    if (first === undefined) await sleep(100);
-  }
-  if (first === undefined) throw new Error("No game-clock reading; cannot start the idle baseline's budget.");
+  const first = await startTick("the idle baseline's budget");
   const budget = gameMinutes * 60 * TICKS_PER_GAME_SECOND;
   let tick = first;
   while (tick - first < budget) {
     if (Date.now() - started > wallLimitMinutes * 60_000)
       throw new Error(`The idle baseline passed the ${wallLimitMinutes}-minute real-time limit.`);
     await sleep(100);
-    tick = (await reading())?.tick ?? tick;
+    tick = (await clockReading())?.tick ?? tick;
   }
   await setPaused(true);
   log(`Idle baseline: paused after ${Math.round((tick - first) / TICKS_PER_GAME_SECOND)} game seconds`);
   return speed;
+}
+
+/** The reader's game clock and when the sample was taken, or null without a valid sample. */
+async function clockReading() {
+  const stats = (await api<State>("state")).stats;
+  const tick = stats?.observation?.game_time;
+  return stats?.status === "ok" && typeof tick === "number" && typeof stats.captured_unix_ms === "number"
+    ? { tick, at: stats.captured_unix_ms }
+    : null;
+}
+
+/** Set the benchmark's game speed as an agent run does; the game must be running. */
+async function setBenchmarkSpeed() {
+  const speed = await setGameSpeed({ clock: clockReading, press: (key) => act({ type: "key", key }), sleep });
+  log(`Game speed set to ${speed.target}: measured ${speed.after} ticks/s (was ${speed.before}; ${speed.presses} key presses)`);
+  return speed;
+}
+
+/** The game clock's tick to count a budget from. */
+async function startTick(what: string) {
+  for (let i = 0; i < 30; i++) {
+    const tick = (await clockReading())?.tick;
+    if (tick !== undefined) return tick;
+    await sleep(100);
+  }
+  throw new Error(`No game-clock reading; cannot start ${what}.`);
+}
+
+type HumanGame = {
+  speed: GameSpeedSetting;
+  /** Game seconds played, from the clock at the start to the confirmed final pause. */
+  playedSeconds: number;
+  /** "readings_lost": no valid reader sample for HUMAN_LOST_SECONDS, e.g. a memory-guard stop. */
+  ended: "budget" | "readings_lost";
+  lastGood?: State;
+};
+/** How long a human game waits for a valid reader sample before scoring the last one it saw. */
+const HUMAN_LOST_SECONDS = 120;
+
+/**
+ * A reference game played by a person at the game machine. The host sets the benchmark's game
+ * speed as an agent run does and leaves the game paused for the player to start. The budget
+ * counts game time in reader ticks, so time spent paused is free, as an agent's thinking is.
+ * When the budget is used up the game is paused for the reading.
+ */
+async function human(gameMinutes: number, wallLimitMinutes: number): Promise<HumanGame> {
+  await setPaused(false);
+  const speed = await setBenchmarkSpeed();
+  await setPaused(true);
+  const first = await startTick("the game-time budget");
+  log(`Your game: ${gameMinutes} game minutes. Click the game and press P to start; the clock stops while the game is paused. ` +
+    "When the time is up the game pauses itself: leave it alone while it is scored, screenshotted and saved.");
+  const budget = gameMinutes * 60 * TICKS_PER_GAME_SECOND;
+  const started = Date.now();
+  let tick = first;
+  let seenAt = Date.now();
+  let lastGood: State | undefined;
+  let minutesLogged = 0;
+  while (tick - first < budget) {
+    checkStop();
+    if (Date.now() - started > wallLimitMinutes * 60_000)
+      throw new Error(`The game passed the ${wallLimitMinutes}-minute real-time limit.`);
+    await sleep(100);
+    const state = await api<State>("state").catch(() => undefined);
+    const o = state?.stats?.status === "ok" ? state.stats.observation : undefined;
+    if (o && typeof o.game_time === "number") {
+      tick = o.game_time;
+      seenAt = Date.now();
+      lastGood = state;
+      const minutes = Math.floor((tick - first) / TICKS_PER_GAME_SECOND / 60);
+      if (minutes > minutesLogged) {
+        minutesLogged = minutes;
+        log(`Your game: ${minutes} of ${gameMinutes} game minutes, net worth ${netWorth(o.gold, o.resources_by_name ?? {}).netWorth}`);
+      }
+    } else if (Date.now() - seenAt > HUMAN_LOST_SECONDS * 1000) {
+      log(`No valid game reading for ${HUMAN_LOST_SECONDS} s; the game may have closed (the memory guard?).`);
+      return { speed, playedSeconds: Math.round((tick - first) / TICKS_PER_GAME_SECOND), ended: "readings_lost", lastGood };
+    }
+  }
+  await setPaused(true);
+  const end = (await clockReading())?.tick ?? tick;
+  log(`Your game: paused after ${Math.round((end - first) / TICKS_PER_GAME_SECOND)} game seconds`);
+  return { speed, playedSeconds: Math.round((end - first) / TICKS_PER_GAME_SECOND), ended: "budget", lastGood };
 }
 
 /**
@@ -663,7 +755,7 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
   log(`Net worth by episode: ${worth.join(" → ")}`);
 }
 
-/** --idle and --dry-run: no agent and no series. */
+/** --idle, --human and --dry-run: no agent and no series. */
 async function runPlain(plan: Plan, total: number) {
   for (let n = 1; n <= total && !stopRequested; n++) {
     try {
@@ -681,15 +773,16 @@ async function main() {
     throw new Error(`The dashboard is not reachable on port ${opts.port}; start it with npm run dev.`);
   });
   if (state.running || state.connected) throw new Error("The dashboard is connected or running; disconnect it first.");
-  const agent = !opts["dry-run"] && !opts.idle;
+  if (opts.idle && opts.human) throw new Error("--idle and --human are different runs; pass one.");
+  const agent = !opts["dry-run"] && !opts.idle && !opts.human;
   if (opts.resume) {
-    if (!agent) throw new Error("--resume continues an agent series; leave out --idle and --dry-run.");
+    if (!agent) throw new Error("--resume continues an agent series; leave out --idle, --human and --dry-run.");
     const given = SETTING_FLAGS.filter((flag) => opts[flag] !== undefined);
     if (given.length) throw new Error(`--resume runs the series with its own settings; leave out ${given.map((f) => `--${f}`).join(", ")}.`);
     await runSeries(state, loadSeries(opts.resume), true);
   } else {
     if (!opts.save) throw new Error("--save is required (the save name shown in Load Game).");
-    const total = Number(setting("episodes"));
+    const total = Number(opts.episodes ?? (opts.human ? "1" : DEFAULTS.episodes));
     if (!Number.isInteger(total) || total < 1 || total > 20) throw new Error("--episodes must be 1 to 20.");
     const config = runConfigSchema.parse({
       gameMinutes: Number(setting("game-minutes")),
