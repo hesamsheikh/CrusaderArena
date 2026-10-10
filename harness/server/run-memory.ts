@@ -75,6 +75,8 @@ export class RunMemory {
     this.notebook = this.revise("notebook", this.notebook, revision, text);
     return this.notebook;
   }
+  /** No tool calls this (notebook_edit was removed, unused in 24 recent runs); writeNotebook
+   * covers the agent's only notebook edit. Kept with editPlaybook's shared `edited()` match. */
   editNotebook(revision: number, before: string, after: string) {
     return this.writeNotebook(revision, edited(this.notebook.text, before, after));
   }

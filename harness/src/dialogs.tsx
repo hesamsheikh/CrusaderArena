@@ -382,6 +382,7 @@ export type RunDraft = {
   wallLimitMinutes: number;
   waitSeconds: number;
   minTurnSeconds: number;
+  fallbackObservation: "when-needed" | "always";
   contextBudget: number;
   recordVideo: boolean;
   modelId: string;
@@ -555,6 +556,23 @@ export function NewRunDialog({
               />
               <em>game s</em>
             </div>
+          </label>
+          <label className="field">
+            <span>Fallback observation</span>
+            <select
+              value={draft.fallbackObservation}
+              onChange={(e) =>
+                update({ fallbackObservation: e.target.value as "when-needed" | "always" })
+              }
+            >
+              <option value="when-needed">When needed</option>
+              <option value="always">Always</option>
+            </select>
+            <small>
+              What the host sends after a turn that acted without looking: "When
+              needed" is text only unless that turn used game_action, inspect_building
+              or a pixel placement; "Always" is a screenshot every time.
+            </small>
           </label>
         </fieldset>
         <label className="switch record-video">

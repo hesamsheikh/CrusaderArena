@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Source PNGs include a 1920 × 1080 game frame plus labels. The served PNGs
 // contain only the construction tray, cropped from the source without redraw.
@@ -159,11 +161,30 @@ export const atlasPages = [
 
 export type AtlasPageId = (typeof atlasPages)[number]["id"];
 const atlasRoot = new URL("../../.internal/ui-reference/trays/", import.meta.url);
-const combinedFile = new URL("../../.internal/ui-reference/construction-trays.png", import.meta.url);
+const guideDirectory = fileURLToPath(new URL("../../.internal/ui-reference/", import.meta.url));
+
+/**
+ * Picks the combined construction-trays guide image in `directory`: a JPEG at quality 90 is 65%
+ * smaller than the PNG at the same image size and token cost, so it is preferred; a checkout with
+ * only the (older) PNG still works. Pure and directory-parameterised so it can be tested with
+ * temporary files instead of the private `.internal/`.
+ */
+export function pickGuideImageFile(directory: string): { file: string; name: string; mimeType: "image/jpeg" | "image/png" } | null {
+  const jpeg = path.join(directory, "construction-trays.jpg");
+  if (existsSync(jpeg)) return { file: jpeg, name: "construction-trays.jpg", mimeType: "image/jpeg" };
+  const png = path.join(directory, "construction-trays.png");
+  if (existsSync(png)) return { file: png, name: "construction-trays.png", mimeType: "image/png" };
+  return null;
+}
 
 /** Whether the private combined guide image is installed on this host. */
 export function constructionAtlasInstalled() {
-  return existsSync(combinedFile);
+  return pickGuideImageFile(guideDirectory) !== null;
+}
+
+/** The installed combined guide image's file name (for `inputs.json`), or null without one. */
+export function constructionAtlasFileName() {
+  return pickGuideImageFile(guideDirectory)?.name ?? null;
 }
 
 /**
@@ -171,12 +192,14 @@ export function constructionAtlasInstalled() {
  * the combined image is a private game screenshot, so a checkout without it gets text only.
  */
 export function constructionAtlas() {
-  const image = constructionAtlasInstalled() ? readFileSync(combinedFile).toString("base64") : null;
+  const picked = pickGuideImageFile(guideDirectory);
+  const image = picked ? readFileSync(picked.file).toString("base64") : null;
   return {
     image,
+    mimeType: picked?.mimeType ?? ("image/png" as const),
     text: [
       image
-        ? "HISTORICAL CONSTRUCTION MENU GUIDE: one PNG containing the exact cropped construction trays for all ten pages. Numbered button descriptions are printed beneath each tray. Steam build 24816905; this is not a current observation or targeting frame."
+        ? "HISTORICAL CONSTRUCTION MENU GUIDE: one image containing the exact cropped construction trays for all ten pages. Numbered button descriptions are printed beneath each tray. Steam build 24816905; this is not a current observation or targeting frame."
         : "HISTORICAL CONSTRUCTION MENU GUIDE (text only; the guide image is not installed on this host): the buttons of all ten construction menu pages from Steam build 24816905. Find them on screen with the screen layout in your instructions and the game's tooltips.",
       ...atlasPages.map((page, index) =>
         `${index + 1}. ${page.title}: ${page.labels.map((label, i) => `${i + 1} ${label.name} — ${label.detail}`).join("; ")}`,
@@ -203,7 +226,7 @@ export function availableAtlasPages() {
 export function atlasIndex() {
   const pages = availableAtlasPages();
   return pages.length
-    ? `Optional historical cropped building-tray PNGs, retrievable with guide_page(page): ${pages.map((p) => `${p.id} (${p.title})`).join(", ")}. Steam build 24816905; these are references, not current map state. Request only the page needed for the current panel.`
+    ? `Historical cropped building-tray PNGs exist for: ${pages.map((p) => `${p.id} (${p.title})`).join(", ")}. Steam build 24816905; these are references, not current map state.`
     : "No private historical building guide pages are installed. Inspect the live UI and its tooltips.";
 }
 export function atlasPage(id: AtlasPageId) {

@@ -158,6 +158,10 @@ export class ObservationCycle {
   ran = false;
   tools = 0;
   actions = 0;
+  /** Whether this turn sent input that works from the screenshot (any game_action, inspect_building,
+   * or a build_structure placement given in pixels): the host's "when-needed" fallback still sends a
+   * screenshot after one. A tile placement is projected from the live camera, so it is not. */
+  pixelInput = false;
   /** The session's used game ticks when the turn began, for its minimum length. */
   startTicks = 0;
   begin(startTicks = 0) {
@@ -167,10 +171,12 @@ export class ObservationCycle {
     this.ran = false;
     this.tools = 0;
     this.actions = 0;
+    this.pixelInput = false;
   }
-  action() {
+  action(pixel = false) {
     this.acted = true;
     this.observed = false;
+    if (pixel) this.pixelInput = true;
     if (++this.actions > 8)
       throw new Error("At most 8 actions per reply. End this reply; the count starts again with the next one.");
   }

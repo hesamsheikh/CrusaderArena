@@ -66,6 +66,17 @@ type PrivateProfile = Omit<ModelProfile, "keyConfigured"> & ModelSettings & {
   apiKey?: string;
   envKey?: string;
 };
+/** Mirrors tools/dataset/scrub.py's BASE64_BLOB: pure base64 (with embedded newlines allowed). */
+const BASE64_BLOB = /^[A-Za-z0-9+/=\r\n]+$/;
+/**
+ * A string plainly holding image data (an image block's `data`, or any other long base64):
+ * redact() skips these rather than scanning them for every saved API key, which is slow on
+ * events.jsonl's multi-megabyte screenshots and pointless on an image. Mirrors
+ * tools/dataset/scrub.py's own 512-character rule.
+ */
+function looksLikeImageData(value: string): boolean {
+  return value.length >= 512 && (value.startsWith("data:image/") || BASE64_BLOB.test(value));
+}
 export class Store {
   private profiles: PrivateProfile[];
   private runs = new Map<string, Run>();
@@ -217,6 +228,7 @@ export class Store {
   }
   redact(value: unknown): any {
     if (typeof value === "string") {
+      if (looksLikeImageData(value)) return value;
       for (const key of [
         ...this.profiles.map((p) => this.key(p.id)),
         this.env.MOONSHOT_API_KEY,

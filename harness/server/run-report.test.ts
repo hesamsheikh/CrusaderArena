@@ -38,7 +38,7 @@ function writeRun(dir: string, folder: string, files: Record<string, string | ob
 }
 
 function completeRun(dir: string) {
-  writeRun(dir, "Model-A-Oasis-construction-20260929-120000Z-2026-09-29T12-00-00-000Z-aaaaaaaa", {
+  return writeRun(dir, "Model-A-Oasis-construction-20260929-120000Z-2026-09-29T12-00-00-000Z-aaaaaaaa", {
     "run.json": {
       id: "aaaaaaaa-1111-2222-3333-444444444444", model: { name: "Model A", modelId: "vendor/model-a" },
       benchmarkType: "Oasis construction", startedAt: START, endedAt: START + 900_000, status: "completed", turns: 3, tokens: 4170,
@@ -170,6 +170,25 @@ test("a complete run reports budget, tokens, scorecard, build results and retrie
   assert.equal(row.memory.peakGameRssMiB, 3100);
   assert.equal(row.memory.minAvailableMiB, 4500);
   assert.equal(row.incomplete, false);
+  // No interview.json for this run.
+  assert.equal(row.interview, null);
+});
+
+test("a run's interview tokens and cost are read from interview.json, apart from the run's own", async () => {
+  const dir = root();
+  const run = completeRun(dir);
+  writeFileSync(path.join(run, "interview.json"), JSON.stringify({
+    tokens: { input: 900, output: 300, cacheRead: 200, cacheWrite: 0, totalTokens: 1400 },
+    cost: 0.004,
+    costSource: "prices",
+  }));
+  const [row] = await buildReport(dir);
+  // The run's own tokens and cost are unaffected by the interview's.
+  assert.equal(row.tokens.total, 4170);
+  assert.ok(Math.abs(row.cost! - 0.023) < 1e-12);
+  assert.deepEqual(row.interview, { tokens: 1400, cost: 0.004, costSource: "prices" });
+  const markdown = renderMarkdown([row]);
+  assert.match(markdown, /\| 1\.4k \| ~\$0\.004 \|/);
 });
 
 test("an old-format run shows blanks instead of failing and derives what it can", async () => {

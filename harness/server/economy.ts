@@ -4,6 +4,7 @@ import { ackTime, dismiss, sampleAfter, type AnchorContext } from "./anchors.js"
 import type { Observation } from "./placement.js";
 import { buyPrice, sellPrice } from "./market-prices.js";
 import { inventoryGroups } from "./inventory.js";
+import { points } from "../shared/popularity.js";
 
 /**
  * Tax and marketplace panels, driven by clicks at positions measured on the 1920×1080
@@ -40,7 +41,7 @@ const goodsButtons: Record<string, { category: keyof typeof categoryButtons; at:
 export const tradeGoods = Object.keys(goodsButtons);
 
 const scaled = (frame: Frame, p: { x: number; y: number }) => {
-  if (Math.abs(frame.width / frame.height - 16 / 9) > 0.02) throw new Error("Panel positions are calibrated only for a 16:9 game window.");
+  if (Math.abs(frame.width / frame.height - 16 / 9) > 0.02) throw new Error("Panel positions are calibrated only for a 16:9 game window. Use game_action on this layout.");
   return { type: "click" as const, x: Math.round((p.x * frame.width) / 1920), y: Math.round((p.y * frame.height) / 1080), button: 1 as const };
 };
 const selected = (o: Observation | null) => (o?.selected_building as { type?: number } | null | undefined)?.type ?? null;
@@ -56,7 +57,7 @@ async function select(ctx: AnchorContext, hotkey: GameHotkey) {
 }
 
 async function click(ctx: AnchorContext, p: { x: number; y: number }) {
-  const frame = await ctx.capture();
+  const frame = await ctx.frame();
   return ctx.send(frame, scaled(frame, p));
 }
 
@@ -64,7 +65,12 @@ async function click(ctx: AnchorContext, p: { x: number; y: number }) {
 export async function setTax(ctx: AnchorContext, level: number) {
   const tax = (o: Observation | null) => (typeof o?.tax_index === "number" ? o.tax_index : null);
   const opened = await select(ctx, "HomeKeep");
-  if (!opened) return { status: "failed" as const, note: "The keep hotkey selected nothing; is the game paused or the granary not yet placed?" };
+  if (!opened)
+    return {
+      status: "failed" as const,
+      note: "The keep hotkey selected nothing.",
+      remedy: "If the game still asks you to site your granary, place it first with build_structure (name Granary); otherwise observe and call set_tax again.",
+    };
   const from = tax(opened);
   let current = from;
   let last: Observation = opened;
@@ -75,14 +81,20 @@ export async function setTax(ctx: AnchorContext, level: number) {
     current = tax(seen);
     last = seen;
   }
-  await dismiss(ctx, await ctx.capture());
+  await dismiss(ctx, await ctx.frame());
   const info = current !== null ? taxLevels[current] : undefined;
   // The keep panel's own tax figure, which updates with each step (live 2026-10-10).
-  const gold = (last.settlement as { tax_amount?: unknown } | null | undefined)?.tax_amount;
+  const settlement = last.settlement as { tax_amount?: unknown; popularity_factors?: Record<string, number> } | null | undefined;
+  const gold = settlement?.tax_amount;
+  // The reader's own tax factor from the sample taken after the last step, in points; the static
+  // table (built from one observed level each) is used only when the reader has no value.
+  const liveFactor = settlement?.popularity_factors?.tax;
   return {
     status: current === level ? "set" as const : "not_set" as const,
-    from, level: current, label: info?.label, popularityFactor: info?.popularity,
+    from, level: current, label: info?.label,
+    popularityFactor: typeof liveFactor === "number" ? points(liveFactor) : info?.popularity,
     ...(typeof gold === "number" ? { goldPerMonth: gold } : {}),
+    ...(current === level ? {} : { remedy: "The panel did not reach that level: observe, then call set_tax again." }),
   };
 }
 
@@ -100,8 +112,12 @@ export async function setRations(ctx: AnchorContext, level: RationLevel) {
   const ration = (o: Observation | null) => settlement(o)?.rationing ?? null;
   const opened = await select(ctx, "Granary");
   if (!opened || selected(opened) !== GRANARY_TYPE) {
-    if (opened) await dismiss(ctx, await ctx.capture());
-    return { status: "failed" as const, note: "The granary hotkey selected no granary; is one placed?" };
+    if (opened) await dismiss(ctx, await ctx.frame());
+    return {
+      status: "failed" as const,
+      note: "The granary hotkey selected no granary.",
+      remedy: "There is no granary: build_structure places one (name Granary); then call set_rations again.",
+    };
   }
   const target = rationLevels.indexOf(level);
   const from = ration(opened);
@@ -110,28 +126,33 @@ export async function setRations(ctx: AnchorContext, level: RationLevel) {
     const ack = await click(ctx, RATION_PLATES[target]);
     last = (await sampleAfter(ctx, ackTime(ack), (o) => ration(o) === target, 1)) ?? last;
   }
-  await dismiss(ctx, await ctx.capture());
+  await dismiss(ctx, await ctx.frame());
   const reached = ration(last);
-  // The ration factor the panel shows beside the plates; 25 reader units a point.
+  // The ration factor the panel shows beside the plates, in reader units.
   const factor = settlement(last)?.popularity_factors?.rationing;
   return {
     status: reached === target ? "set" as const : "not_set" as const,
     from: from === null ? null : rationLevels[from] ?? from,
     rations: reached === null ? null : rationLevels[reached] ?? reached,
-    ...(typeof factor === "number" ? { popularityFactor: factor / 25 } : {}),
+    ...(typeof factor === "number" ? { popularityFactor: points(factor) } : {}),
+    ...(reached === target ? {} : { remedy: "The panel did not reach those rations: observe, then call set_rations again." }),
   };
 }
 
 /** Buy or sell `lots` lots of one good at the marketplace, counting what the reader shows changed. */
 export async function marketTrade(ctx: AnchorContext, good: string, action: "buy" | "sell", lots: number) {
   const button = goodsButtons[good];
-  if (!button) return { status: "failed" as const, note: `Unknown good ${good}.` };
+  if (!button) return { status: "failed" as const, note: `Unknown good ${good}.`, remedy: `Use one of: ${tradeGoods.join(", ")}.` };
   const stock = (o: Observation | null) => ((o?.resources_by_name as Record<string, number> | undefined)?.[good] ?? null);
   const gold = (o: Observation | null) => (typeof o?.gold === "number" ? o.gold : null);
   const opened = await select(ctx, "Market");
   if (!opened || selected(opened) !== 26) {
-    if (opened) await dismiss(ctx, await ctx.capture());
-    return { status: "no_market" as const, note: "No marketplace selected; build a Marketplace first." };
+    if (opened) await dismiss(ctx, await ctx.frame());
+    return {
+      status: "no_market" as const,
+      note: "There is no marketplace: the market hotkey selected none.",
+      remedy: "Build one with build_structure (name Marketplace), then call market_trade again.",
+    };
   }
   const before = { stock: stock(opened), gold: gold(opened) };
   await click(ctx, categoryButtons[button.category]);
@@ -145,7 +166,7 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
     if (!seen) break;
     last = { stock: stock(seen), gold: gold(seen) };
   }
-  await dismiss(ctx, await ctx.capture());
+  await dismiss(ctx, await ctx.frame());
   const units = before.stock !== null && last.stock !== null ? last.stock - before.stock : null;
   const goldChange = before.gold !== null && last.gold !== null ? last.gold - before.gold : null;
   // A purchase stops for gold or for storage room; with gold left for another lot it was room.
@@ -161,8 +182,16 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
     stock: last.stock, gold: last.gold,
     unitPrice: { buy: buyPrice[good], sell: sellPrice[good] },
     ...(done < lots
-      ? { note: action === "sell" ? "Stopped: no more of this good to sell."
-          : roomOut ? "Stopped: no storage room for this good (see storage in status)." : "Stopped: not enough gold." }
+      ? action === "sell"
+        ? { note: "Stopped: no more of this good to sell.", remedy: "Sell only what get_inventory shows in stock." }
+        : roomOut
+          ? {
+              note: "Stopped: no storage room for this good (see storage in status).",
+              remedy: (inventoryGroups.granary as readonly string[]).includes(good)
+                ? "Make room: expand_storage (kind granary) adds granaries."
+                : "Make room: expand_storage (kind stockpile) adds stockpile piles.",
+            }
+          : { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." }
       : {}),
   };
 }

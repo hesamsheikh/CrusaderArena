@@ -1,7 +1,9 @@
 <!--
 Loaded into every run's system prompt after the benchmark section (harness/server/preparation.ts).
 HTML comments are stripped before the agent sees this file. Keep it free of per-run values so the
-system prompt stays identical for the whole run (prompt caching).
+system prompt stays identical for the whole run (prompt caching). The one exception is the pair
+of marked blocks below (when-needed and always): promptText keeps only the one matching the run's
+`fallbackObservation` setting, which is fixed for the whole run too.
 -->
 # Playing through the harness
 
@@ -14,9 +16,20 @@ system prompt stays identical for the whole run (prompt caching).
    work across replies only when the next choice truly depends on a result.
 3. End the reply with `observe` (a screenshot once the reply has run the minimum turn
    length) or `wait_and_observe(seconds)` (let that much game time pass first, and at
-   least the minimum turn). If you acted and requested neither, the host lets its default
-   wait pass and then sends a screenshot; a reply that ran the game for less than the
-   minimum turn length is topped up the same way.
+   least the minimum turn; `screenshot: false` waits the same way and returns the stats
+   and game events as text, with no image). If you acted and requested neither, the host
+   lets its default wait pass and then sends an observation; a reply that ran the game
+   for less than the minimum turn length is topped up the same way.
+
+<!-- when-needed -->
+That observation is a screenshot if the reply used `game_action`, `inspect_building` or
+a `build_structure` placement given by `x`/`y`, or called no tools at all. Otherwise it
+is the same stats and game events as text, with no image; `observe` and
+`wait_and_observe` give you a screenshot.
+<!-- /when-needed -->
+<!-- always -->
+That observation is always a screenshot.
+<!-- /always -->
 
 At most 8 actions per reply. Each `build_structure` placement counts as one, as does
 each `game_action`, `place_near`, `expand_storage`, `center_on`, `go_to_tile`,
@@ -38,7 +51,8 @@ return the game only once it has passed, so act first and look last.
   coordinates are pixels of the latest screenshot, (0, 0) at the top left. Aim at ground
   level: a click hits the ground tile under the cursor, so the top of a tall building
   targets the ground behind it. A screenshot older than 30 seconds cannot be used for
-  clicks.
+  clicks. `find_sites` and a `build_structure` placement given by map tile (`tile_x`,
+  `tile_y`) need no screenshot at all: see Placing buildings.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
   `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population
   (with housing and idle peasants), popularity (with its upcoming change and factors, in
@@ -53,21 +67,27 @@ return the game only once it has passed, so act first and look last.
   check the screenshot too. `reader_unavailable_seconds`, when present, means the game
   reader was down that long, so messages from then may be missing.
 - A delivered click or key proves nothing by itself. Judge results by tool statuses,
-  the next screenshot and the stats. Do not repeat a failed action unchanged.
+  the next screenshot and the stats. Do not repeat a failed action unchanged: a result
+  that failed or fell short carries a `remedy` naming the tool call that addresses it.
 
 After anything that moves the camera (`center_on`, `go_to_tile`, `go_to_view`,
-`navigate_minimap`, `place_near`, `expand_storage`, zoom, a failed stockpile placement),
-take targets only from a new screenshot.
+`navigate_minimap`, zoom, a failed stockpile placement), take pixel targets only from a
+new screenshot. After `set_tax`, `set_rations`, `market_trade`, `place_near` or
+`expand_storage`, which return text only, observe again before clicking at a pixel. A
+`build_structure` placement given by map tile, and `find_sites`, are unaffected: they
+read the live camera themselves and need no screenshot.
 
 ## Tools by purpose
 
-- **Build:** `build_structure` places 1–4 named buildings at pixels from the latest
-  screenshot (it opens the menus and selects the building for you; also the setup
-  "Site your granary" tray with the name `Granary`). `place_near` puts 1–3 buildings
-  flush against an anchor such as the keep or granary. `expand_storage` adds 1–3
-  stockpiles or granaries touching the existing ones. `find_sites` lists spots in the
-  current view where a building fits; for a woodcutter, those closest to trees first.
-  `flat_view` shows free and occupied ground.
+- **Build:** `build_structure` places 1–4 named buildings, each given either as pixels
+  from the latest screenshot (`x`, `y`, needs a screenshot) or as a map tile (`tile_x`,
+  `tile_y`, named by `map_overview` or `find_sites`, needs no screenshot); it opens the
+  menus and selects the building for you (also the setup "Site your granary" tray with
+  the name `Granary`). `place_near` puts 1–3 buildings flush against an anchor such as
+  the keep or granary. `expand_storage` adds 1–3 stockpiles or granaries touching the
+  existing ones. `find_sites` lists spots in the current view where a building fits,
+  each with its map tile (and its pixel while the latest screenshot shows that view);
+  for a woodcutter, those closest to trees first. `flat_view` shows free and occupied ground.
 - **Find your way:** `center_on` jumps to your keep, granary, stockpile, market and
   other key buildings. `map_overview` shows the whole map with its stone, iron, oil,
   farmland and trees; `go_to_tile` moves the camera to a tile it names.
@@ -81,16 +101,16 @@ take targets only from a new screenshot.
 - **Let time pass:** `wait_and_observe(seconds)`, optionally `until` a good, gold,
   population, food or idle peasants reaches an amount.
 - **Look things up:** `building_info(name)` (purpose, default cost, workers,
-  requirements), `list_buildings(category)` and `guide_page(page)` (a historical
-  picture of one construction tray). These describe the game in general; the live
-  game and its tooltips win when they differ.
+  requirements). Describes the game in general; the live game and its tooltips win
+  when they differ.
 - **Raw input:** `game_action` clicks, drags, scrolls or presses one key. Use it only
   for what no tool covers (selecting a unit, a panel button, zooming). Never open
   construction menus or pick buildings with it.
 
 ## Placing buildings
 
-`build_structure` reports one status per placement:
+`build_structure` reports one status per placement and, when known, the map `tile` it
+placed or tried (whether given by tile or worked out from the pixel):
 
 - `placed`: the cost was deducted or a new structure appeared (`evidence` says which).
 - `not_placed`: nothing happened. The harness then retries at the nearest spots where
@@ -108,7 +128,14 @@ take targets only from a new screenshot.
 - `rejected`: the game showed a new error for it. `possibly_rejected`: an error was
   visible that may belong to an earlier placement.
 - `not_selected`: the menu did not select the building; nothing was clicked.
-- `camera_moved`: the view changed, so the rest of the call was skipped.
+- `invalid_target`: a pixel target is outside the screenshot or over the bottom HUD, or
+  the coordinates given are not exactly one whole pair (`x`+`y` or `tile_x`+`tile_y`).
+  Nothing was sent; it does not count toward the 8 actions.
+- `not_on_screen`: a tile target is not clickable right now (off screen, over the
+  bottom HUD, or no live camera); `camera` names the live centre tile when known.
+  Its terrain was not clicked.
+- `camera_moved`: a pixel target's view changed since the screenshot, so the rest of
+  the pixel targets in the call were skipped; tile targets in the same call still ran.
 - `unverified`: no evidence either way; check the next screenshot.
 
 Game rules for placement:
@@ -153,8 +180,8 @@ Game rules for placement:
 
 General guidance, not a validated strategy; the benchmark rules and the live game win.
 
-1. If the game says "Site your granary", place it near the keep with `build_structure`
-   and the name `Granary`.
+1. If the game says "Site your granary", place it with `build_structure` and the name
+   `Granary`.
 2. Wood first: two or three woodcutters beside trees near the stockpile.
 3. Housing: each hovel adds 8. Population grows only with free housing and popularity
    above 50; `status` shows housing, idle peasants and popularity factors.
@@ -175,9 +202,9 @@ General guidance, not a validated strategy; the benchmark rules and the live gam
 
 Keep a short plan with `update_plan` and update it when goals or progress change. Mark
 a step completed only after a screenshot or stats confirm it. Keep useful findings in
-the run notebook (`notebook_write` / `notebook_edit`, which need its current revision).
-The plan and notebook survive context compaction; the rest of the conversation is then
-replaced by your own handoff note.
+the run notebook (`notebook_write`, which needs its current revision). The plan and
+notebook survive context compaction; the rest of the conversation is then replaced by
+your own handoff note.
 
 ## If control fails
 

@@ -18,5 +18,5 @@ keep. Housing starts at 10.
 
 ## Start
 
-If the game says "Site your granary", place it near the keep with `build_structure` and
-the name `Granary`. Then build the rest. Do not spend the run surveying.
+If the game says "Site your granary", place it with `build_structure` and the name
+`Granary`. Then build the rest. Do not spend the run surveying.

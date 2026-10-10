@@ -47,6 +47,7 @@ import { resultsMarkdown, runResults, type RunKind } from "./results.js";
 import { renderVideo, type VideoResult } from "./video.js";
 import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
+import { MENU_PROBES, menuScreen, type MenuScreen } from "./menu-screen.js";
 import { behaviourFiles } from "./benchmark-version.js";
 import { classify, counts, episodeSaveName, humanSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
 import { TICKS_PER_GAME_SECOND, costProblem, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
@@ -64,6 +65,7 @@ const { values: opts } = parseArgs({
     "wall-limit-minutes": { type: "string" },
     "default-wait": { type: "string" },
     "min-turn-seconds": { type: "string" },
+    "fallback-observation": { type: "string" },
     "context-budget": { type: "string" },
     episodes: { type: "string" },
     playbook: { type: "boolean" },
@@ -82,11 +84,11 @@ const { values: opts } = parseArgs({
 });
 const DEFAULTS = {
   benchmark: "Custom", "game-minutes": "25", "wall-limit-minutes": "360", "default-wait": "5",
-  "min-turn-seconds": "8", "context-budget": "120000", episodes: "3",
+  "min-turn-seconds": "8", "fallback-observation": "when-needed", "context-budget": "120000", episodes: "3",
 };
 const setting = (name: keyof typeof DEFAULTS) => opts[name] ?? DEFAULTS[name];
 const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-file", "game-minutes", "wall-limit-minutes",
-  "default-wait", "min-turn-seconds", "context-budget", "episodes", "playbook", "record"] as const;
+  "default-wait", "min-turn-seconds", "fallback-observation", "context-budget", "episodes", "playbook", "record"] as const;
 /** What an episode is run with: a series' settings, or the flags for --idle, --human and --dry-run. */
 type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
@@ -167,17 +169,20 @@ async function frame() {
   return api<Frame>("frame");
 }
 /**
- * Send one input on a fresh frame. The bridge refuses input while another window has focus; a
- * Steam window or the control-monitor xterm took focus during save loading (2026-09-29), so
- * re-activate the game and retry a few times.
+ * Send one input on a fresh frame, or on `shared.frame` when given (a run of keys needs only the
+ * window's identity, so one capture serves them all). The bridge refuses input while another
+ * window has focus; a Steam window or the control-monitor xterm took focus during save loading
+ * (2026-09-29), so re-activate the game and retry a few times.
  */
-async function send(action: (f: Frame) => GameAction) {
+async function send(action: (f: Frame) => GameAction, shared?: { frame?: Frame }) {
   for (let attempt = 0; ; attempt++) {
-    const f = await frame();
+    const f = shared?.frame ?? (await frame());
+    if (shared) shared.frame = f;
     try {
       await api("action", { action: action(f), frameId: f.id });
       return;
     } catch (error) {
+      if (shared) shared.frame = undefined;
       if (attempt >= 3 || !/not the active application/i.test(String(error))) throw error;
       log("The game lost focus; re-activating it");
       await gameSession("activate");
@@ -201,14 +206,50 @@ function keysFor(text: string) {
   });
 }
 
-async function waitFor<T>(what: string, seconds: number, probe: () => Promise<T | undefined>, stoppable = true) {
+async function waitFor<T>(what: string, seconds: number, probe: () => Promise<T | undefined>, stoppable = true, intervalMs = 1000) {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
     if (stoppable) checkStop();
     const value = await probe().catch(() => undefined);
     if (value !== undefined) return value;
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}.`);
-    await sleep(1000);
+    await sleep(intervalMs);
+  }
+}
+
+/**
+ * The pre-game screen the game shows (menu-screen.ts), from a few pixel colours of a capture
+ * sampled by tools/runner/screen_probe.py; null when that cannot run on this host (no python3 or
+ * Pillow), and the runner then waits the old way.
+ */
+async function currentScreen(): Promise<MenuScreen | null> {
+  const image = Buffer.from((await frame()).image, "base64");
+  return new Promise((resolve) => {
+    const child = spawn("python3", ["-I", "tools/runner/screen_probe.py", JSON.stringify(Object.values(MENU_PROBES))]);
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.on("error", () => resolve(null));
+    child.on("close", (code) => {
+      try {
+        resolve(code === 0 ? menuScreen(JSON.parse(out)) : null);
+      } catch {
+        resolve(null);
+      }
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(image);
+  });
+}
+/** Poll until `target` shows: true, false at the deadline, null when screens cannot be told apart here. */
+async function waitForScreen(target: MenuScreen, seconds: number, intervalMs = 1000) {
+  const deadline = Date.now() + seconds * 1000;
+  for (;;) {
+    checkStop();
+    const screen = await currentScreen();
+    if (screen === null) return null;
+    if (screen === target) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(intervalMs);
   }
 }
 
@@ -236,18 +277,25 @@ async function waitForStillScreen(seconds: number) {
   }
   return false;
 }
-/** Logo, loading screen and promo splash took about 45 s after the window appeared (live 2026-09-28). */
+/**
+ * Logo, loading screen and promo splash took about 45 s after the window appeared (live
+ * 2026-09-28). Only for a host that cannot tell the screens apart (currentScreen null).
+ */
 const STARTUP_SECONDS = 45;
+/** Longest wait for the main menu from launch before Load Game is clicked anyway. */
+const MENU_SECONDS = 180;
 
-/** Load a save by typing its name into the Load Game search box (main menu layout, live 2026-09-28). */
-async function loadSave(save: string, map?: string, launchedAt = Date.now()) {
-  const loaded = async () => {
-    const state = await api<State>("state");
-    const o = state.stats?.observation;
-    return state.stats?.status === "ok" && o && (!map || o.map_name === map) ? o : undefined;
-  };
-  await sleep(Math.max(0, launchedAt + STARTUP_SECONDS * 1000 - Date.now()));
-  for (let attempt = 1; attempt <= 3; attempt++) {
+/**
+ * Open the Load Game dialog from the main menu. The main menu and the dialog are recognised from
+ * their colours as soon as they show; a host without the screen probe waits as before: the
+ * startup sequence, then until three captures 3 s apart are identical (the animated menu and
+ * dialog never were, so both waits ran to their 90 s and 15 s timeouts).
+ */
+async function openLoadDialog(attempt: number, launchedAt: number) {
+  const since = () => `${Math.round((Date.now() - launchedAt) / 1000)} s after launch`;
+  const menu = await waitForScreen("main_menu", Math.max(20, (launchedAt + MENU_SECONDS * 1000 - Date.now()) / 1000));
+  if (menu === null) {
+    if (attempt === 1) await sleep(Math.max(0, launchedAt + STARTUP_SECONDS * 1000 - Date.now()));
     await waitForStillScreen(90);
     await debugShot(`${attempt}-menu`);
     // The menu can look ready before it accepts input: click Load Game until the screen changes.
@@ -260,17 +308,46 @@ async function loadSave(save: string, map?: string, launchedAt = Date.now()) {
     await debugShot(`${attempt}-after-load-click`);
     // The dialog fades in and fills its list; Backspace outside the search box would close it.
     await waitForStillScreen(15);
-    await clickScaled(1178, 976); // Search box
-    await sleep(400);
-    for (const key of keysFor(save)) await act({ type: "key", key: key as never });
-    await sleep(1000);
-    await debugShot(`${attempt}-typed`);
-    await clickScaled(900, 261); // First matching row
-    await sleep(800);
-    await clickScaled(408, 877); // Load Game button
+    return;
+  }
+  log(menu ? `Main menu ${since()}` : `No main menu recognised ${since()}; clicking Load Game anyway`);
+  await debugShot(`${attempt}-menu`);
+  // The menu can show before it accepts input: click Load Game until the dialog shows.
+  let dialog = false;
+  for (let click = 0; click < 5 && !dialog; click++) {
+    await clickScaled(670, 1018); // Main menu: Load Game
+    dialog = (await waitForScreen("load_dialog", 3, 400)) === true;
+  }
+  if (!dialog) throw new Error("The Load Game dialog did not open.");
+  log(`Load Game dialog open ${since()}`);
+  await debugShot(`${attempt}-after-load-click`);
+  // Recognised once nearly opaque; a moment more for it to finish fading in and fill its list.
+  await sleep(1000);
+}
+
+/** Load a save by typing its name into the Load Game search box (main menu layout, live 2026-09-28). */
+async function loadSave(save: string, map?: string, launchedAt = Date.now()) {
+  const loaded = async () => {
+    const state = await api<State>("state");
+    const o = state.stats?.observation;
+    return state.stats?.status === "ok" && o && (!map || o.map_name === map) ? o : undefined;
+  };
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      return await waitFor("the save to load", 60, loaded);
+      await openLoadDialog(attempt, launchedAt);
+      await clickScaled(1178, 976); // Search box
+      await sleep(400);
+      // The keys need only the window's identity: one capture serves the whole name.
+      const shared: { frame?: Frame } = {};
+      for (const key of keysFor(save)) await send(() => ({ type: "key", key: key as never }), shared);
+      await sleep(1000);
+      await debugShot(`${attempt}-typed`);
+      await clickScaled(900, 261); // First matching row
+      await sleep(800);
+      await clickScaled(408, 877); // Load Game button
+      return await waitFor("the save to load", 60, loaded, true, 250);
     } catch (error) {
+      if (stopRequested) throw error;
       const shot = (await frame()).image;
       mkdirSync("harness/runtime/episodes", { recursive: true });
       const file = `harness/runtime/episodes/load-failure-${attempt}-${Date.now()}.jpg`;
@@ -372,37 +449,73 @@ async function checkDashboardFresh() {
   if (newer.length) throw new Error(`The dashboard started before these files changed; restart it (npm run dev): ${newer.join(", ")}`);
 }
 
-async function episode(
+/**
+ * Starts the game, connects the dashboard and loads and pauses the episode's save. Split from
+ * playEpisode so a series (runSeries) can run this for the next episode while the previous one's
+ * interview is still going (interview.ts; docs/benchmark.md#the-interview): neither touches the
+ * other's state (the interview only holds the finished run's conversation and the model API; this
+ * only drives the game connection), so the two may run at once. A failure leaves the game machine
+ * as episode() always did: disconnected, and closed unless --keep-game.
+ */
+async function prepareEpisode(n: number, plan: Plan) {
+  checkStop();
+  log(`Episode ${n}: starting the game`);
+  try {
+    const before = await gameSession("status");
+    if (before.running) {
+      if (!opts.restart) throw new Error("A game is already running; close it or pass --restart.");
+      await gameSession("close", 60);
+    }
+    await gameSession("launch", 180);
+    const launchedAt = Date.now();
+    await gameSession("activate");
+    await waitFor("the dashboard connection", 90, async () => {
+      try {
+        await api("connect", {});
+        return true;
+      } catch {
+        await gameSession("activate").catch(() => {});
+        return undefined;
+      }
+    });
+    log(`Loading "${plan.save}"`);
+    const loaded = await loadSave(plan.save, plan.map, launchedAt);
+    log(`Loaded ${loaded.map_name} at game tick ${loaded.game_time}; pausing`);
+    await setPaused(true);
+  } catch (error) {
+    await api("disconnect", {}).catch(() => {});
+    if (!opts["keep-game"]) await gameSession("close", 60).catch((e) => log(`Close failed: ${e.message}`));
+    throw error;
+  }
+}
+
+/**
+ * Closes a game prepareEpisode got ready for an episode the series ends up not playing (the
+ * operator stopped it, the dashboard went stale, or the last episode's save changed the benchmark
+ * save). A prepare that already failed has cleaned up after itself (prepareEpisode's own catch).
+ */
+async function abandonPrepared(ready: Promise<void>) {
+  const prepared = await ready.then(() => true, () => false);
+  if (!prepared) return;
+  await api("disconnect", {}).catch(() => {});
+  if (opts["keep-game"]) { log("Game left running (--keep-game); close it after inspection."); return; }
+  await gameSession("close", 60).catch((e) => log(`Close failed: ${e.message}`));
+  log("Game closed");
+}
+
+/**
+ * Runs the agent (or --idle/--human/--dry-run), scores and saves the episode, and closes the game.
+ * The game must already be connected, loaded and paused (prepareEpisode).
+ */
+async function playEpisode(
   n: number,
   total: number,
   plan: Plan,
   series?: RunSeries,
   playbook?: string,
 ) {
-  checkStop();
-  log(`Episode ${n}/${total}${series?.attempt && series.attempt > 1 ? ` (attempt ${series.attempt})` : ""}: starting the game`);
-  const before = await gameSession("status");
-  if (before.running) {
-    if (!opts.restart) throw new Error("A game is already running; close it or pass --restart.");
-    await gameSession("close", 60);
-  }
-  await gameSession("launch", 180);
-  const launchedAt = Date.now();
-  await gameSession("activate");
-  await waitFor("the dashboard connection", 90, async () => {
-    try {
-      await api("connect", {});
-      return true;
-    } catch {
-      await gameSession("activate").catch(() => {});
-      return undefined;
-    }
-  });
+  log(`Episode ${n}/${total}${series?.attempt && series.attempt > 1 ? ` (attempt ${series.attempt})` : ""}: playing`);
   try {
-    log(`Loading "${plan.save}"`);
-    const loaded = await loadSave(plan.save, plan.map, launchedAt);
-    log(`Loaded ${loaded.map_name} at game tick ${loaded.game_time}; pausing`);
-    await setPaused(true);
     const baseline = idleBaseline(plan.save, plan.config.gameMinutes);
     let run: Run | undefined;
     let lastGood: State | undefined;
@@ -509,6 +622,12 @@ async function episode(
       log("Game closed");
     }
   }
+}
+
+/** One episode start to finish: prepareEpisode then playEpisode. runSeries overlaps these across episodes itself (below); --idle, --human and --dry-run (runPlain) have no interview to overlap with, so they use this as before. */
+async function episode(n: number, total: number, plan: Plan, series?: RunSeries, playbook?: string) {
+  await prepareEpisode(n, plan);
+  return playEpisode(n, total, plan, series, playbook);
 }
 
 /**
@@ -625,7 +744,9 @@ const INTERVIEW_MINUTES = 30;
 /**
  * The interview after an episode that counts (interview.ts): the host asks the agent about its
  * game in the conversation it played in, now that the episode is scored and the game saved and
- * closed. Its outcome is logged and never changes the episode's result.
+ * closed. Its outcome is logged and never changes the episode's result; this never throws, so
+ * runSeries can run it alongside the next episode's prepareEpisode without a failed interview
+ * failing the series.
  */
 async function interview(runId: string, series: RunSeries) {
   try {
@@ -759,16 +880,30 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
   };
   // An infrastructure failure is run again once at once; a second one pauses the series.
   let retried = false;
-  // Saving the finished game changed the benchmark save: stop before another episode loads it.
-  let benchmarkSaveChanged: string | undefined;
+  // The previous counted episode's interview (interview.ts), left running (never awaited) below
+  // so the next episode's game can load alongside it; joined before the next agent run, a pause
+  // or the series' end. interview() never throws, so a failed interview cannot fail the series.
+  let pendingInterview: Promise<void> | undefined;
+  const waitInterview = async () => {
+    if (!pendingInterview) return;
+    await pendingInterview;
+    pendingInterview = undefined;
+  };
+  // The next episode's game, started early (below) while the previous one's interview runs; only
+  // used when it is still for the episode about to be played, and closed unplayed otherwise.
+  let prepared: { n: number; ready: Promise<void> } | undefined;
   for (let n = nextEpisode(record); n !== null; n = nextEpisode(record)) {
     try {
       await checkDashboardFresh();
     } catch (error) {
+      if (prepared?.n === n) { await abandonPrepared(prepared.ready); prepared = undefined; }
+      await waitInterview();
       pause(`before episode ${n}: ${error instanceof Error ? error.message : String(error)}`);
       break;
     }
     if (stopRequested) {
+      if (prepared?.n === n) { await abandonPrepared(prepared.ready); prepared = undefined; }
+      await waitInterview();
       pause(`stopped by the operator before episode ${n}`);
       break;
     }
@@ -776,9 +911,15 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     const playbook = settings.learning ? playbookAfter(n - 1) : undefined;
     const series = settings.learning ? { id: record.id, episode: n, episodes: record.episodes, attempt } : undefined;
     let result: Attempt;
+    let gameSave: GameSave | undefined;
     try {
-      const { card, run, gameSave } = await episode(n, record.episodes, plan, series, playbook);
-      benchmarkSaveChanged = gameSave?.benchmarkSaveChanged ? gameSave.error : undefined;
+      const ready = prepared?.n === n ? prepared.ready : prepareEpisode(n, plan);
+      prepared = undefined;
+      // The previous episode's interview, if any, must be done before this one's agent run
+      // starts (the dashboard refuses /api/agent/run while it is: index.ts).
+      await Promise.all([ready, waitInterview()]);
+      const { card, run, gameSave: saved } = await playEpisode(n, record.episodes, plan, series, playbook);
+      gameSave = saved;
       console.log(JSON.stringify(card));
       result = {
         episode: n, attempt, ...classify({ run, valid: card.valid, invalid: card.invalid, stopRequested }),
@@ -791,20 +932,33 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
         writeFileSync(path.join(seriesDir(record.id), `playbook-after-episode-${n}.md`), file && existsSync(file) ? readFileSync(file, "utf8") : playbook ?? "");
       }
     } catch (error) {
+      prepared = undefined;
       const message = error instanceof Error ? error.message : String(error);
       result = { episode: n, attempt, ...classify({ error: message, stopRequested }), error: message };
     }
     record.results.push(result);
     writeSeries(record);
     log(`Episode ${n}, attempt ${attempt}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
-    if (counts(result) && result.run && !opts["no-interview"])
-      await interview(result.run, { id: record.id, episode: n, episodes: record.episodes, ...(attempt > 1 ? { attempt } : {}) });
-    if (benchmarkSaveChanged) {
-      pause(`after episode ${n}: ${benchmarkSaveChanged}; check the benchmark save before continuing`);
+    // Left running: see pendingInterview above.
+    if (counts(result) && result.run && !opts["no-interview"]) {
+      pendingInterview = interview(result.run, { id: record.id, episode: n, episodes: record.episodes, ...(attempt > 1 ? { attempt } : {}) });
+      pendingInterview.catch(() => {});
+    }
+    if (gameSave?.benchmarkSaveChanged) {
+      await waitInterview();
+      pause(`after episode ${n}: ${gameSave.error}; check the benchmark save before continuing`);
       break;
     }
     if (counts(result)) {
       retried = false;
+      // Start the next episode's game now, while its predecessor's interview (just kicked off
+      // above) is still going; the loop's top joins or abandons it next time around.
+      const next = nextEpisode(record);
+      if (next !== null) {
+        const ready = prepareEpisode(next, plan);
+        ready.catch(() => {});
+        prepared = { n: next, ready };
+      }
       continue;
     }
     if (result.outcome === "infrastructure" && !retried) {
@@ -812,9 +966,12 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
       log(`Running episode ${n} again from the same playbook.`);
       continue;
     }
+    await waitInterview();
     pause(result.outcome === "stopped" ? `episode ${n}: ${result.reason}` : `episode ${n} failed twice (${result.reason ?? result.outcome})`);
     break;
   }
+  await waitInterview();
+  if (prepared) await abandonPrepared(prepared.ready);
   if (nextEpisode(record) === null) {
     record.status = "completed";
     writeSeries(record);
@@ -863,6 +1020,7 @@ async function main() {
       wallLimitMinutes: Number(setting("wall-limit-minutes")),
       defaultWaitSeconds: Number(setting("default-wait")),
       minTurnSeconds: Number(setting("min-turn-seconds")),
+      fallbackObservation: setting("fallback-observation"),
       contextBudget: Number(setting("context-budget")),
       imageTokenEstimate: 4096,
       recordVideo: opts.record ?? false,

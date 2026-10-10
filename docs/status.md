@@ -144,6 +144,11 @@ between September and October 2026.
   counted episode 1 by its second attempt. Every run recorded its version, attempt and a clean
   commit, and the runner's check of the game machine's files caught an out-of-date one
   before the run.
+- The automatic re-run after an infrastructure failure, in two series on 2026-10-09
+  (20261009T122236-3aae6fc4 and 20261009T164620-3dd2f4e8): one series' episode 3 failed
+  on attempt 1 and was valid on attempt 2; the other's episode 2 failed on attempts 1
+  to 4 and was valid on attempt 5. Each time the runner started the next attempt from
+  the same playbook on its own, without pausing the series.
 - Claude through Anthropic's own API, in a learning series of two 3-game-minute Claude
   Haiku 5.5 episodes at medium effort on 2026-10-09 with a 75,000-token context budget:
   both episodes ran their full budget; all 27 buildings it tried to place were placed
@@ -161,6 +166,18 @@ between September and October 2026.
 
 ## Tested in code only
 
+- Compacting a run's raw recording frames into `recording/frames.mp4`
+  (`tools/video/compact-recording.py`) and rendering from it instead of the JPEGs: with
+  synthetic recordings (`tools/video/test_compact_recording.py`), encoding, `ffprobe`
+  verification, a verification failure keeping the JPEGs, and a render from the
+  compacted video matching the JPEG render (mean pixel difference under 6 of 255 on
+  sampled frames, the extra JPEG → H.264 round trip's own loss). An interrupted render
+  (`SIGTERM` or `KeyboardInterrupt`) leaving no partial file is tested the same way,
+  and confirmed once with a real `SIGTERM` to a running `render-video.py` process. The
+  10–25× size and SSIM ≥ 0.987 in [Run videos](harness.md#run-videos) are from earlier
+  offline encoding experiments, not reproduced by this test suite. Neither the
+  compaction nor the decode-from-video path has run against a real recorded run or a
+  live episode.
 - The fixed game speed in an agent run: the host setting it before the budget starts,
   and failing when the keys do nothing or step past 40. The same setting worked live
   for the idle baseline (above); an agent run has not used it yet.
@@ -169,7 +186,10 @@ between September and October 2026.
 - Context compaction across many turns, stop and deadline handling, and failure
   paths, with fake models and game devices (`npm test`). This includes the retries
   added before the first 25-game-minute run: failed handoff and playbook requests,
-  cut-off replies with tool calls, and unconfirmed pause toggles.
+  cut-off replies with tool calls, and unconfirmed pause toggles. The headroom check's
+  switch to the same anchored estimate as the 65% trigger, against a fake model that
+  reports a small usage figure over a long conversation, is tested the same way; it
+  has not yet been seen to change when a real run compacts.
 - Saving the finished game (see [Running episodes](benchmark.md#running-episodes)), live
   on Oasis by the Sea (2026-10-09) through the same routine the runner calls: Game
   Options → Save, the name typed over the loaded save's, the file copied off the game
@@ -194,6 +214,63 @@ between September and October 2026.
 - Tool changes made before the first 25-game-minute run, not yet used live: woodcutter
   spots ranked by nearby trees, placement checks waiting for a valid reader sample, and
   `cost` in placement results.
+- `build_structure`'s per-placement checks, with fake game devices (`npm test`), not
+  yet used live: a target outside the screenshot or over the bottom HUD reports
+  `invalid_target` on its own (nothing sent, the rest of the batch still runs) instead
+  of stopping the whole call; affordability is checked from the reader before each
+  placement's first click, re-read so an earlier placement in the same batch is
+  accounted for; and a quarry, iron mine or pitch rig refused for its ground is
+  retried nearby on matching ground the same way a farm is retried on oasis.
+- `set_tax`'s popularity factor read live from the reader (`popularity_factors.tax`,
+  the same points conversion as `set_rations`) instead of the static table, with a
+  fake keep panel (`economy.test.ts`). The live run recorded above (benchmark 1.2.0)
+  predates this change and shows the static table's values.
+- The per-tool-call frame cache for input-only clicks and hotkeys (`anchors.ts`'s
+  `frame()`, reused for up to `FRAME_REUSE_MS` after a capture) and `build_structure`
+  remembering the construction tray's open category across calls (falling back to the
+  full category click when the reader does not confirm it), with fake game devices
+  (`anchors.test.ts`, `device-lifecycle.test.ts`, `model-observation.test.ts`). Neither
+  the 20-second reuse window nor the category memory's savings have been measured
+  live.
+- Targeting `build_structure` placements by map tile (`tile_x`/`tile_y`) instead of a
+  screenshot pixel, and `find_sites` running without an observation at all (both read
+  the live camera, waiting out an unavailable sample): a tile placement on screen, one
+  off screen reported `not_on_screen` without sending input, one projected again when
+  the view moves during selection, a batch mixing pixel and tile targets (only the pixel
+  target's clicks keep the screenshot age limit), a blocked tile target retried at a
+  nearby tile the map shows free (also after the camera moved since the last
+  screenshot, and stopped when the live camera moves) or by fixed offsets reporting the
+  tile it went to, `find_sites` giving pixels and using `near_x`/`near_y` only while a
+  screenshot shows the live view, its map reused by the next placement's retry, and a
+  shape error (neither or both coordinate pairs given) reported `invalid_target`; all
+  with fake game devices (`model-observation.test.ts`). Not yet used live.
+- `wait_and_observe`'s `screenshot: false` (waits the same, no capture, the old
+  screenshot still targets clicks) and the `fallbackObservation` setting (text after a
+  turn with only text-only actions under `when-needed`; a screenshot after a
+  `game_action` click or key, after a reply with no tool calls, or under `always`; the
+  reading-only top-up; the briefing for each value; the default recorded in
+  `run.json`), with fake game devices (`model-observation.test.ts`,
+  `controller.test.ts`, `protocol.test.ts`). Not yet run live; how models use the
+  text-only observation is unmeasured.
+- Screenshots kept in the conversation until compaction (a batch prune only past 16),
+  so every request repeats the previous one unchanged: checked across a fake run whose
+  every turn brings a screenshot (`controller.test.ts`) and for the cap
+  (`context.test.ts`); Claude's cache marks on where the previous request ended and the
+  newest message (`model-config.test.ts`). The cost effect is not yet measured live;
+  the 1.3.0 partial run of 2026-10-11 (only the two newest screenshots kept) showed the
+  cache misses this removes.
+- A `remedy` on every failed or partial tool result and fix-it wording in thrown errors
+  (`remedies.test.ts`, `economy.test.ts`, `model-observation.test.ts`). Whether models
+  follow them is not yet seen live.
+- Recognising the main menu and the Load Game dialog from pixel colours during save
+  loading: the classifier against colours measured on captures of 2026-09-28
+  (`menu-screen.test.ts`) and the sampler with synthetic images (`tools/runner`). Not
+  yet used in a live launch; the seconds it saves, and whether the dialog is ready to
+  type into a second after it is recognised, need one.
+- The construction guide sent as `construction-trays.jpg` when installed, else the
+  PNG: file choice tested with temporary files (`visual-atlas.test.ts`). The JPEG at
+  quality 90 was checked by eye on 2026-10-10 (labels readable); no run has used it
+  yet.
 - Good and bad things' footprints are from static analysis of the game files, the same
   method as the other buildings'; the town garden's refused spots (above) may mean its
   footprint is larger than recorded.
@@ -204,11 +281,24 @@ between September and October 2026.
   were written afterwards from their recorded readings.
 - The interview's refusal of tool calls, its retries and the 30-minute stop, with fake
   models (`npm test`): the live trial's model called no tool. The interview files in
-  published bundles are tested in code only.
+  published bundles are tested in code only. The four questions asked as one combined
+  request under titled headings, and the reply split back into four answers by them
+  (or kept as one answer when the headings do not line up), is tested the same way;
+  the live trial predates this and asked one question per request.
 - Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that
   enforces it. Resumable series: the episode outcomes, which attempts count, where a
-  series resumes and the settings a resume must match. The automatic re-run after an
-  infrastructure failure has not happened live yet.
+  series resumes and the settings a resume must match (the automatic re-run after an
+  infrastructure failure is confirmed live; see Runs above).
+- A learning series starting the next episode's game (launch, connect, load, pause)
+  while the previous episode's interview is still going, instead of waiting for it
+  first (`episodes.ts`'s `prepareEpisode`/`abandonPrepared`). `episodes.ts` drives a
+  live dashboard and game machine through `fetch` and `ssh` and has no unit tests, so
+  this is checked by reading the code, not run live or under `npm test`.
+- Dropping a tool call's image from the two extra copies `events.jsonl` would
+  otherwise keep (`omitDuplicateToolImages`, `context.test.ts`) and skipping image
+  data in key redaction (`store.test.ts`, mirroring `tools/dataset/scrub.py`'s own
+  rule): the wiring that applies the first to a live run's event stream (`index.ts`)
+  has no test of its own.
 - Pricing requests on endpoints other than OpenRouter with the profile's prices
   (see [Context](context.md#tokens-and-caching)): against fake Anthropic and
   OpenAI-format streams, including Claude Haiku 5.5's higher prices for prompts over
@@ -216,7 +306,10 @@ between September and October 2026.
   run.
 - Removing duplicate messages that appear in several channels at once.
 - Prompt caching marks for Claude through OpenRouter: checked against the request
-  body the model library builds, not yet against a live provider.
+  body the model library builds, not yet against a live provider. The session-affinity
+  header sent with every OpenRouter request, and the upstream provider name
+  (`upstream`, e.g. "DeepInfra") read from a cost chunk when OpenRouter reports one,
+  are checked against fake responses only (`model-config.test.ts`).
 - Host shutdown ending a run with the final pause, and the host staying ready when a
   run cannot be set up.
 - Publishing runs ([Publishing](publishing.md)): packaging, scrubbing, the tables and the

@@ -48,6 +48,9 @@ const resourceGround: Record<string, { bit: number; min: number; reason: string 
   "Iron Mine": { bit: ORE, min: 4, reason: "no_ore" },
   "Pitch Rig": { bit: OIL, min: 1, reason: "no_oil" },
 };
+/** Buildings refused off their resource ground (e.g. "Iron mine must be built on Iron ore."),
+ * retried nearby on matching ground the same way a farm is retried on oasis. */
+export const resourceGroundNames = new Set(Object.keys(resourceGround));
 
 /**
  * Engine building types, as the tile probe reports them per instance (structure_types; the open

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adjacentRays, cameraShift, sideOrder, tilePixel } from "./anchors.js";
+import { adjacentRays, cameraShift, FRAME_REUSE_MS, frameCache, sideOrder, tilePixel } from "./anchors.js";
 import { describeBuilding, statusReport, storageOf } from "./status.js";
+import type { Frame } from "../shared/protocol.js";
 
 const frame = { width: 1920, height: 1080 };
 const span = { tiles_wide: 30, tiles_high: 68 };
@@ -27,6 +28,31 @@ test("adjacent probe lines march outward per side and lateral shift, stopping at
   const low = adjacentRays({ width: 1920, height: 1080 }, { tiles_wide: 30, tiles_high: 14 });
   assert.ok(low.every((r) => r.points.every((p) => p.y < 1080 * 0.82)));
   assert.deepEqual(sideOrder("up-left"), ["up-left", "down-right", "down-left", "up-right"]);
+});
+
+test("frameCache reuses a capture while it is comfortably younger than the action age limit, else captures fresh", async () => {
+  let captures = 0;
+  let clock = 0;
+  const capture = async (): Promise<Frame> => {
+    captures++;
+    return { id: `f${captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: clock } as Frame;
+  };
+  const frame = frameCache(capture, () => clock);
+  const a = await frame();
+  assert.equal(captures, 1);
+  clock += FRAME_REUSE_MS - 1000;
+  const b = await frame();
+  assert.equal(captures, 1, "reused within the window");
+  assert.equal(b, a);
+  clock += 2000; // past FRAME_REUSE_MS since the first capture
+  const c = await frame();
+  assert.equal(captures, 2, "captured fresh once past the reuse window");
+  assert.notEqual(c, a);
+  // A fresh frameCache() per call starts with nothing cached, however recent the clock.
+  const other = frameCache(capture, () => clock);
+  const d = await other();
+  assert.equal(captures, 3, "a new cache never reuses another call's frame");
+  assert.notEqual(d, c);
 });
 
 test("camera shift is measured in centre tiles and requires the same span and zoom", () => {

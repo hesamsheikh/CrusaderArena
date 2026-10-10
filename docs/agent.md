@@ -3,7 +3,8 @@
 [← Documentation](README.md)
 
 The agent is a language model with image input and tool calling, plus the system
-prompt and the 27 tools the harness gives it. It runs on the
+prompt and the 25 tools the harness gives it (28 in a learning series's episodes).
+It runs on the
 [Pi](https://github.com/earendil-works/pi) agent runtime inside the host server
 (`harness/server/model.ts`). This page explains how it plays. [Context](context.md)
 covers exactly what it is sent, and the [tool reference](tools.md) lists every tool.
@@ -24,22 +25,31 @@ A turn is one model reply plus the tool calls in it.
    act after.
 4. **The host makes sure the model sees the result.** If the turn acted without
    observing afterwards, or called no tools at all, the host lets the default wait
-   pass (5 game seconds) and sends a fresh screenshot. A turn that ends with a fresh
-   observation, or only read, goes straight to the next request (but see the limit on
-   reading-only turns below).
+   pass (5 game seconds) and sends an observation. A reply that called no tools always
+   gets a screenshot. Otherwise the run setting `fallbackObservation` decides: with
+   `"when-needed"` (the default) it is a screenshot only if the turn sent input that
+   works from the screenshot (any `game_action`, `inspect_building`, or a
+   `build_structure` placement given by `x`/`y`; a placement given by tile does not
+   count), and otherwise the same stats, game events and `run_clock` as text, with no
+   image (see [Text-only observations](context.md#text-only-observations)); with
+   `"always"` it is a screenshot every time, as in every run before 1.3.0. A turn that
+   ends with a fresh observation, or only read, goes straight to the next request (but
+   see the limit on reading-only turns below).
 5. **A turn that runs the game lasts a minimum time**, the minimum turn length (8 game
    seconds by default, about 6 real seconds at the fixed speed), counted from the start
-   of the request. `observe` and `wait_and_observe` wait until the turn has run that
-   long before they capture, so a screenshot the model asks for always shows the game
-   at least that far into the turn, and the result says how long the host waited. A
-   turn that ran the game for less without looking at the end is topped up: the host
-   lets the rest pass and sends a fresh screenshot; a turn that acted without looking
-   waits for the longer of this and the default wait. This caps the number of model
-   requests per game minute, and so the cost of a run: at 8 seconds, a 25-game-minute
-   run has at most 187 turns that run the game. Turns that only read stay free, but only
-   for a while: from the 12th reading-only turn in a row, the host lets the longer of the
-   default wait and the minimum turn pass after each one and sends a screenshot, so they
-   fall under the same cap. The briefing tells the model so.
+   of the request. `observe` and `wait_and_observe` (also with `screenshot: false`)
+   wait until the turn has run that long before they look, so an observation the model
+   asks for always shows the game at least that far into the turn, and the result says
+   how long the host waited. A turn that ran the game for less is topped up: the host
+   lets the rest pass and sends an observation, chosen as in step 4; a turn that acted
+   without looking waits for the longer of this and the default wait. This caps the
+   number of model requests per game minute, and so the cost of a run: at 8 seconds, a
+   25-game-minute run has at most 187 turns that run the game. Turns that only read
+   stay free, but only for a while: from the 12th reading-only turn in a row, the host
+   lets the longer of the default wait and the minimum turn pass after each one and
+   sends an observation (text under `"when-needed"`, since a reading-only turn sends no
+   input; a screenshot under `"always"`), so they fall under the same cap. The briefing
+   tells the model so.
 6. **Every request shows the time left.** Screenshots carry `run_clock`; when a reply's
    last tool result has no screenshot, the host adds a line such as "Game time left:
    23 min 41 s of 25 min."
@@ -70,9 +80,9 @@ See [Context](context.md) for the full layout and how old images are dropped.
 | Build | `build_structure`, `place_near`, `expand_storage`, `find_sites` | Placing buildings and finding space for them |
 | Move the camera | `center_on`, `map_overview`, `go_to_tile`, `save_view`, `go_to_view`, `navigate_minimap` | Finding places on the map |
 | Run the economy | `status`, `get_inventory`, `inspect_building`, `set_tax`, `set_rations`, `market_trade` | Reading the settlement, taxes, rations and trade |
-| Look things up | `building_info`, `list_buildings`, `guide_page` | Building costs, roles and menu positions from the game reference |
+| Look things up | `building_info` | Building costs, roles and menu positions from the game reference |
 | Raw input | `game_action` | Any single click, drag, scroll or key |
-| Memory | `update_plan`, `notebook_read`, `notebook_write`, `notebook_edit`, `notification_history`; in a learning series also `playbook_read`, `playbook_write`, `playbook_edit` | Plans, notes, past game messages and lessons for later episodes |
+| Memory | `update_plan`, `notebook_read`, `notebook_write`, `notification_history`; in a learning series also `playbook_read`, `playbook_write`, `playbook_edit` | Plans, notes, past game messages and lessons for later episodes |
 
 The higher-level tools exist because raw clicking is slow and error-prone for a model.
 For example, `build_structure` opens the right menu, selects the building, clicks the
@@ -88,9 +98,13 @@ nearby spots if it was silently blocked.
   changed size.
 - **Fresh images only.** Input based on a screenshot more than 30 seconds old is
   refused. Time the game spent paused by the host does not count, so slow thinking
-  does not expire a screenshot.
-- **Camera guards.** Placement and inspection tools stop if the camera moved since the
-  screenshot they target.
+  does not expire a screenshot. Two exceptions need no screenshot at all: `find_sites`,
+  and a `build_structure` placement given by map tile instead of pixels, which read the
+  live camera themselves right before acting (see [Tools](tools.md#build)).
+- **Camera guards.** Placement and inspection tools targeted by pixel stop if the
+  camera moved since the screenshot they target. A tile-targeted placement has no such
+  screenshot to drift from; it is refused instead (`not_on_screen`, no input sent) only
+  if the tile it names is not clickable on the live view right now.
 - **Single-player only.** See [the harness](harness.md#safety-boundaries).
 
 Benchmark rules such as "no soldiers or defences" are instructions in the prompt, not
@@ -104,8 +118,8 @@ agent has memory it controls:
 
 - **Plan** (`update_plan`): a checklist of up to 20 steps, each pending, in progress
   or completed. Each call replaces the whole plan.
-- **Notebook** (`notebook_read`, `notebook_write`, `notebook_edit`): free text up to
-  8 KB. Writes must quote the current revision number, so the agent cannot overwrite
+- **Notebook** (`notebook_read`, `notebook_write`): free text up to 8 KB, replaced
+  whole. Writes must quote the current revision number, so the agent cannot overwrite
   notes it has not read.
 - **Notification history** (`notification_history`): every message the reader saw on
   screen during the run, up to 50 per call.

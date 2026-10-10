@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionSchema, modelToolAction, validateFrameAction, type Frame } from "./protocol.js";
+import { actionSchema, modelToolAction, runConfigSchema, validateFrameAction, type Frame } from "./protocol.js";
 const frame: Frame = {
   id: "test",
   image: "",
@@ -86,4 +86,10 @@ test("accepts speed controls without exposing modifier shortcuts", () => {
   for (const key of ["+", "-"])
     assert.equal(actionSchema.safeParse({ type: "key", key }).success, true);
   assert.equal(actionSchema.safeParse({ type: "key", key: "Shift+=" }).success, false);
+});
+
+test("fallbackObservation defaults to when-needed, accepts always, and rejects anything else", () => {
+  assert.equal(runConfigSchema.parse({}).fallbackObservation, "when-needed");
+  assert.equal(runConfigSchema.parse({ fallbackObservation: "always" }).fallbackObservation, "always");
+  assert.equal(runConfigSchema.safeParse({ fallbackObservation: "sometimes" }).success, false);
 });

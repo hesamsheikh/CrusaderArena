@@ -112,6 +112,16 @@ export class GameDevice {
   private tail: Promise<unknown> = Promise.resolve();
   private epoch = 0;
   latest: Frame | null = null;
+  private inputCount = 0;
+  /**
+   * Bumped on every game input sent (click, drag, key or hotkey), whatever tool sent it. model.ts
+   * compares this against a value it saved earlier to tell whether anything has touched the game
+   * since: a build_structure call's remembered open construction-tray category is only good while
+   * this has not moved.
+   */
+  get inputSerial() {
+    return this.inputCount;
+  }
   /** Last lines of the reader's diagnostics when its stream closed. */
   readerDiagnostics = "";
   private readerRestarts = 0;
@@ -330,6 +340,7 @@ export class GameDevice {
     return () => void this.inputListeners.delete(listener);
   }
   private announce(input: GameInput) {
+    this.inputCount++;
     for (const listener of this.inputListeners) listener(input);
   }
   /** Receive every memory-guard record (samples every 5 s, memory maps, termination). */
@@ -436,7 +447,7 @@ export class GameDevice {
     return this.serial(async () => {
       guard?.();
       const frame = this.frames.get(frameId);
-      if (!frame) throw new Error("Unknown or expired game image.");
+      if (!frame) throw new Error("Unknown or expired game image: call observe for a fresh screenshot.");
       validateFrameAction(action, frame, Date.now() - ageCreditMs);
       this.announce({ ...action, width: frame.width, height: frame.height });
       return this.rpc("action", {
@@ -465,6 +476,22 @@ export class GameDevice {
       }) as Promise<{ at?: number }>;
     });
   }
+  /**
+   * Send one of the host's own control keys (pause, speed) the same way as hotkey(): the latest
+   * captured frame's window identity, no fresh capture. These carry no coordinates either, so an
+   * old frame serves as well as a new one; the caller captures once first if there is none yet.
+   */
+  async pressKey(key: HostKey, guard?: () => void) {
+    return this.serial(async () => {
+      guard?.();
+      const frame = this.latest;
+      if (!frame) throw new Error("Capture the game before sending a key.");
+      this.announce({ type: "key", key, width: frame.width, height: frame.height });
+      return this.rpc("action", {
+        action: { type: "key", key, windowId: frame.windowId, width: frame.width, height: frame.height },
+      }) as Promise<{ at?: number } | undefined>;
+    });
+  }
 }
 
 /** Game actions the bridge accepts as hotkeys (tools/ubuntu/game-window.py HOTKEY_NAMES). */
@@ -474,3 +501,6 @@ export type GameHotkey =
   | "FlattenLandscape"
   | `SetBookmark${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`
   | `GotoBookmark${0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
+
+/** The host's own control keys, sent with pressKey() (pause and the game's speed keys). */
+export type HostKey = "P" | "+" | "-";

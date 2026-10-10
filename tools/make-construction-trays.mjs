@@ -7,7 +7,7 @@ import { atlasPages } from "../harness/server/visual-atlas.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = path.join(root, ".internal/ui-reference/legends");
-const output = path.join(root, ".internal/ui-reference/construction-trays.png");
+const output = path.join(root, ".internal/ui-reference/construction-trays.jpg");
 const directory = mkdtempSync(path.join(tmpdir(), "construction-trays-"));
 try {
   const manifest = path.join(directory, "pages.json");

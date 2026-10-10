@@ -527,6 +527,12 @@ export function RunDetail({
                     <dd>{run.config.minTurnSeconds} game s</dd>
                   </div>
                 )}
+                {run.config.fallbackObservation !== undefined && (
+                  <div>
+                    <dt>Fallback observation</dt>
+                    <dd>{run.config.fallbackObservation === "always" ? "Always" : "When needed"}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Context budget</dt>
                   <dd>{integer(run.config.contextBudget)} tokens</dd>

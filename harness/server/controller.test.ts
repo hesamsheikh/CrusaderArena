@@ -15,7 +15,7 @@ import { RunController, isTransientProviderError } from "./controller.js";
 import { GameEvents } from "./game-events.js";
 import type { GameDevice } from "./device.js";
 import { Session, requestTimeout } from "./session.js";
-import { pruneImages, contextEstimate } from "./context.js";
+import { pruneImages, contextEstimate, handoffInstruction } from "./context.js";
 import { RunMemory } from "./run-memory.js";
 import { availableAtlasPages, constructionAtlasInstalled } from "./visual-atlas.js";
 import { runConfigSchema, type Frame, type GameSpeedSetting, type RunSeries } from "../shared/protocol.js";
@@ -38,6 +38,9 @@ const call = (name: string, args: object) => ({
   name,
   arguments: args,
 });
+/** Whether a message's content (a string or a content-part array) includes an image. */
+const hasImage = (content: unknown) =>
+  Array.isArray(content) && content.some((part: { type?: string }) => part.type === "image");
 const message = (content: AssistantMessage["content"]): AssistantMessage => ({
   role: "assistant",
   content,
@@ -58,6 +61,12 @@ function fixture(
   minTurnSeconds = 0,
   /** The fake game has no running clock, so speed setting is stubbed unless a test replaces it. */
   gameSpeed: (control: SpeedControl) => Promise<GameSpeedSetting> = async () => ({ target: 40, before: 40, after: 40, presses: 0 }),
+  /**
+   * "always" (not the real default, "when-needed") unless a test sets it, so the tests above that
+   * predate `fallbackObservation` keep expecting a screenshot after every turn that acted without
+   * observing; tests of that setting itself pass "when-needed" explicitly.
+   */
+  fallbackObservation: "when-needed" | "always" = "always",
 ) {
   const store = new Store(
     mkdtempSync(path.join(tmpdir(), "arena-controller-")),
@@ -76,6 +85,7 @@ function fixture(
       wallLimitMinutes: 0.5,
       defaultWaitSeconds: defaultWait,
       minTurnSeconds,
+      fallbackObservation,
       recordVideo: !!recording.spawnRecorder,
     }),
     ...(learning ? { series: learning.series } : {}),
@@ -158,6 +168,15 @@ function fixture(
       if (camera && input.type === "click" && input.button === 1) camera = { ...camera, centre_tile_x: 50, centre_tile_y: 60 };
       if (fault !== "late") statsExpiry += 2000;
     },
+    // The host's own pause/speed keys, sent without a frame id (see GameDevice.pressKey).
+    pressKey: async (key: string, guard?: () => void) => {
+      guard?.();
+      actions.push({ type: "key", key });
+      const fault = key === "P" ? pauseFaults.shift() : undefined;
+      paused = key === "P" && fault !== "drop" ? !paused : paused;
+      if (fault !== "late") statsExpiry += 2000;
+      return { at: clock };
+    },
     // A 100×100 map with the keep's 3×3 tiles around (50, 60).
     mapSummary: async () => ({
       size: 100,
@@ -194,7 +213,10 @@ function fixture(
       },
       interview: async (messages, system, tools) => {
         interviews.push({ messages: structuredClone(messages), system, tools: tools.map((t) => t.name) });
-        return message([{ type: "text", text: `Answer ${interviews.length}.` }]);
+        // The four questions are asked in one combined message (interview.ts: combinedQuestion);
+        // answer under the same headings so conductInterview's splitReply can tell them apart.
+        const titles = ["Your result", "Playing again", "The benchmark", "Anything else"];
+        return message([{ type: "text", text: titles.map((title, i) => `## ${title}\n\nAnswer ${i + 1}.`).join("\n\n") }]);
       },
       spawnRecorder: recording.spawnRecorder,
       playbook: learning?.playbook,
@@ -294,7 +316,9 @@ test("host pauses for each inference, resumes for tools and waits, and credits p
   assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
   assert.equal(f.requests.length, 2);
   assert.deepEqual(f.actions.map((a) => (a as { key?: string }).key), ["P", "P", "Z", "P"]);
-  assert.ok(f.ageCredits[2] > 0);
+  // The P presses carry no coordinates and go through pressKey (device.ts), not action(), so the
+  // only ageCredits entry is the agent's own "Z" game_action.
+  assert.ok(f.ageCredits[0] > 0);
   assert.equal(f.isPaused(), true);
 });
 test("reading tools before any action leave the game paused; the first action unpauses it", async () => {
@@ -363,6 +387,142 @@ test("from the twelfth reading-only reply in a row, each lets game time pass ins
   assert.doesNotMatch(system, /every one of your replies/);
 });
 
+/**
+ * Stands in a text-only acting tool (as set_rations is) the fake game cannot drive: it counts as
+ * an action that does not work from the screenshot, and returns text.
+ */
+function stubTextAction(f: ReturnType<typeof fixture>) {
+  const tool = f.controller.agent.state.tools.find((t) => t.name === "set_rations")!;
+  tool.execute = async () => {
+    f.controller.cycle.action();
+    return { content: [{ type: "text" as const, text: "{\"rations\":\"full\"}" }], details: {} };
+  };
+}
+
+/** Game waits that pass at once: the fake game has no running clock of its own. */
+function instantWaits(f: ReturnType<typeof fixture>) {
+  const waits: number[] = [];
+  f.controller.session.waitGame = async (seconds) => {
+    waits.push(seconds);
+    f.advanceTicks(seconds * 30);
+    f.controller.session.check();
+    return false;
+  };
+  return waits;
+}
+
+test("fallbackObservation 'when-needed' sends text, not a screenshot, after a turn that acted without looking", async () => {
+  const f = fixture(2, 5, 10, {}, undefined, 0, undefined, "when-needed");
+  const waits = instantWaits(f);
+  stubTextAction(f);
+  f.provider((n) =>
+    n === 1
+      ? [call("set_rations", { rations: "full" })] // acts without working from the screenshot
+      : [{ type: "text", text: "Done." }],
+  );
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const pushed = f.requests[1].messages.at(-1)!;
+  assert.ok(!hasImage(pushed.content), "no screenshot");
+  assert.match(JSON.stringify(pushed.content), /You acted without requesting a screenshot, so the host let 5 game seconds pass/);
+  assert.match(JSON.stringify(pushed.content), /No screenshot taken; call observe or wait_and_observe/);
+  assert.match(JSON.stringify(pushed.content), /run_clock/);
+  assert.deepEqual(waits, [0, 5], "the first screenshot, then the default wait");
+  const events = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8")
+    .split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
+  assert.ok(
+    events.some((e) => e.type === "host_observation" && e.screenshot === false),
+    "a text-only host_observation event was logged",
+  );
+});
+
+test("fallbackObservation 'when-needed' still screenshots a turn that used game_action, a click or a key", async () => {
+  for (const action of [{ type: "click", x: 50, y: 50 }, { type: "key", key: "Z" }]) {
+    const f = fixture(2, 5, 10, {}, undefined, 0, undefined, "when-needed");
+    instantWaits(f);
+    f.provider((n) => (n === 1 ? [call("game_action", action)] : [{ type: "text", text: "Done." }]));
+    assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+    const pushed = f.requests[1].messages.at(-1)!;
+    assert.ok(hasImage(pushed.content), `${action.type}: input that works from the screenshot gets a new one`);
+  }
+});
+
+test("fallbackObservation 'when-needed' still screenshots a reply with no tool calls at all", async () => {
+  const f = fixture(2, 5, 10, {}, undefined, 0, undefined, "when-needed");
+  instantWaits(f);
+  f.provider(() => [{ type: "text", text: "Thinking." }]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const pushed = f.requests[1].messages.at(-1)!;
+  assert.ok(hasImage(pushed.content));
+  assert.match(JSON.stringify(pushed.content), /called no tools.*Fresh screenshot/);
+});
+
+test("fallbackObservation 'when-needed' sends the reading-only top-up as text only", async () => {
+  const f = fixture(15, 5, 10, {}, undefined, 8, undefined, "when-needed");
+  instantWaits(f);
+  f.provider(() => [call("status", {})], true);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const pushed = f.requests[12].messages.at(-1)!;
+  assert.ok(!hasImage(pushed.content));
+  assert.match(JSON.stringify(pushed.content), /only read, which keeps the game paused/);
+  assert.match(JSON.stringify(pushed.content), /No screenshot taken/);
+});
+
+test("fallbackObservation 'always' keeps sending a screenshot after a text-only action", async () => {
+  const f = fixture(2, 5, 10, {}, undefined, 0, undefined, "always");
+  instantWaits(f);
+  stubTextAction(f);
+  f.provider((n) =>
+    n === 1
+      ? [call("set_rations", { rations: "full" })]
+      : [{ type: "text", text: "Done." }],
+  );
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const pushed = f.requests[1].messages.at(-1)!;
+  assert.ok(hasImage(pushed.content));
+});
+
+test("the briefing and controls describe the fallback-observation setting in force", () => {
+  const whenNeeded = runSystemPrompt(fixture(1, 5, 10, {}, undefined, 0, undefined, "when-needed").run);
+  assert.match(whenNeeded, /sends\s+an observation: a screenshot if your reply used `game_action`, `inspect_building` or a\s+`build_structure` placement given by `x`\/`y`, otherwise the same stats, game events and\s+`run_clock` as text, with no image/);
+  assert.match(whenNeeded, /each such reply\s+and sends that text observation/);
+  assert.match(whenNeeded, /That observation is a screenshot if the reply used `game_action`/);
+  assert.doesNotMatch(whenNeeded, /always a screenshot/);
+  const always = runSystemPrompt(fixture(1, 5, 10, {}, undefined, 0, undefined, "always").run);
+  assert.match(always, /the host lets the same wait pass and then sends a screenshot\./);
+  assert.doesNotMatch(always, /if your reply used|sends that text observation/);
+  assert.match(always, /That observation is always a screenshot/);
+  // The controls file's own maintainer notes never reach the model, under either setting.
+  for (const system of [whenNeeded, always]) assert.doesNotMatch(system, /<!--|-->|promptText/);
+});
+
+test("every request repeats the previous one exactly, so the provider's prompt cache always covers it", async () => {
+  // Screenshots arrive every turn (a click gets one back), which used to replace older ones.
+  const f = fixture(9, 5, 10, {}, undefined, 0, undefined, "when-needed");
+  instantWaits(f);
+  f.provider((n) =>
+    n < 9
+      ? [call("game_action", { type: "click", x: 50 + n, y: 50 }), ...(n % 3 === 0 ? [call("observe", {})] : [])]
+      : [{ type: "text", text: "Done." }],
+  );
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.equal(f.requests.length, 9);
+  const images = (r: (typeof f.requests)[number]) => JSON.stringify(r.messages).split('"type":"image"').length - 1;
+  assert.ok(images(f.requests.at(-1)!) >= 8, "the screenshots stay in the conversation");
+  for (let i = 1; i < f.requests.length; i++) {
+    const before = f.requests[i - 1], now = f.requests[i];
+    assert.equal(now.systemPrompt, before.systemPrompt, `request ${i + 1}: same system prompt`);
+    assert.deepEqual(now.messages.slice(0, before.messages.length), before.messages, `request ${i + 1} starts with request ${i} unchanged`);
+  }
+});
+
+test("fallbackObservation defaults to when-needed and is recorded in run.json", () => {
+  const store = new Store(mkdtempSync(path.join(tmpdir(), "arena-controller-")), {});
+  const run = store.create("test", store.models()[0].id, "Play.", 1);
+  store.update(run.id, { config: runConfigSchema.parse({ gameMinutes: 10 }) });
+  const saved = JSON.parse(readFileSync(store.file(run.id, "run.json"), "utf8"));
+  assert.equal(saved.config.fallbackObservation, "when-needed");
+});
+
 test("replies without any tool call end the run after four in a row, and the model is warned", async () => {
   const f = fixture(10);
   f.provider(() => [{ type: "text", text: "Thinking about the economy." }], true);
@@ -379,6 +539,24 @@ test("brief reader freshness gaps do not end a timed run", async () => {
   f.provider(() => [{ type: "text", text: "Observed." }]);
   assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
 });
+test("a slow configured reader interval still retries a freshness gap instead of refusing at once", async () => {
+  // At 3000 ms, Math.round(3000 / pollMs) collapses to a single attempt; a freshState that skips
+  // its wait on that single attempt burns all three of ensurePauseState's outer retries on calls
+  // made back to back (no delay between them), so three unavailable samples in a row end the run
+  // before the reader recovers. freshState waiting out its own three-second budget instead buys
+  // enough real time for the gap to close within those same three outer retries.
+  const previous = process.env.GAME_READER_INTERVAL_MS;
+  process.env.GAME_READER_INTERVAL_MS = "3000";
+  try {
+    const f = fixture(1);
+    f.setUnavailableSamples(3);
+    f.provider(() => [{ type: "text", text: "Observed." }]);
+    assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  } finally {
+    if (previous === undefined) delete process.env.GAME_READER_INTERVAL_MS;
+    else process.env.GAME_READER_INTERVAL_MS = previous;
+  }
+});
 test("the screen layout lives in the system prompt; the first screenshot notes an untested size", async () => {
   const f = fixture(2);
   f.provider(() => [{ type: "text", text: "Continue with a fresh view." }]);
@@ -391,7 +569,7 @@ test("the screen layout lives in the system prompt; the first screenshot notes a
   assert.ok(first.content.some((part) => part.type === "text" && part.text.includes("This screenshot is 100 × 100")));
   const available = availableAtlasPages();
   if (available.length)
-    assert.ok(first.content.some((part) => part.type === "text" && part.text.includes(`guide_page(page): ${available[0].id}`)));
+    assert.ok(first.content.some((part) => part.type === "text" && part.text.includes(`exist for: ${available[0].id}`)));
   const overviewInstalled = available.some((page) => page.id === "construction-overview");
   assert.equal(first.content.filter((part) => part.type === "image").length, overviewInstalled ? 2 : 1);
   if (overviewInstalled) {
@@ -406,10 +584,6 @@ test("the screen layout lives in the system prompt; the first screenshot notes a
   const guide = readFileSync(path.join(f.controller.memory.directory, "controls-guide.html"), "utf8");
   assert.ok(guide.includes("Starting screenshot legend"));
   assert.ok(guide.includes("<span>7</span>"));
-  const guideTool = f.controller.agent.state.tools.find((tool) => tool.name === "guide_page");
-  assert.ok(guideTool);
-  const reference = await guideTool.execute("test-guide", { page: available[0]?.id || "farm" });
-  assert.ok(reference.content.some((part) => part.type === (available.length ? "image" : "text")));
 });
 test("preparation pauses game, sends the combined tray guide, then starts timed play after BEGIN", async () => {
   const f = fixture(1);
@@ -421,7 +595,7 @@ test("preparation pauses game, sends the combined tray guide, then starts timed 
     if (input.role !== "user") throw new Error("Expected preparation user message");
     if (!Array.isArray(input.content)) throw new Error("Expected multimodal preparation message");
     // The combined guide image is private; a checkout without it sends the text guide only.
-    assert.equal(input.content.some((part) => part.type === "image" && part.mimeType === "image/png"), constructionAtlasInstalled());
+    assert.equal(input.content.some((part) => part.type === "image" && /^image\/(png|jpeg)$/.test(part.mimeType)), constructionAtlasInstalled());
     assert.ok(input.content.some((part) => part.type === "text" && part.text.includes("HISTORICAL CONSTRUCTION MENU GUIDE")));
     guideSeen = true;
     f.advance(50_000);
@@ -462,6 +636,24 @@ test("preparation without BEGIN leaves the game paused and the timer unstarted",
   assert.deepEqual(f.actions, [{ type: "key", key: "P" }]);
   assert.equal(f.controller.session.remaining(), 30_000);
 });
+test("preparation and reflection timing are kept apart from gameplay's completed count and totalMs", async () => {
+  const f = fixture(1);
+  f.setPrepareHook(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return message([{ type: "text", text: "Ready.\nBEGIN" }]);
+  });
+  await f.controller.prepare();
+  assert.ok(f.controller.progress.inference.preparationMs > 0);
+  // Preparation is not gameplay: it does not count as a completed gameplay request.
+  assert.equal(f.controller.progress.inference.completed, 0);
+  assert.equal(f.controller.progress.inference.totalMs, 0);
+  f.controller.runtime.timing(250, "stop", "reflection");
+  f.controller.runtime.timing(50, "error", "reflection");
+  assert.equal(f.controller.progress.inference.reflectionMs, 300);
+  // A reflection outcome never touches gameplay's completed/failed/aborted counters.
+  assert.equal(f.controller.progress.inference.completed, 0);
+  assert.equal(f.controller.progress.inference.failed, 0);
+});
 test("a decorated BEGIN is accepted and a missing one is retried", async () => {
   assert.ok(isPreparedReply("Plan: granary first.\n**BEGIN**"));
   assert.ok(isPreparedReply("Ready.\nBEGIN."));
@@ -495,7 +687,9 @@ test("actions receive one default observation after the batch; explicit zero rep
   );
   assert.equal(await f.controller.runSession(), "completed");
   assert.deepEqual(waits, [0, 10, 0]);
-  assert.equal(f.captures(), 5);
+  // One fewer than observations alone would suggest: finalizePause's own pause check reuses the
+  // latest capture instead of taking a fresh, unused one first (device.ts pressKey).
+  assert.equal(f.captures(), 4);
   assert.equal(f.actions.filter((a) => (a as { key?: string }).key !== "P").length, 3);
   assert.equal(f.run.turns, 3);
 });
@@ -709,6 +903,8 @@ test("notebooks are isolated, revision guarded, bounded and survive reload", () 
     b = fixture();
   a.controller.memory.writeNotebook(0, "One observation.");
   assert.throws(() => a.controller.memory.writeNotebook(0, "stale"), /Stale/);
+  // No tool calls editNotebook now (notebook_edit was removed), but it still backs the shared
+  // edited() match logic that editPlaybook (playbook_edit) uses.
   assert.throws(
     () => a.controller.memory.editNotebook(1, "absent", "x"),
     /exactly once/,
@@ -785,9 +981,40 @@ test("synthetic long session continues for 60 turns across repeated compactions"
   assert.equal(f.requests.length, 60);
   assert.ok(f.controller.memory.compactions >= 10, `compactions=${f.controller.memory.compactions}`);
   assert.equal(f.controller.memory.notebook.revision, 1);
-  assert.ok(JSON.stringify(f.controller.agent.state.messages).length < 110000);
+  // Bounded by compaction: no request outgrows the context budget, screenshots included.
+  for (const request of f.requests)
+    assert.ok(contextEstimate(request.messages as AgentMessage[], request.systemPrompt ?? "") < 120000);
 });
 
+test("a long conversation the provider reports as small never compacts early from a stale byte recount", async () => {
+  const f = fixture(120);
+  // A provider that keeps reporting tiny real usage (e.g. almost all of a long,
+  // repetitive conversation is served from cache) however large the transcript grows.
+  f.controller.agent.streamFunction = (_m, _ctx) => {
+    f.advance(100);
+    const stream = createAssistantMessageEventStream();
+    const m = message([
+      { type: "text", text: "Noted a small, local observation. ".repeat(100) },
+      call("observe", {}),
+    ]);
+    m.usage = { ...usage, input: 10, totalTokens: 20 };
+    stream.push({ type: "done", reason: m.stopReason as "stop" | "toolUse", message: m });
+    return stream;
+  };
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  // The anchored estimate the 65% trigger reads stayed low the whole run, so it never compacted.
+  assert.equal(f.controller.memory.compactions, 0);
+  assert.ok(f.controller.progress.contextEstimate < 120000 * 0.65, `estimate=${f.controller.progress.contextEstimate}`);
+  // Yet the transcript truly grew large: a fresh, non-anchored recount of it (the pre-fix
+  // headroom check) would have cleared the compaction headroom by a wide margin, which used
+  // to force compaction long before the anchored estimate above ever neared its own trigger.
+  const staleRecount = contextEstimate(
+    [...pruneImages(f.controller.agent.state.messages, 0), { role: "user", content: handoffInstruction, timestamp: Date.now() }],
+    f.controller.agent.state.systemPrompt,
+  );
+  const handoffHeadroom = 120000 - Math.min(30000, 120000 * 0.25);
+  assert.ok(staleRecount > handoffHeadroom, `staleRecount=${staleRecount}`);
+});
 test("deadline during compaction cannot install a late handoff", async () => {
   const f = fixture(3);
   f.setHandoffHook(() => f.advance(30001));
@@ -858,7 +1085,8 @@ test("explicit N-second observation replaces the configured default exactly once
   );
   await f.controller.runSession();
   assert.deepEqual(waits, [0, 3]);
-  assert.equal(f.captures(), 6);
+  // One fewer, as above: finalizePause no longer takes a throwaway capture just for a frame id.
+  assert.equal(f.captures(), 5);
 });
 
 test("request timing logs first content once and resets it before the next request", async () => {
@@ -1286,12 +1514,14 @@ test("a run outside a learning series has no playbook tools and no reflection", 
 
 test("each request's cost is kept with its source and summed in run.json", () => {
   const f = fixture(1);
-  f.controller.runtime.cost?.("gameplay", 0.012, "billed");
+  f.controller.runtime.cost?.("gameplay", 0.012, "billed", "DeepInfra");
   f.controller.runtime.cost?.("compaction", 0.003, "prices");
   assert.ok(Math.abs(f.store.get(f.run.id).cost! - 0.015) < 1e-12);
   const events = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8");
-  assert.match(events, /"type":"request_cost","kind":"gameplay","dollars":0.012,"source":"billed"/);
-  assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003,"source":"prices"/);
+  // The upstream OpenRouter routed the request to, when it reported one.
+  assert.match(events, /"type":"request_cost","kind":"gameplay","dollars":0.012,"source":"billed","upstream":"DeepInfra"/);
+  // Absent (not null) when no upstream was reported, e.g. prices worked out from tokens.
+  assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003,"source":"prices"\}/);
 });
 
 test("after a scored episode the agent is interviewed in the conversation it played in, apart from the run's record", async () => {
@@ -1317,7 +1547,9 @@ test("after a scored episode the agent is interviewed in the conversation it pla
   assert.equal(record.status, "completed");
   assert.deepEqual(answered, [0, 1, 2, 3, 4]);
   assert.deepEqual(record.exchanges.map((e) => e.answer), ["Answer 1.", "Answer 2.", "Answer 3.", "Answer 4."]);
-  // Every question goes with the run's system prompt and tools, after the game's own messages.
+  // The four questions go in one request, with the run's system prompt and tools, after the
+  // game's own messages (interview.ts: combinedQuestion).
+  assert.equal(f.interviews.length, 1);
   const game = JSON.stringify(f.controller.agent.state.messages);
   for (const request of f.interviews) {
     assert.equal(request.system, runSystemPrompt(f.store.get(f.run.id)));
@@ -1325,7 +1557,7 @@ test("after a scored episode the agent is interviewed in the conversation it pla
     assert.equal(JSON.stringify(request.messages.slice(0, f.controller.agent.state.messages.length)), game);
   }
   assert.match(JSON.stringify(f.interviews[0].messages.at(-1)), /\| Net worth \| 2,400 \| 19,513 \|/);
-  assert.equal(f.interviews[3].messages.length, f.controller.agent.state.messages.length + 7);
+  assert.equal(f.interviews[0].messages.length, f.controller.agent.state.messages.length + 1);
   // The transcript is in the run's folder; the run's record and events are as the run left them.
   const saved = JSON.parse(readFileSync(path.join(folder, "interview.json"), "utf8"));
   assert.equal(saved.status, "completed");

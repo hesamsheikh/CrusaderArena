@@ -122,6 +122,12 @@ export type RunRow = {
   cost: number | null;
   /** "billed" by the provider, or worked out from list "prices"; null without a cost. */
   costSource: "billed" | "prices" | null;
+  /** The post-episode interview (interview.json), apart from the run's own tokens and cost above. */
+  interview: {
+    tokens: number | null;
+    cost: number | null;
+    costSource: "billed" | "prices" | null;
+  } | null;
   scorecard: {
     /** "final" / "last_observed" as recorded by npm run episodes; "last_tool_observation" when rebuilt from events. */
     source: string | null;
@@ -366,6 +372,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
   const folder = path.basename(dir);
   const run = readJson(path.join(dir, "run.json"));
   const episode = readJson(path.join(dir, "episode.json"));
+  const interview = readJson(path.join(dir, "interview.json"));
   const events = await scanEvents(path.join(dir, "events.jsonl"));
   const progress: Obj = run?.progress ?? {};
   const budget: Obj = progress.budget ?? {};
@@ -463,6 +470,13 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
     tokensPerGameMinute,
     cost: num(run?.cost) ?? events?.cost ?? null,
     costSource: events?.costSource ?? (num(run?.cost) === null ? null : run?.model?.prices ? "prices" : "billed"),
+    interview: interview
+      ? {
+          tokens: num(interview.tokens?.totalTokens),
+          cost: num(interview.cost),
+          costSource: interview.costSource === "prices" || interview.costSource === "billed" ? interview.costSource : null,
+        }
+      : null,
     scorecard: card,
     tools: events ? events.tools : null,
     toolErrors: events ? events.toolErrors : null,
@@ -550,6 +564,8 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Cached %", (r) => percent(r.tokens.cachedShare)],
   ["Out", (r) => compact(r.tokens.output)],
   ["Cost", (r) => (r.costSource === "prices" ? "~" : "") + dollars(r.cost)],
+  ["Interview tokens", (r) => compact(r.interview?.tokens ?? null)],
+  ["Interview cost", (r) => (r.interview ? (r.interview.costSource === "prices" ? "~" : "") + dollars(r.interview.cost) : "")],
   ["Tok/game min", (r) => compact(r.tokensPerGameMinute)],
   ["Pop", (r) => whole(r.scorecard.population)],
   ["Housing", (r) => whole(r.scorecard.housing)],
@@ -647,6 +663,7 @@ export function renderMarkdown(rows: RunRow[]): string {
     "`~` game seconds derived from reader ticks (no budget recorded); `*` incomplete run (still writing, or unreadable run.json / events); `!` not a full-budget score (episode.json `invalid` says why).",
     "Build att/placed/fail counts build_structure placements; Anchor counts place_near and expand_storage calls, buildings placed, and calls that placed nothing.",
     "Tokens = run total: In (uncached input) + Cache read + Cache write + Out. Cached % is the share of all input read from the provider's cache. Cost is what OpenRouter billed; `~` marks a cost worked out from the run's tokens and its model's list prices (other endpoints). Blank cells were not recorded for that run.",
+    "Interview tokens/cost are the post-episode interview (interview.json), apart from the run's own Tokens and Cost above; blank where a run has no interview.",
   ];
   const series = seriesRows(rows);
   const seriesTable = series.length

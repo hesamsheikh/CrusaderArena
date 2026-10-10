@@ -68,11 +68,6 @@ test("agent building reference tools are read-only and work without an observati
   const text = info.content.find((part) => part.type === "text");
   assert.ok(text && text.type === "text");
   if (text?.type === "text") assert.equal(JSON.parse(text.text).buildCost, "5 W");
-  const names = await agent.state.tools.find((tool) => tool.name === "list_buildings")!
-    .execute("list", { category: "Farm Buildings" });
-  const listed = names.content.find((part) => part.type === "text");
-  assert.ok(listed && listed.type === "text");
-  if (listed?.type === "text") assert.ok(JSON.parse(listed.text).some((row: any) => row.name === "Apple Orchard"));
 });
 
 test("startup guidance keeps mechanics while building tables move to lookup", () => {

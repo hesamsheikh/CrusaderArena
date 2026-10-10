@@ -15,7 +15,7 @@ static void fillCard(NSRect bounds, NSColor *color, CGFloat radius) {
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
-        if (argc != 4) { fprintf(stderr, "usage: make-construction-trays manifest.json source-dir output.png\n"); return 2; }
+        if (argc != 4) { fprintf(stderr, "usage: make-construction-trays manifest.json source-dir output.jpg\n"); return 2; }
         NSData *manifest = [NSData dataWithContentsOfFile:@(argv[1])];
         NSArray<NSDictionary *> *pages = [NSJSONSerialization JSONObjectWithData:manifest options:0 error:NULL];
         if (pages.count != 10) { fprintf(stderr, "Expected ten guide pages\n"); return 2; }
@@ -79,8 +79,10 @@ int main(int argc, const char *argv[]) {
         drawText(@"Reference only. Use the live screenshot and tooltip for availability, position and price.", margin, canvasHeight - footerHeight + 8, width - margin * 2, 25, 17, NO, [NSColor colorWithWhite:0.82 alpha:1]);
         [context flushGraphics];
         [NSGraphicsContext restoreGraphicsState];
-        NSData *png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-        if (![png writeToFile:output atomically:YES]) return 2;
+        // JPEG at quality 90: about a third of a PNG's bytes at the same image size and model token
+        // cost (it is resent in every request body). The per-page crops stay PNG.
+        NSData *jpeg = [bitmap representationUsingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor: @0.9}];
+        if (![jpeg writeToFile:output atomically:YES]) return 2;
         return 0;
     }
 }

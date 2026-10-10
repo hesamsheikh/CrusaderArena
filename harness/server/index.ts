@@ -16,6 +16,7 @@ import {
   type Frame,
 } from "../shared/protocol.js";
 import { Store } from "./store.js";
+import { omitDuplicateToolImages } from "./context.js";
 import { GameDevice } from "./device.js";
 import { testModel, modelConfig } from "./model.js";
 import { renderVideo } from "./video.js";
@@ -429,6 +430,9 @@ app.post("/api/agent/run", async (req, res) => {
       }
     } else if (event.type === "agent_end" || event.type === "turn_end") {
       store.event(run.id, { type: event.type });
+    } else if ((event.type === "message_start" || event.type === "message_end") && event.message.role === "toolResult") {
+      // The same tool image pi-agent-core already gave tool_execution_end; see context.ts.
+      store.event(run.id, { type: event.type, message: omitDuplicateToolImages(event.message) });
     } else store.event(run.id, event);
     if (event.type === "turn_end") {
       state.turns = run.turns;

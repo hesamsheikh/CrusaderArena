@@ -17,10 +17,37 @@ const template = readFileSync(new URL("../../prompt/interview.md", import.meta.u
 
 /** What the host answers a tool call during the interview. */
 export const TOOLS_OFF = "The run is over and the tools no longer work. Please answer in plain text.";
-/** Replies per question that may call tools; each call is refused and the question asked on. */
+/** Replies that may call tools; each call is refused and the combined question asked on. */
 const REFUSED_REPLIES = 2;
 
 export type InterviewQuestion = { title: string; text: string };
+
+/**
+ * The questions combined into one message, each under its own "## " heading, asking for a reply
+ * headed the same way so splitReply can tell the answers apart. Asking once instead of one
+ * question at a time (as this replaced) cut a four-question interview from four sequential
+ * requests to one (measured: ~100 s and three extra cache reads, to ~25 s and one).
+ */
+export function combinedQuestion(questions: InterviewQuestion[]): string {
+  const body = questions.map(({ title, text }) => `## ${title}\n\n${text}`).join("\n\n");
+  return `${body}\n\nAnswer all ${questions.length} questions above in this one reply. Repeat each heading exactly as written above (for example "## ${questions[0].title}") right before its answer, so the answers can be told apart.`;
+}
+
+/**
+ * Splits a combined reply back into one answer per question, by the "## " headings it was asked
+ * to repeat, in order. Undefined when the reply does not have exactly those headings in that
+ * order (a model that did not follow the format, or answered only some of them), so the caller
+ * can keep the reply whole instead of guessing at a split.
+ */
+export function splitReply(text: string, questions: InterviewQuestion[]): string[] | undefined {
+  const parts = text.split(/^#{1,6} +/m).slice(1);
+  if (parts.length !== questions.length) return undefined;
+  const titled = parts.map((part) => {
+    const [heading, ...body] = part.split("\n");
+    return { title: heading.replace(/[*:]+$/, "").trim().toLowerCase(), answer: body.join("\n").trim() };
+  });
+  return titled.every(({ title }, i) => title === questions[i].title.toLowerCase()) ? titled.map(({ answer }) => answer) : undefined;
+}
 
 /** The interview's messages: each "## " section of prompt/interview.md, comments removed. */
 export function interviewSections(markdown = template): InterviewQuestion[] {
@@ -127,13 +154,19 @@ export type Exchange = {
   stopReason: string;
   tokens: Tokens;
   seconds: number;
+  /**
+   * True when the reply to the combined question (below) could not be split by title, so it is
+   * kept here as one exchange instead of the four asked: title is "All questions" and `question`
+   * is the combined message, not any one question's own text.
+   */
+  unsplit?: true;
 };
 
 /**
- * Asks the questions one at a time after the run's own messages, each with the replies before it.
- * A reply that calls tools gets each call refused and is asked on, up to REFUSED_REPLIES times.
- * `ask` makes one request and throws when it fails; the exchanges answered so far have gone to
- * `answered` by then.
+ * Asks the questions in one combined message after the run's own messages (combinedQuestion), and
+ * splits the reply back into one exchange per question (splitReply). A reply that calls tools
+ * gets each call refused and the combined question asked on, up to REFUSED_REPLIES times. `ask`
+ * makes one request and throws when it fails, before any exchange has gone to `answered`.
  */
 export async function conductInterview(
   context: Message[],
@@ -142,45 +175,61 @@ export async function conductInterview(
   answered: (exchange: Exchange) => void = () => {},
 ) {
   const messages = [...context];
-  const exchanges: Exchange[] = [];
-  for (const { title, text } of questions) {
-    const started = Date.now();
-    messages.push({ role: "user", content: text, timestamp: started });
-    const replies: AssistantMessage[] = [];
-    const refused: string[] = [];
-    for (;;) {
-      const reply = await ask(messages);
-      messages.push(reply);
-      replies.push(reply);
-      const calls = reply.content.filter((part) => part.type === "toolCall");
-      for (const call of calls) {
-        refused.push(call.name);
-        messages.push({
-          role: "toolResult",
-          toolCallId: call.id,
-          toolName: call.name,
-          content: [{ type: "text", text: TOOLS_OFF }],
-          isError: true,
-          timestamp: Date.now(),
-        });
-      }
-      if (!calls.length || replies.length > REFUSED_REPLIES) break;
+  const started = Date.now();
+  const combined = combinedQuestion(questions);
+  messages.push({ role: "user", content: combined, timestamp: started });
+  const replies: AssistantMessage[] = [];
+  const refused: string[] = [];
+  for (;;) {
+    const reply = await ask(messages);
+    messages.push(reply);
+    replies.push(reply);
+    const calls = reply.content.filter((part) => part.type === "toolCall");
+    for (const call of calls) {
+      refused.push(call.name);
+      messages.push({
+        role: "toolResult",
+        toolCallId: call.id,
+        toolName: call.name,
+        content: [{ type: "text", text: TOOLS_OFF }],
+        isError: true,
+        timestamp: Date.now(),
+      });
     }
-    const parts = replies.flatMap((reply) => reply.content);
-    const thinking = parts.flatMap((part) => (part.type === "thinking" && !part.redacted && part.thinking.trim() ? [part.thinking.trim()] : []));
-    const exchange: Exchange = {
-      title,
-      question: text,
-      answer: parts.flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text.trim()] : [])).join("\n\n"),
-      ...(thinking.length ? { thinking: thinking.join("\n\n") } : {}),
-      ...(refused.length ? { refusedTools: refused } : {}),
-      stopReason: replies.at(-1)!.stopReason,
-      tokens: replies.reduce((total, reply) => addTokens(total, reply.usage), noTokens()),
-      seconds: Math.round((Date.now() - started) / 100) / 10,
-    };
-    exchanges.push(exchange);
-    answered(exchange);
+    if (!calls.length || replies.length > REFUSED_REPLIES) break;
   }
+  const parts = replies.flatMap((reply) => reply.content);
+  const thinking = parts.flatMap((part) => (part.type === "thinking" && !part.redacted && part.thinking.trim() ? [part.thinking.trim()] : []));
+  const text = parts.flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text.trim()] : [])).join("\n\n");
+  const stopReason = replies.at(-1)!.stopReason;
+  const tokens = replies.reduce((total, reply) => addTokens(total, reply.usage), noTokens());
+  const seconds = Math.round((Date.now() - started) / 100) / 10;
+  const split = splitReply(text, questions);
+  // The full cost (tokens, thinking, refused calls) of the one request goes on its first exchange
+  // only, so interviewTokens (a sum over exchanges) still totals what was actually spent.
+  const exchanges: Exchange[] = split
+    ? questions.map(({ title, text: question }, i) => ({
+        title,
+        question,
+        answer: split[i],
+        ...(i === 0 && thinking.length ? { thinking: thinking.join("\n\n") } : {}),
+        ...(i === 0 && refused.length ? { refusedTools: refused } : {}),
+        stopReason,
+        tokens: i === 0 ? tokens : noTokens(),
+        seconds: i === 0 ? seconds : 0,
+      }))
+    : [{
+        title: "All questions",
+        question: combined,
+        answer: text,
+        unsplit: true,
+        ...(thinking.length ? { thinking: thinking.join("\n\n") } : {}),
+        ...(refused.length ? { refusedTools: refused } : {}),
+        stopReason,
+        tokens,
+        seconds,
+      }];
+  for (const exchange of exchanges) answered(exchange);
   return exchanges;
 }
 
@@ -233,7 +282,7 @@ export function interviewMarkdown(record: InterviewRecord) {
   const lines = [
     `# Interview: ${name} on ${record.map ?? "an unknown map"}`,
     "",
-    `After its game, the agent was shown its result beside a person's game on the same map and asked the questions below, one at a time, in the conversation it had played in${record.context.compactions ? ` (compacted ${record.context.compactions} time${record.context.compactions === 1 ? "" : "s"} during the game)` : ""}. The tools were off, and nothing it said changed its score.`,
+    `After its game, the agent was shown its result beside a person's game on the same map and asked the questions below in one message, in the conversation it had played in${record.context.compactions ? ` (compacted ${record.context.compactions} time${record.context.compactions === 1 ? "" : "s"} during the game)` : ""}. The tools were off, and nothing it said changed its score.`,
     "",
     `- Model: ${name} (\`${record.model.modelId}\`)`,
     `- Benchmark: ${record.benchmark.name ?? "Custom"}, version ${record.benchmark.version ?? "none"}`,
@@ -244,6 +293,8 @@ export function interviewMarkdown(record: InterviewRecord) {
   ];
   record.exchanges.forEach((exchange, i) => {
     lines.push(`## ${i + 1}. ${exchange.title}`, "", "**Interviewer:**", "", exchange.question, "", `**${name}:**`, "", exchange.answer ? nested(exchange.answer) : "*(no answer)*", "");
+    if (exchange.unsplit)
+      lines.push("*The reply did not come back under the separate question headings asked for, so it is kept here as one.*", "");
     if (exchange.refusedTools?.length)
       lines.push(`*It also called ${[...new Set(exchange.refusedTools)].map((tool) => `\`${tool}\``).join(", ")}; the host refused, as the tools were off.*`, "");
     if (exchange.stopReason === "length") lines.push("*The answer was cut off at the output limit.*", "");

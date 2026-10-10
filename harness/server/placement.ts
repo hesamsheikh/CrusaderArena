@@ -38,8 +38,15 @@ export class Placer {
       pause: (seconds: number) => Promise<unknown>;
       frame: { width: number; height: number };
     },
+    /** A category already known open in the game (e.g. left open by an earlier call); see select(). */
+    openCategory?: string,
   ) {
     this.readerReady = device.currentStats().status === "ok";
+    this.openCategory = openCategory;
+  }
+  /** The construction tray's category left open by the calls so far, for a later call to reuse. */
+  get category() {
+    return this.openCategory;
   }
   /** A live stream has brief unavailable samples: wait up to 1 s for a valid one before deciding. */
   async init() {

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GameEvents } from "./game-events.js";
 import { makeAgent, type AgentRuntime } from "./model.js";
+import { ObservationCycle } from "./session.js";
 import { menuClicks as trayClicks } from "./construction-ui.js";
 import { tilePixel } from "./anchors.js";
 import type { GameDevice, TileRegion } from "./device.js";
@@ -268,6 +269,60 @@ test("build_structure batches placements from one image and attributes feedback 
   assert.ok(sentAt[7] - sentAt[6] < 500, "no wait when the same page is already open");
 });
 
+test("build_structure reuses the construction tray's open category across calls, and forgets it once anything else sends input", async () => {
+  const events = new GameEvents();
+  const actions: { button: number; x: number; y: number }[] = [];
+  const sentAt: number[] = [];
+  let captures = 0;
+  let inputSerial = 0;
+  // No placement field: select() always reports "unchecked", but still records the open category
+  // (placement.ts select() sets it before checking whether a reader sample confirmed anything).
+  // captured_unix_ms tracks real time so each click's settle() resolves in ~SETTLE_MS, not its
+  // full timeout.
+  // A camera is present so observe() does not wait out its full 1.5 s poll for one.
+  const stats = () => ({
+    status: "ok", session: "s", generation: 1,
+    captured_unix_ms: Date.now(), valid_until_unix_ms: Date.now() + 1500,
+    observation: {
+      map_name: "m", visible_messages: [],
+      camera: { centre_tile_x: 100, centre_tile_y: 100, tiles_wide: 30, tiles_high: 68, pixels_per_unit_scale: 1 },
+    },
+  });
+  const device = {
+    events,
+    capture: async () => ({ id: `frame-${++captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, scope: "game-window" }),
+    get inputSerial() {
+      return inputSerial;
+    },
+    action: async (action: { button: number; x: number; y: number }) => {
+      inputSerial++;
+      actions.push(action);
+      sentAt.push(Date.now());
+      return { delivered: true, at: Date.now() };
+    },
+    hotkey: async () => {
+      inputSerial++;
+      return { at: Date.now() };
+    },
+    currentStats: stats,
+  } as unknown as GameDevice;
+  const agent = makeAgent(device, () => {}, () => {}, 1, {
+    id: "test", name: "test", modelId: "test", baseUrl: "https://example.invalid", keyConfigured: false,
+  }, "");
+  const tool = (name: string) => agent.state.tools.find((t) => t.name === name)!;
+  await tool("observe").execute("observe", {});
+  const build = (x: number, y: number) => tool("build_structure").execute("build", { placements: [{ name: "Hovel", x, y }] });
+  await build(500, 400);
+  // Each call sends category, button, target, then a right-click to leave placement mode.
+  assert.ok(sentAt[1] - sentAt[0] >= 750, "no memory yet: the first call waits for the tray to fade in");
+  await build(520, 400);
+  assert.ok(sentAt[5] - sentAt[4] < 500, "the same category is remembered from the first call");
+  // Another tool sends input to the game; the remembered category must be forgotten.
+  await tool("game_action").execute("ga", { type: "click", x: 10, y: 950, button: 1 });
+  await build(540, 400);
+  assert.ok(sentAt[10] - sentAt[9] >= 750, "a third call waits again after something else touched the game");
+});
+
 test("build_structure does not blame a later placement for reappearing feedback", async () => {
   const events = new GameEvents();
   const rejection = "Farms must be placed on an oasis.";
@@ -314,7 +369,7 @@ test("build_structure does not blame a later placement for reappearing feedback"
   assert.deepEqual(JSON.parse(first.text).placements.map((p: any) => p.status), ["rejected", "possibly_rejected"]);
 });
 
-test("build_structure validates every target before sending input", async () => {
+test("build_structure reports an invalid target on its own, without stopping the rest of the batch", async () => {
   const actions: unknown[] = [];
   const device = {
     events: new GameEvents(),
@@ -329,13 +384,45 @@ test("build_structure validates every target before sending input", async () => 
     baseUrl: "https://example.invalid", keyConfigured: false,
   }, "");
   await agent.state.tools.find((tool) => tool.name === "observe")!.execute("observe", {});
-  await assert.rejects(
-    agent.state.tools.find((tool) => tool.name === "build_structure")!.execute("build", {
-      placements: [{ name: "Hovel", x: 500, y: 400 }, { name: "Hovel", x: 500, y: 1000 }],
+  const result = await agent.state.tools.find((tool) => tool.name === "build_structure")!.execute("build", {
+    placements: [{ name: "Hovel", x: 500, y: 1000 }, { name: "Hovel", x: 500, y: 400 }],
+  });
+  const first = result.content[0];
+  assert.ok(first.type === "text");
+  const report = JSON.parse(first.text);
+  assert.equal(report.placements[0].status, "invalid_target");
+  assert.match(report.placements[0].reason, /bottom HUD/);
+  assert.match(report.placements[0].reason, /below \d+/, "names the pixel boundary");
+  assert.equal(report.placements[1].status, "unverified", "the rest of the batch still ran");
+  // Nothing was sent for the invalid target; the valid one was placed and placement mode was left there.
+  assert.ok(!actions.some((a: any) => a.y === 1000));
+  assert.ok(actions.some((a: any) => (a as any).x === 500 && (a as any).y === 400 && (a as any).button === 1));
+  assert.deepEqual(actions.at(-1), { type: "click", x: 500, y: 400, button: 3 });
+});
+
+test("build_structure sends nothing and leaves placement mode untouched when every target is invalid", async () => {
+  const actions: unknown[] = [];
+  const device = {
+    events: new GameEvents(),
+    capture: async () => ({
+      id: "frame", image: "", mimeType: "image/jpeg", width: 1920, height: 1080, scope: "game-window",
     }),
-    /bottom HUD/,
-  );
-  assert.deepEqual(actions, []);
+    action: async (action: unknown) => { actions.push(action); },
+    currentStats: () => ({ status: "unavailable", observation: null }),
+  } as unknown as GameDevice;
+  const agent = makeAgent(device, () => {}, () => {}, 1, {
+    id: "test", name: "test", modelId: "test",
+    baseUrl: "https://example.invalid", keyConfigured: false,
+  }, "");
+  await agent.state.tools.find((tool) => tool.name === "observe")!.execute("observe", {});
+  const result = await agent.state.tools.find((tool) => tool.name === "build_structure")!.execute("build", {
+    placements: [{ name: "Hovel", x: 500, y: 1000 }],
+  });
+  const first = result.content[0];
+  assert.ok(first.type === "text");
+  const report = JSON.parse(first.text);
+  assert.equal(report.placements[0].status, "invalid_target");
+  assert.deepEqual(actions, [], "no exit click: placement mode was never entered");
 });
 
 /** Simulated game and reader: placement mode, camera, wood and the map-wide structure count. */
@@ -358,12 +445,16 @@ function simulatedGame(options: {
    * edited by this callback. Without it the device has no tile reader.
    */
   tiles?: (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void, centre: { x: number; y: number }) => void;
+  /** A timed run's runtime (cycle, session); without it the agent runs untimed. */
+  runtime?: AgentRuntime;
+  /** Runs on every construction-menu button click (e.g. to move the camera while selecting). */
+  onButton?: (state: SimState) => void;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
   const state: SimState = { action: 0, sub: 52, wood: 100, structures: 18, camera: 1, worldClicks: 0, sel: null, messages: [], flat: false };
   const buttonIds: Record<string, number> = { "866,978": 54, "872,934": 52, "880,992": 57 };
-  for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73], ["Dancing Bear", 324]] as const) {
+  for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73], ["Dancing Bear", 324], ["Iron Mine", 68]] as const) {
     const button = (trayClicks({ width: 1920, height: 1080 }, name) as { x: number; y: number }[]).at(-1)!;
     buttonIds[`${button.x},${button.y}`] = id;
   }
@@ -392,14 +483,31 @@ function simulatedGame(options: {
       },
     },
   });
+  let captures = 0;
+  let inputSerial = 0;
+  // The screenshot-age credit each input was sent with (Infinity waives the age limit).
+  const ageCredits: number[] = [];
+  let latest: unknown = null;
   const device = {
     events,
-    capture: async () => ({ id: "frame", image: state.flat ? "flat" : "", mimeType: "image/jpeg", width: 1920, height: 1080, scope: "game-window" }),
-    action: async (action: any) => {
+    capture: async () => {
+      captures++;
+      latest = { id: "frame", image: state.flat ? "flat" : "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: Date.now(), scope: "game-window" };
+      return latest;
+    },
+    get latest() {
+      return latest;
+    },
+    get inputSerial() {
+      return inputSerial;
+    },
+    action: async (action: any, _frameId?: string, _guard?: unknown, ageCreditMs = 0) => {
+      inputSerial++;
       actions.push(action);
+      ageCredits.push(ageCreditMs);
       const id = buttonIds[`${action.x},${action.y}`];
       if (action.button === 3) { state.action = 0; state.sel = null; }
-      else if (id && !options.ignoreButtons) { state.action = 5; state.sub = id; }
+      else if (id && !options.ignoreButtons) { state.action = 5; state.sub = id; options.onButton?.(state); }
       else if (action.y < 900 && state.action === 5) {
         state.worldClicks++;
         const text = options.reject?.(action.x, action.y, state);
@@ -421,6 +529,7 @@ function simulatedGame(options: {
       },
     } : {}),
     hotkey: async (name: string) => {
+      inputSerial++;
       hotkeys.push(name);
       if (name === "FlattenLandscape" && !options.flatIgnored) state.flat = !state.flat;
       const anchor = options.anchors?.[name];
@@ -437,7 +546,7 @@ function simulatedGame(options: {
   let reads = 0;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test", baseUrl: "https://example.invalid", keyConfigured: false,
-  }, "");
+  }, "", options.runtime);
   const tool = (name: string) => agent.state.tools.find((t) => t.name === name)!;
   const build = async (placements: object[]) => {
     await tool("observe").execute("observe", {});
@@ -452,7 +561,11 @@ function simulatedGame(options: {
     assert.ok(text && text.type === "text");
     return { json: JSON.parse(text.text), images: result.content.filter((c) => c.type === "image").length };
   };
-  return { actions, state, build, hotkeys, run, tileReads: () => tileReads, observe: () => tool("observe").execute("observe", {}) };
+  return {
+    actions, ageCredits, state, build, hotkeys, run, tool, tileReads: () => tileReads,
+    observe: () => tool("observe").execute("observe", {}),
+    captures: () => captures,
+  };
 }
 
 test("build_structure confirms placed and silently blocked buildings from reader evidence", async () => {
@@ -583,6 +696,9 @@ test("center_on uses the game's select-then-centre hotkey and closes the panel",
   assert.equal(game.state.camera, 20);
   assert.equal(game.state.sel, null, "panel closed by a right-click");
   assert.equal(images, 1, "a fresh screenshot of the new view");
+  // observe() once, centerOn's own frame once, then observe() again for the returned screenshot:
+  // the right-click dismiss reuses centerOn's frame instead of taking its own.
+  assert.equal(game.captures(), 3);
 });
 
 test("center_on reports a missing building without moving the camera", async () => {
@@ -625,6 +741,9 @@ test("expand_storage locates the stockpile by a rejected click, then probes outw
   assert.equal(json.probes, 2, "tile 4 blocked, tile 5 placed");
   assert.ok(game.hotkeys.includes("SetBookmark0"), "the located stockpile view is bookmarked");
   assert.equal(game.state.action, 0, "placement mode left");
+  // observe() once, then one frame shared by centerOnStockpile's locating clicks and the probes
+  // that follow: no capture just to send another click or dismiss the panel.
+  assert.equal(game.captures(), 2);
 });
 
 test("inspect_building reads the opened panel and closes it", async () => {
@@ -730,6 +849,25 @@ test("a farm refused for its ground is retried on oasis grass from the tile map"
   assert.ok(r.x1 >= 104 && r.x2 <= 116 && r.y1 >= 94 && r.y2 <= 106, "the whole farm is on the oasis");
 });
 
+test("an iron mine refused for its ground is retried on ore from the tile map", async () => {
+  const view = tileView();
+  const target = view.pixel({ x: 100, y: 100 });
+  // Ore fills a wide area around the target, so any nearby retry still lands on it.
+  const ore = { x1: 85, y1: 85, x2: 115, y2: 115 };
+  const game = simulatedGame({
+    // 0x80000: the ORE bit (tile-map.ts resourceGround), replacing the default buildable land.
+    tiles: (set) => { for (let x = ore.x1; x <= ore.x2; x++) for (let y = ore.y1; y <= ore.y2; y++) set("logic", x, y, 0x80000); },
+    reject: (x, y) => (x === target.x && y === target.y ? "Iron mine must be built on Iron ore." : undefined),
+  });
+  const report = await game.build([{ name: "Iron Mine", ...target }]);
+  const p = report.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.retryMethod, "tile_map");
+  assert.notDeepEqual(p.at, { x: target.x, y: target.y });
+  const r = footprintRect(view.tileAt(p.at), 4);
+  assert.ok(r.x1 >= ore.x1 && r.x2 <= ore.x2 && r.y1 >= ore.y1 && r.y2 <= ore.y2, "the whole iron mine footprint is on ore");
+});
+
 test("build_structure moves a workplace that would have no open side, without clicking its target", async () => {
   const view = tileView();
   const target = view.pixel({ x: 100, y: 100 });
@@ -789,6 +927,22 @@ test("place_near clicks computed flush spots beside the anchor when the tile map
     assert.equal(r.y1, keep.y2 + 1, "flush against the keep's +y side");
     assert.ok(disjoint(r, keep));
   }
+  // observe() once, then one frame shared by centerOn and the probes that follow it.
+  assert.equal(game.captures(), 2);
+});
+
+test("a tool that leaves the screenshot unusable is named in the next 'Observe the game first' error", async () => {
+  const game = simulatedGame({
+    anchors: { HomeKeep: { camera: 5, type: 41 } },
+    tiles: (set, c) => { for (let x = c.x - 3; x <= c.x + 3; x++) for (let y = c.y - 3; y <= c.y + 3; y++) set("structure", x, y, 4); },
+  });
+  await game.observe();
+  // place_near returns text only and clears the screenshot; it does not observe again.
+  await game.run("place_near", { building: "Hovel", anchor: "keep", count: 1 });
+  await assert.rejects(
+    game.run("build_structure", { placements: [{ name: "Hovel", x: 500, y: 400 }] }),
+    /Observe the game first: place_near returned no screenshot\./,
+  );
 });
 
 test("a free target that fails is retried elsewhere when affordable, and reported when short of wood", async () => {
@@ -799,14 +953,28 @@ test("a free target that fails is retried elsewhere when affordable, and reporte
   assert.equal(p.status, "placed", JSON.stringify(p));
   assert.equal(p.retryMethod, "tile_map");
   assert.notDeepEqual(p.at, { x: target.x, y: target.y });
-  // With too little wood (a hovel costs 6) the harness stops and says what is missing.
+  // With too little wood (a hovel costs 6), checked from the reader before the first click,
+  // the harness clicks nothing and says what is missing.
   const poor = simulatedGame({ tiles: () => {}, blocked: (x, y) => x === target.x && y === target.y });
   poor.state.wood = 2;
   const q = (await poor.build([{ name: "Hovel", ...target }])).placements[0];
   assert.equal(q.status, "not_placed");
   assert.equal(q.retrySkipped, "not_enough_resources");
   assert.deepEqual(q.missing, { wood: 4 });
-  assert.equal(worldClicks(poor.actions).length, 1);
+  assert.equal(worldClicks(poor.actions).length, 0, "the shortfall was known before any click");
+});
+
+test("build_structure re-checks affordability after an earlier placement in the same batch", async () => {
+  // Far enough apart that the second target's footprint does not overlap the first hovel.
+  const game = simulatedGame({ tiles: () => {} });
+  game.state.wood = 8;
+  const report = await game.build([{ name: "Hovel", x: 500, y: 400 }, { name: "Hovel", x: 1400, y: 800 }]);
+  assert.equal(report.placements[0].status, "placed", JSON.stringify(report.placements));
+  assert.equal(game.state.wood, 2, "the first hovel's cost left the stock");
+  assert.equal(report.placements[1].status, "not_placed");
+  assert.equal(report.placements[1].retrySkipped, "not_enough_resources");
+  assert.deepEqual(report.placements[1].missing, { wood: 4 });
+  assert.equal(worldClicks(game.actions).length, 1, "only the affordable placement was clicked");
 });
 
 test("place_near moves on past a spot refused by a rule the tile map does not model", async () => {
@@ -831,4 +999,276 @@ test("place_near moves on past a spot refused by a rule the tile map does not mo
   assert.equal(r.stopped, "not_enough_resources");
   assert.deepEqual(r.missing, { wood: 3 });
   assert.equal(r.probes, 0);
+});
+
+// --- Tile targeting (find_sites and build_structure work without an observed screenshot) ---
+
+test("find_sites works without any observation, from the live camera alone", async () => {
+  const game = simulatedGame({
+    tiles: (set) => { for (let x = 100; x <= 121; x++) for (let y = 95; y <= 106; y++) set("logic2", x, y, -128); },
+  });
+  const { json, images } = await game.run("find_sites", { building: "Dairy Farm", count: 2 });
+  assert.equal(images, 0);
+  assert.equal(json.sites.length, 2, JSON.stringify(json));
+  // Tiles only: no screenshot shows this view, so there are no pixels to give.
+  assert.ok(json.sites.every((s: any) => typeof s.tile_x === "number" && typeof s.tile_y === "number" && s.x === undefined && s.y === undefined));
+  assert.match(json.note, /no x\/y/);
+  const [a, b] = json.sites.map((s: any) => footprintRect({ x: s.tile_x, y: s.tile_y }, 10));
+  assert.ok(disjoint(a, b));
+  assert.equal(game.captures(), 1, "one bookkeeping capture for the window size; no screenshot was ever taken");
+});
+
+test("find_sites gives pixels too while the latest screenshot shows the live view, and tiles only once the camera moved", async () => {
+  const game = simulatedGame({
+    tiles: (set, centre) => { for (let x = centre.x - 15; x <= centre.x + 15; x++) for (let y = 95; y <= 106; y++) set("logic2", x, y, -128); },
+  });
+  await game.observe();
+  const seen = await game.run("find_sites", { building: "Dairy Farm", count: 1 });
+  const site = seen.json.sites[0];
+  // The pixel matches the tile through the screenshot's camera.
+  assert.deepEqual(tileView().pixel({ x: site.tile_x, y: site.tile_y }), { x: site.x, y: site.y });
+  game.state.camera = 2; // the view moves after the screenshot
+  const moved = await game.run("find_sites", { building: "Dairy Farm", count: 1 });
+  assert.equal(moved.json.sites.length, 1, JSON.stringify(moved.json));
+  assert.equal(moved.json.sites[0].x, undefined, "no pixels: the screenshot shows another view");
+  assert.equal(game.captures(), 1, "the screenshot's capture only");
+});
+
+test("build_structure places a tile target without any observation, using the live camera", async () => {
+  const target = tileView().pixel({ x: 100, y: 100 });
+  const game = simulatedGame({ tiles: () => {} });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.deepEqual(p.tile, { x: 100, y: 100 });
+  assert.equal(p.x, target.x);
+  assert.equal(p.y, target.y);
+  assert.equal(game.captures(), 1, "one bookkeeping capture; no screenshot was ever taken");
+});
+
+test("build_structure reports an off-screen tile target as not_on_screen, sending no input", async () => {
+  const game = simulatedGame({ tiles: () => {} });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 1, tile_y: 1 }] });
+  const p = json.placements[0];
+  assert.deepEqual(p, {
+    building: "Hovel", tile_x: 1, tile_y: 1, status: "not_on_screen",
+    camera: { centre_tile_x: 100, centre_tile_y: 100 },
+    remedy: "go_to_tile (x 1, y 1) brings the tile into view; then place it again.",
+  });
+  assert.deepEqual(game.actions, [], "nothing sent for an off-screen tile target, and no exit click either");
+});
+
+test("build_structure rejects a placement that gives neither or both coordinate pairs", async () => {
+  const game = simulatedGame({ tiles: () => {} });
+  const neither = await game.run("build_structure", { placements: [{ name: "Hovel" }] });
+  assert.equal(neither.json.placements[0].status, "invalid_target");
+  const both = await game.run("build_structure", {
+    placements: [{ name: "Hovel", x: 500, y: 400, tile_x: 100, tile_y: 100 }],
+  });
+  assert.equal(both.json.placements[0].status, "invalid_target");
+  assert.deepEqual(game.actions, [], "a shape error sends nothing");
+});
+
+test("build_structure handles a batch mixing a pixel and a tile target", async () => {
+  const game = simulatedGame({ tiles: () => {} });
+  const report = await game.build([
+    { name: "Hovel", x: 500, y: 400 },
+    { name: "Hovel", tile_x: 110, tile_y: 110 },
+  ]);
+  assert.deepEqual(report.placements.map((p: any) => p.status), ["placed", "placed"]);
+  assert.deepEqual(report.placements[1].tile, { x: 110, y: 110 });
+});
+
+test("build_structure retries a blocked tile target at a nearby tile the map shows free, without any observation", async () => {
+  const view = tileView();
+  const target = view.pixel({ x: 100, y: 100 });
+  const trees = { x1: 97, y1: 97, x2: 103, y2: 103 };
+  const game = simulatedGame({
+    tiles: (set) => { for (let x = trees.x1; x <= trees.x2; x++) for (let y = trees.y1; y <= trees.y2; y++) set("organism", x, y, 1); },
+    blocked: (x, y) => x === target.x && y === target.y,
+  });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.retryMethod, "tile_map");
+  assert.equal(p.retries, 1, "the first computed spot is free");
+  assert.ok(p.tile, "reports the tile actually placed");
+  assert.ok(disjoint(footprintRect(p.tile, 4), trees));
+  assert.equal(game.captures(), 1, "one bookkeeping capture; no observation needed for the retry either");
+});
+
+test("a tile-only batch sends with the latest capture and no screenshot age limit; a pixel batch keeps its screenshot's", async () => {
+  const game = simulatedGame({ tiles: () => {} });
+  await game.observe();
+  await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  assert.ok(game.ageCredits.length > 0 && game.ageCredits.every((c) => c === Infinity), String(game.ageCredits));
+  assert.equal(game.captures(), 1, "the observation's capture is reused for the window's size and identity");
+  game.ageCredits.length = 0;
+  await game.build([{ name: "Hovel", x: 500, y: 400 }]);
+  assert.ok(game.ageCredits.length > 0 && game.ageCredits.every((c) => Number.isFinite(c)), String(game.ageCredits));
+  // A mixed batch: the pixel target's clicks keep the limit, the tile target's do not.
+  game.ageCredits.length = 0;
+  const before = game.actions.length;
+  await game.build([{ name: "Hovel", x: 500, y: 400 }, { name: "Hovel", tile_x: 110, tile_y: 110 }]);
+  const sent = game.actions.slice(before);
+  const terrain = (x: number, y: number) => sent.findIndex((a) => a.x === x && a.y === y && a.button !== 3);
+  const tile = tileView().pixel({ x: 110, y: 110 });
+  assert.ok(Number.isFinite(game.ageCredits[terrain(500, 400)]));
+  assert.equal(game.ageCredits[terrain(tile.x, tile.y)], Infinity);
+});
+
+test("a blocked tile target is retried in the live view, not the view of an older screenshot", async () => {
+  // Trees around tile (101, 100) in whichever view; the screenshot was taken at camera 1, the
+  // live view is camera 2 by the time of the placement.
+  const trees = { x1: 98, y1: 97, x2: 104, y2: 103 };
+  const live = tileView(2);
+  const target = live.pixel({ x: 101, y: 100 });
+  const game = simulatedGame({
+    tiles: (set) => { for (let x = trees.x1; x <= trees.x2; x++) for (let y = trees.y1; y <= trees.y2; y++) set("organism", x, y, 1); },
+    blocked: (x, y) => x === target.x && y === target.y,
+  });
+  await game.observe();
+  game.state.camera = 2;
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 101, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.retryMethod, "tile_map");
+  assert.ok(disjoint(footprintRect(p.tile, 4), trees), "the retry spot is free in the live view's map");
+  // The retry click is the placed tile projected through the live camera.
+  assert.deepEqual(p.at, live.pixel(p.tile));
+  assert.equal(game.tileReads(), 2, "the screenshot's map, then one read for the live view");
+});
+
+test("a tile target's retries stop when the live camera moves", async () => {
+  const target = tileView().pixel({ x: 100, y: 100 });
+  const game = simulatedGame({
+    tiles: () => {},
+    blocked: (x, y) => x === target.x && y === target.y,
+    moveCameraAfterWorldClicks: 1,
+  });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "not_placed", JSON.stringify(p));
+  assert.equal(p.retryStopped, "camera_moved");
+  assert.equal(game.actions.filter((a) => a.button !== 3 && a.y < 900).length, 1, "no retry click in a view the spots were not computed for");
+});
+
+test("build_structure reuses the map find_sites read for the live view, also for a retry", async () => {
+  let blocked: { x: number; y: number } | undefined;
+  const game = simulatedGame({
+    tiles: (set) => { for (let x = 104; x <= 106; x++) for (let y = 99; y <= 101; y++) set("organism", x, y, 1); },
+    blocked: (x, y) => x === blocked?.x && y === blocked?.y,
+  });
+  const { json: found } = await game.run("find_sites", { building: "Hovel", count: 1 });
+  const site = found.sites[0];
+  blocked = tileView().pixel({ x: site.tile_x, y: site.tile_y });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: site.tile_x, tile_y: site.tile_y }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(json));
+  assert.equal(p.retryMethod, "tile_map");
+  assert.equal(game.tileReads(), 1, "find_sites' read serves the retry; nothing is read again");
+  // Any other input in between (here a placement) makes it stale.
+  await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: site.tile_x, tile_y: site.tile_y }] });
+  assert.equal(game.tileReads(), 2);
+});
+
+/** A runtime for a timed run whose game clock advances only through waitGame. */
+function timedRuntime() {
+  const waits: number[] = [];
+  let ticks = 0;
+  const cycle = new ObservationCycle();
+  const runtime = {
+    runId: "test",
+    session: {
+      check() {}, wait: async () => {},
+      waitGame: async (seconds: number) => { waits.push(seconds); ticks += seconds * 30; return false; },
+      gameUsedTicks: () => ticks,
+      gameBudgetSeconds: 600, gameRemainingSeconds: () => 600 - ticks / 30, remaining: () => 60000,
+    },
+    cycle,
+    memory: { delivery() {} },
+    config: { contextBudget: 120000, minTurnSeconds: 0 },
+    pausedMilliseconds: () => 0,
+    phase() {}, changed() {}, timing() {},
+  } as unknown as AgentRuntime;
+  return { runtime, cycle, waits };
+}
+
+test("wait_and_observe with screenshot false waits the same, returns the reading as text and keeps the old frame", async () => {
+  const { runtime, waits } = timedRuntime();
+  const game = simulatedGame({ runtime });
+  await game.observe();
+  const result = await game.tool("wait_and_observe").execute("wait", { seconds: 5, screenshot: false });
+  const texts = result.content.flatMap((c) => (c.type === "text" ? [c.text] : []));
+  assert.equal(result.content.filter((c) => c.type === "image").length, 0);
+  assert.match(texts[0], /No screenshot taken; call observe or wait_and_observe/);
+  const json = JSON.parse(texts.at(-1)!);
+  assert.deepEqual(waits, [5]);
+  assert.equal(game.captures(), 1, "no capture");
+  assert.ok(json.run_clock && json.stats, JSON.stringify(json));
+  assert.equal(json.width, undefined, "no image, so no image size");
+  // The screenshot from before the wait still targets pixels: a click is accepted against it.
+  await game.tool("game_action").execute("click", { type: "click", x: 500, y: 400 });
+  assert.ok(game.actions.some((a) => a.x === 500 && a.y === 400));
+});
+
+test("only input that works from the screenshot marks the turn as pixel input", async () => {
+  const { runtime, cycle } = timedRuntime();
+  const game = simulatedGame({ runtime, tiles: () => {} });
+  await game.observe();
+  cycle.begin();
+  await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  assert.equal(cycle.acted, true);
+  assert.equal(cycle.pixelInput, false, "a tile placement does not work from the screenshot");
+  await game.tool("game_action").execute("key", { type: "key", key: "Z" });
+  assert.equal(cycle.pixelInput, true, "a key such as zoom changes what the screenshot shows");
+  await game.observe();
+  cycle.begin();
+  await game.run("build_structure", { placements: [{ name: "Hovel", x: 500, y: 400 }] });
+  assert.equal(cycle.pixelInput, true, "a pixel placement is");
+  await game.observe();
+  cycle.begin();
+  await game.tool("game_action").execute("click", { type: "click", x: 500, y: 400 });
+  assert.equal(cycle.pixelInput, true, "a click is");
+});
+
+test("a tile target waits for a valid camera sample instead of reporting not_on_screen", async () => {
+  // Read 1 is the placer's reader check; read 2 the tile target's camera.
+  const game = simulatedGame({ tiles: () => {}, unavailableReads: [2] });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  assert.equal(json.placements[0].status, "placed", JSON.stringify(json));
+});
+
+test("find_sites waits for a valid camera sample", async () => {
+  const game = simulatedGame({ tiles: () => {}, unavailableReads: [1] });
+  const { json } = await game.run("find_sites", { building: "Hovel", count: 1 });
+  assert.equal(json.sites?.length, 1, JSON.stringify(json));
+});
+
+test("a tile target is projected again when the view moves while the building is selected", async () => {
+  const game = simulatedGame({ tiles: () => {}, onButton: (state) => { state.camera = 2; } });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 101, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.deepEqual({ x: p.x, y: p.y }, tileView(2).pixel({ x: 101, y: 100 }), "clicked where the tile is in the moved view");
+});
+
+test("an offset retry of a tile target reports the tile it went to", async () => {
+  // No tile reader: retries step by fixed offsets, in tiles, from the requested tile.
+  const camera = { centre_tile_x: 1, centre_tile_y: 1, tiles_wide: 30, tiles_high: 68 };
+  const target = new TileMap({ x0: 0, y0: 0, w: 0, h: 0, stable: true, layers: {} as TileRegion["layers"] }, camera, { width: 1920, height: 1080 }).pixel({ x: 5, y: 5 });
+  const game = simulatedGame({ blocked: (x, y) => x === target.x && y === target.y });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 5, tile_y: 5 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.retryMethod, "offsets");
+  assert.deepEqual(p.tile, { x: 5 + p.offsetTiles[0], y: 5 + p.offsetTiles[1] });
+  assert.notDeepEqual(p.tile, { x: 5, y: 5 });
+});
+
+test("find_sites ignores near_x/near_y when no screenshot shows the live view", async () => {
+  const game = simulatedGame({ tiles: () => {} });
+  const { json } = await game.run("find_sites", { building: "Hovel", count: 1, near_x: 100, near_y: 100 });
+  assert.match(json.nearIgnored, /no(t| screenshot)|does not show/);
+  assert.equal(json.sites.length, 1);
 });

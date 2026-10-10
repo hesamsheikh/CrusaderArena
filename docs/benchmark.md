@@ -191,8 +191,13 @@ episodes are independent games of the same save; `--playbook` makes them a
 [learning series](#learning-series). For each episode it:
 
 1. Starts the game through Steam on the game machine and connects to it.
-2. Waits out the startup screens, opens Load Game, searches for the save by name and
-   loads it (up to 3 attempts), then confirms the map with the reader.
+2. Waits for the main menu, opens Load Game, searches for the save by name and loads it
+   (up to 3 attempts), then confirms the map with the reader. The main menu and the
+   Load Game dialog are recognised as soon as they show, from a few pixel colours of a
+   capture (`tools/runner/screen_probe.py`, which needs Pillow on the host, and
+   `harness/server/menu-screen.ts`); the runner log gives the seconds from launch to
+   each. Without Pillow it waits the old way: 45 s, then until the screen stops
+   changing, which the animated menu never does, so about 105 s of timeouts.
 3. Pauses the game and starts the agent run with the given budget.
 4. When the run ends, takes the final reading and writes the scorecard,
    `episode.json`, and the [results](#the-results) into the run's folder.
@@ -209,6 +214,14 @@ episodes are independent games of the same save; `--playbook` makes them a
    name and file, or the error. The `.sav` files are not published.
 6. Disconnects and closes the game. With `--record`, renders the run video.
 7. If the episode counts (see below), [interviews](#the-interview) the agent about it.
+
+When an episode counts and there is a next one, step 7's interview and the next episode's
+steps 1–2 (starting the game, connecting and loading its save) run at the same time: neither
+touches the other's state, so the next episode's game is ready to go as soon as the interview
+ends. The next episode's agent run (step 3) still waits for the interview, since the dashboard
+refuses a second run while one is in progress. A stop, a stale dashboard or a changed benchmark
+save (step 5) between episodes still waits for the interview and closes a game the series ends
+up not playing after all.
 
 Each episode ends in one of four ways ([series.ts](../harness/server/series.ts)):
 
@@ -256,6 +269,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--wall-limit-minutes` | 360 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
 | `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
+| `--fallback-observation` | `when-needed` | What the host sends after a turn that acted without looking: `when-needed` is text only unless the turn used `game_action`, `inspect_building` or a pixel placement (a screenshot then); `always` is a screenshot every time |
 | `--context-budget` | 120000 | Working context budget in tokens |
 | `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |
 | `--playbook` | off | Run the episodes as a [learning series](#learning-series): the playbook carries over |
@@ -367,11 +381,12 @@ next playbook).
 
 - **The same conversation.** The host keeps the finished run's conversation until the next
   run starts and asks in it, so the agent remembers its game as far as its context reaches
-  after any compactions. The requests repeat the run's system prompt and tools, so the
+  after any compactions. The request repeats the run's system prompt and tools, so the
   provider's cache covers the game. The tools no longer work: a tool call gets a refusal and
-  the question is asked on, twice at most.
-- **Four questions, one at a time** ([`prompt/interview.md`](../prompt/interview.md)), each
-  sent once the agent has answered the one before:
+  the combined question below is asked on, twice at most.
+- **Four questions in one message** ([`prompt/interview.md`](../prompt/interview.md)), asked
+  together under their own titled headings, with instructions to answer each one under the
+  same heading so the reply can be told apart into four answers:
   1. Its result beside the [reference game](#scoring-net-worth) on its map: the game time
      each played, net worth, gold, stored goods, population, housing and popularity, and
      what doing nothing scores. How does it see the difference?
@@ -380,6 +395,10 @@ next playbook).
   3. What does it think of the benchmark: the tools, what it could see, the time limit and
      the instructions?
   4. Anything else?
+
+  Asking once instead of once per question cut a four-question interview from four
+  sequential requests to one. When the reply does not come back under the four headings,
+  it is kept whole as a single answer instead of guessed at.
 - **Maps with a reference game only.** A map needs both its entry in `referenceGames` and
   its file in `prompt/reference-games/`; without them the interview is skipped. When the
   run's budget differs from the person's game time by more than 2%, the first question
@@ -387,11 +406,15 @@ next playbook).
 - **The record.** `interview.md`, the transcript, and `interview.json`, the same with each
   answer's reasoning where the provider returns it, refused tool calls, tokens and time,
   and the interview's cost, go into the run's folder, rewritten after each answer, and are
-  published with the run. The run's own files stay as the run ended: the interview's cost
-  is not in the run's cost and its requests are not in `events.jsonl`.
+  published with the run. The combined request's tokens, reasoning and refused calls are
+  kept on the first of the four answers, so the totals are not counted four times over. The
+  run's own files stay as the run ended: the interview's cost is not in the run's cost and
+  its requests are not in `events.jsonl`. `npm run report` (below) reads `interview.json`
+  into its own columns, apart from the run's.
 - **Failures.** A transient provider error is retried as during play. Any other failure, a
-  stop (Ctrl-C) or 30 minutes without an end ends the interview with the answers so far; the
-  episode's result never changes. `--no-interview` leaves interviews out.
+  stop (Ctrl-C) or 30 minutes without an end ends the interview with no answers recorded (it
+  is now one request, not four, so there are no earlier answers to keep); the episode's
+  result never changes. `--no-interview` leaves interviews out.
 
 ## Comparing runs
 
@@ -413,9 +436,11 @@ Columns, in order: run, start time, model, model settings (reasoning, output lim
 providers), harness version (commit, uncommitted-change hash, and prompt and tool
 hashes), benchmark, map, how it ended, game seconds, wall seconds, turns, tokens
 (total, uncached input, cache reads, cache writes, the share of input read from the
-cache, output, tokens per game minute), cost in US dollars (what OpenRouter billed,
-or `~` before it when worked out from the run's tokens and its model's prices; see
-[Context](context.md#tokens-and-caching)), population, housing,
+cache, output), cost in US dollars (what OpenRouter billed, or `~` before it when
+worked out from the run's tokens and its model's prices; see
+[Context](context.md#tokens-and-caching)), the post-episode interview's own tokens and
+cost (from `interview.json`, apart from the run's own; blank where a run has no
+interview), tokens per game minute, population, housing,
 popularity, net worth, growth, gold, food, structures, troops, where the score came
 from, building placements attempted / placed / failed, anchor-tool calls / placed /
 failed, retries, retry methods, retries skipped, peak game memory, tool errors and

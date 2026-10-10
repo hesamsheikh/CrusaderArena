@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from PIL import Image
 
@@ -224,6 +225,26 @@ class RenderVideoTests(unittest.TestCase):
         self.assertAlmostEqual(float(probe['format']['duration']), total, delta=0.2)
         self.assertEqual((probe['streams'][0]['width'], probe['streams'][0]['height']), (1920, 1080))
         self.assertEqual(len(probe['chapters']), 4)
+        self.assertFalse((self.dir / 'video.partial.mp4').exists())
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'needs ffmpeg')
+    def test_interrupted_render_cleans_up_the_partial_file(self):
+        run = self.load()
+        output = self.dir / 'video.mp4'
+        original = video['Renderer'].frame
+        calls = {'n': 0}
+
+        def flaky(self, clip, local):
+            # A few frames in, simulate a Ctrl-C (and so, via the same code path, a SIGTERM too).
+            calls['n'] += 1
+            if calls['n'] > 3:
+                raise KeyboardInterrupt()
+            return original(self, clip, local)
+
+        with mock.patch.object(video['Renderer'], 'frame', flaky):
+            with self.assertRaises(KeyboardInterrupt):
+                video['render'](run, args(), output)
+        self.assertFalse(output.exists())
         self.assertFalse((self.dir / 'video.partial.mp4').exists())
 
 

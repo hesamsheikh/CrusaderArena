@@ -17,6 +17,142 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.3.0] - 2026-10-10
+
+Comparable within itself only: `build_structure` reports and retries more cases and
+takes map tiles, the host sends text instead of a screenshot after a turn without
+`game_action`, `inspect_building` or a pixel placement, screenshots stay in the
+conversation until compaction, every failure names its remedy, `set_tax` reads a live
+figure, and three little-used tools were removed.
+
+### Benchmark
+
+- A tool that returns text only and leaves the last screenshot unusable (`set_tax`,
+  `set_rations`, `market_trade`, `place_near`, `expand_storage`) now names itself in
+  the next "Observe the game first" error, instead of every such tool giving the same
+  generic message.
+- `build_structure`: a target outside the screenshot or over the bottom HUD is its own
+  status, `invalid_target` (`reason` names the pixel boundary), instead of aborting
+  the whole call, and does not count toward the 8-actions-per-reply limit.
+  Affordability is checked from the reader before each placement's first click
+  (re-read so an earlier placement in the same call is accounted for), so an
+  unaffordable target costs no click; before, this was only caught after a click had
+  already been spent on it. A quarry, iron mine or pitch rig refused for its ground is
+  now retried nearby the same way a farm refused for its ground already was. The
+  call's final right-click (leaving placement mode) now targets the last placement
+  actually attempted, instead of always the batch's last requested target, and is
+  skipped entirely when every target in the call was invalid.
+- `set_tax` returns the reader's own tax popularity factor, read from the keep panel
+  after the last step, when the reader has one, instead of always the static
+  reference table.
+- Removed `list_buildings`, `guide_page` and `notebook_edit`: unused in 24 recent
+  runs. The construction-menu guide images still arrive in
+  [the preparation message](docs/context.md#the-preparation-message).
+- `build_structure` placements can name a map tile (`tile_x`/`tile_y`, as
+  `map_overview` and `find_sites` give them) instead of a screenshot pixel. The host
+  projects the tile through the live camera right before its click, so a tile target
+  needs no screenshot and no age limit applies; a tile not clickable in the live view
+  is reported `not_on_screen` without input. Every tried or placed spot reports its
+  `tile`, and a tile target's retries use a tile map read for the live view. See
+  [Build](docs/tools.md#build).
+- `find_sites` works without a screenshot: it reads the live camera and returns each
+  site's tile, plus its pixel only while the latest screenshot shows that view. It no
+  longer refuses after the camera moved.
+- `wait_and_observe` takes `screenshot: false`: the same wait, and the same stats,
+  game events and `run_clock` as text, with no image; the last screenshot still
+  targets clicks. See [Text-only observations](docs/context.md#text-only-observations).
+- New run setting `fallbackObservation` (`--fallback-observation`, and the
+  dashboard's run settings), recorded in `run.json`. With `when-needed`, the default,
+  the host's observation after a turn that acted without looking (or ran short of the
+  minimum turn), and the reading-only top-up, is that text-only observation unless the
+  turn used `game_action`, `inspect_building` or a pixel placement. A reply with no tool calls, the first
+  observation and the one after a compaction stay screenshots. `always` keeps a
+  screenshot every time, as before, for comparison. The briefing and the controls say
+  which applies. Recorded runs had a host screenshot after 44–54% of their turns,
+  mostly after text-only tools, and 40–43% of screenshots were never used for a click.
+- The construction guide in the preparation message is sent as a JPEG when
+  `.internal/ui-reference/construction-trays.jpg` is installed (quality 90, about a
+  third of the PNG's 3.7 MB at the same image size and token cost; it is resent in
+  every request), else as the PNG. `tools/make-construction-trays.mjs` writes the JPEG.
+  See [Setup](docs/setup.md#3-guide-images).
+- Screenshots stay in the conversation until compaction instead of only the newest two,
+  so every request repeats the previous one unchanged and the provider's prompt cache
+  covers it. With the newest two kept and screenshots now rarer, each new one replaced
+  an image many turns back and cost 20–47k uncached tokens (GLM 5.3 Flash, 2026-10-11).
+  Past 16 unpinned images the oldest are replaced in one batch, a safety limit for
+  providers' per-request image limits. See
+  [Keeping the context small](docs/context.md#keeping-the-context-small).
+- A tool result that failed or fell short carries a `remedy`: the tool call that
+  addresses it, for example `market_trade`'s `no_market` says to build a Marketplace
+  with `build_structure`, and a placement that cannot be paid names the
+  `wait_and_observe` `until` covering its cost. Thrown errors end with the fix the same
+  way. See [Failures](docs/tools.md#tools).
+- The prompt no longer tells the agent to place the granary near the keep, and says the
+  ground close to the keep is limited and critical for buildings whose efficiency
+  matters more there. In 31 of 32 recorded Oasis runs the granary went within 10 tiles
+  of the keep's campfire, with hovels and some woodcutters beside it.
+
+### Harness
+
+- Claude's cache marks (through OpenRouter and Anthropic's own API) go on where the
+  previous request ended and on the newest message, now that the conversation only
+  grows between compactions, instead of before the oldest kept screenshot.
+- `npm run episodes` recognises the game's main menu and the Load Game dialog from a few
+  pixel colours of a capture (`tools/runner/screen_probe.py`, Pillow on the host)
+  instead of waiting for the screen to stop changing, which the animated menu never did:
+  every launch ran out a 90 s and a 15 s timeout. The save's name is typed with one
+  capture instead of one per key, and the loaded map is polled every 250 ms. A host
+  without Pillow waits the old way.
+
+- Compaction's headroom check (the second of its two triggers) now reads the same
+  anchored context estimate as the 65% trigger, instead of a fresh recount of the
+  whole conversation at a crude bytes-per-token rate; a provider reporting low real
+  usage over a long conversation no longer tripped this early from the recount's own
+  inflation. See [Compaction](docs/context.md#keeping-the-context-small).
+- A tool call that only clicks or presses a hotkey (not one that inspects pixels or
+  returns a screenshot) reuses the call's own last captured frame while it is
+  comfortably under the game device's 30-second action age limit, instead of
+  recapturing the window every time: `build_structure`'s menu and terrain clicks, the
+  `dismiss` helper several tools share, and the camera-movement anchors (`center_on`,
+  `place_near`, `go_to_tile`). The host's own pause and speed-key presses do the same.
+  `build_structure` also remembers the construction tray's open category across
+  calls, with the input count at the time so it can tell whether anything else
+  touched the game meanwhile, and reuses it instead of reopening the category tray;
+  falls back to the full click when the reader does not confirm the remembered
+  category.
+- OpenRouter profiles send session-affinity headers, so a run's requests favour the
+  same upstream deployment and its prompt cache; request cost tracking also records
+  which upstream provider served a request (e.g. "DeepInfra") when OpenRouter reports
+  one. See [Tokens and caching](docs/context.md#tokens-and-caching).
+- The post-episode interview's four questions go in one combined request instead of
+  four sequential ones, each under its own heading; the host splits the single reply
+  back into four answers by its headings, or keeps it as one unsplit answer when they
+  do not line up. A combined request's tokens, reasoning and refused tool calls are
+  attributed to the first answer only, so the interview's token total is not counted
+  four times over.
+- A learning series starts the next episode's game (launch, connect, load, pause)
+  while the previous episode's interview is still going, instead of waiting for it
+  first; a stale dashboard, an operator stop or a changed benchmark save still waits
+  for or closes the started game correctly before pausing the series.
+- `events.jsonl` no longer stores the same tool-call image three times (pi-agent-core
+  emits a tool result's image in `tool_execution_end` and again in the `toolResult`
+  message's `message_start` and `message_end`): the two duplicates keep only their
+  `mimeType` and a pointer to `tool_execution_end`'s copy.
+- The store's key redaction skips strings that are plainly image data (a long base64
+  string or a `data:image` URL) instead of scanning them for every saved API key,
+  which was slow on `events.jsonl`'s multi-megabyte screenshots.
+- `npm run report` shows a run's post-episode interview tokens and cost in their own
+  columns, apart from the run's own.
+- `run.json`'s request timings separate `preparationMs` and `reflectionMs` from
+  `compactionMs`.
+- `tools/video/compact-recording.py` re-encodes a run's recorded JPEG frames into one
+  `recording/frames.mp4` (libx264, verified against `frames.jsonl` by frame count,
+  width and height before the JPEGs are deleted), cutting a run's recording to a
+  fraction of its size; `render-video.py` renders from a compacted recording the same
+  way it renders from loose frames. The host queues this after a run's own video
+  render; `npm run compact-recordings` runs it by hand over older runs. See
+  [Run videos](docs/harness.md#run-videos).
+
 ## [1.2.1] - 2026-10-10
 
 Comparable with 1.2.0: a fix to what the agent is shown of its popularity.

@@ -102,6 +102,23 @@ test("named runs append full logs and deltas immediately, survive restart, and r
   assert.equal(restored.logs(run.id)[0].text.length, 5011);
   assert.throws(() => restored.get("../../config/models.json"));
 });
+test("redact skips long base64 image data and data: URLs instead of scanning them for keys", () => {
+  // A plain alphanumeric key (no hyphen or underscore), the one shape that could coincidentally
+  // sit inside true base64 image bytes and so would not be redacted there; the normal env-secret-test
+  // fixture key below is realistic (most provider keys have a hyphen) and is still always caught.
+  const store = new Store(mkdtempSync(path.join(tmpdir(), "arena-store-")), { MOONSHOT_API_KEY: "coincidentalalphanum12345" });
+  const blob = "A".repeat(600) + "coincidentalalphanum12345" + "B".repeat(600);
+  const dataUrl = `data:image/png;base64,${blob}`;
+  assert.equal(store.redact(blob), blob, "pure base64 of 512+ characters is left alone");
+  assert.equal(store.redact(dataUrl), dataUrl, "a data: image URL is left alone regardless of its contents");
+  const event = { type: "tool_execution_end", result: { content: [{ type: "image", data: blob, mimeType: "image/png" }] } };
+  assert.equal(store.redact(event).result.content[0].data, blob);
+  // A realistic key (most have a hyphen or underscore) fails the pure-base64 test, so it is still
+  // caught even past 512 characters, or inside a string that is not an image at all.
+  const named = fixture();
+  assert.equal(named.redact("A".repeat(600) + "env-secret-test"), "A".repeat(600) + "[redacted]");
+  assert.equal(named.redact("env-secret-test " + "A".repeat(600) + "!not base64!"), "[redacted] " + "A".repeat(600) + "!not base64!");
+});
 test("legacy sessions are imported once without losing available logs", () => {
   const store = fixture();
   const at = Date.now();

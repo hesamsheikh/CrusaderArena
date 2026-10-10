@@ -13,11 +13,19 @@ export const gameMechanics = readFileSync(
 );
 
 /**
- * Prompt Markdown as the agent sees it: HTML comments (maintainer notes) removed and, when the
- * benchmark has no military play, the `<!-- military -->` … `<!-- /military -->` blocks too.
+ * Prompt Markdown as the agent sees it: HTML comments (maintainer notes) removed; when the
+ * benchmark has no military play, the `<!-- military -->` … `<!-- /military -->` blocks too; and
+ * whichever of `<!-- when-needed -->` … `<!-- /when-needed -->` or `<!-- always -->` …
+ * `<!-- /always -->` does not match the run's `fallbackObservation` setting (prompt/game-controls.md
+ * uses these to describe the host's own fallback for the setting in force).
  */
-export function promptText(markdown: string, { military = true } = {}) {
-  const text = military ? markdown : markdown.replace(/<!-- military -->[\s\S]*?<!-- \/military -->\n?/g, "");
+export function promptText(
+  markdown: string,
+  { military = true, fallbackObservation = "when-needed" as "when-needed" | "always" } = {},
+) {
+  let text = military ? markdown : markdown.replace(/<!-- military -->[\s\S]*?<!-- \/military -->\n?/g, "");
+  const other = fallbackObservation === "when-needed" ? "always" : "when-needed";
+  text = text.replace(new RegExp(`<!-- ${other} -->[\\s\\S]*?<!-- /${other} -->\\n?`, "g"), "");
   return text.replace(/<!--[\s\S]*?-->\n?/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -70,7 +78,7 @@ const minutes = (value: number) => `${value} ${value === 1 ? "minute" : "minutes
  */
 export function runSystemPrompt(run: Run) {
   if (!run.config) throw new Error("Missing run configuration");
-  const { gameMinutes, wallLimitMinutes, defaultWaitSeconds, minTurnSeconds } = run.config;
+  const { gameMinutes, wallLimitMinutes, defaultWaitSeconds, minTurnSeconds, fallbackObservation } = run.config;
   const benchmark = benchmarkSpec(run.benchmarkType || "Custom");
   const briefing = `# Crusader Arena: you are being evaluated
 
@@ -87,8 +95,9 @@ questions during the run. The run is judged by the game's state when it ends.
    scenario and paused it on the starting map; you never need to load anything. You
    read these rules and an interface guide, then reply with a short plan ending in BEGIN.
 2. **Timed play.** The host unpauses the game and sends a screenshot. In each reply you
-   call tools; the host runs them in order while the game runs, then sends a new
-   screenshot with stats. This repeats until a limit is reached.
+   call tools; the host runs them in order while the game runs, then the next request
+   shows the result: a screenshot with stats, or the stats alone (see Time). This
+   repeats until a limit is reached.
 3. **The end.** The host pauses the game and records its final state, which is what the
    benchmark judges. Only what exists in the game at that moment counts; plans and
    unfinished intentions do not.
@@ -107,14 +116,24 @@ questions during the run. The run is judged by the game's state when it ends.
   is the budget.
 - Every request shows the game time left in minutes and seconds: \`run_clock\` in each
   screenshot, and a "Game time left" line after the last tool result of each reply.
-- If you act without observing, or call no tool, the host lets at least ${defaultWaitSeconds} game seconds
-  pass and then sends a screenshot.${minTurnSeconds > 0 ? `
+- If you call no tool at all, the host lets at least ${defaultWaitSeconds} game seconds pass and sends
+  a screenshot.
+- If you act without observing afterwards, the host lets the same wait pass and then sends${
+    fallbackObservation === "always"
+      ? " a screenshot."
+      : `
+  an observation: a screenshot if your reply used \`game_action\`, \`inspect_building\` or a
+  \`build_structure\` placement given by \`x\`/\`y\`, otherwise the same stats, game events and
+  \`run_clock\` as text, with no image.`
+  }${minTurnSeconds > 0 ? `
 - A reply whose tools run the game lasts at least ${minTurnSeconds} game seconds, counted from when
   the host starts pausing the game for it (the game runs on for a moment until the pause
   takes). \`observe\` and \`wait_and_observe\` return the game only once that much has
   passed (the host lets the rest pass first). Batch your actions before you look.` : ""}
 - Reading is free only for a while: from the ${READING_ONLY_LIMIT}th reply in a row that only reads,
-  the host lets ${Math.max(defaultWaitSeconds, minTurnSeconds)} game seconds pass after each such reply.
+  the host lets ${Math.max(defaultWaitSeconds, minTurnSeconds)} game seconds pass after each such reply${
+    fallbackObservation === "always" ? "" : `
+  and sends that text observation`}.
 
 ## Ground rules
 
@@ -134,7 +153,7 @@ questions during the run. The run is judged by the game's state when it ends.
   return [
     briefing,
     ...(benchmark ? [benchmark.text] : []),
-    promptText(gameControls),
+    promptText(gameControls, { fallbackObservation }),
     screenLayout(),
     mechanicsPrompt(benchmark?.military ?? true),
   ].join("\n\n");
@@ -187,7 +206,7 @@ export function preparationMessage(run: Run, playbook?: string): AgentMessage {
           atlas.text,
         ].join("\n\n"),
       },
-      ...(atlas.image ? [{ type: "image" as const, data: atlas.image, mimeType: "image/png" }] : []),
+      ...(atlas.image ? [{ type: "image" as const, data: atlas.image, mimeType: atlas.mimeType }] : []),
       ...(example
         ? [
             { type: "text" as const, text: example.text },

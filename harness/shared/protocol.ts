@@ -278,6 +278,15 @@ export const runConfigSchema = z
      * pass after a shorter one. It bounds model requests per game minute, so cost. 0 turns it off.
      */
     minTurnSeconds: z.number().min(0).max(60).default(8),
+    /**
+     * Whether the host's own fallback observation (after a turn that acted without looking or ran
+     * short of the minimum turn, or the reading-only top-up) is a screenshot or the text-only
+     * observation: "when-needed" sends text unless the turn sent input that works from the
+     * screenshot (any game_action, inspect_building, a build_structure placement given in pixels);
+     * "always" is a screenshot every time, as every run did before this setting existed.
+     * A reply with no tool calls gets a screenshot under either.
+     */
+    fallbackObservation: z.enum(["when-needed", "always"]).default("when-needed"),
     contextBudget: z.number().int().min(32000).max(200000).default(120000),
     imageTokenEstimate: z.number().int().min(1024).max(16384).default(4096),
     /** Record the game window while the agent acts (not while it thinks) for tools/video/render-video.py. */
@@ -316,6 +325,10 @@ export type RuntimeProgress = {
     failed: number;
     aborted: number;
     compactionMs: number;
+    /** The one-off preparation request before timed play starts, retries included. */
+    preparationMs: number;
+    /** Reflection requests after a learning episode (the playbook rewrite); gameplay is unaffected. */
+    reflectionMs: number;
   };
   finalPause?: string;
   /** Memory-guard extremes on the game host during the run (MiB), and collections the reader forced. */
@@ -443,14 +456,14 @@ export function validateFrameAction(
   now = Date.now(),
 ) {
   if (now - frame.receivedAt > 30000)
-    throw new Error("Game image expired. Refresh before acting.");
+    throw new Error("Game image expired (older than 30 seconds of play): call observe for a fresh screenshot and target its pixels.");
   if ("x" in action && (action.x >= frame.width || action.y >= frame.height))
-    throw new Error("Click outside the game window.");
+    throw new Error("Click outside the game window: x and y must be within the latest screenshot's width and height.");
   if (
     action.type === "drag" &&
     (action.endX >= frame.width || action.endY >= frame.height)
   )
-    throw new Error("Drag outside the game window.");
+    throw new Error("Drag outside the game window: both ends must be within the latest screenshot's width and height.");
 }
 
 /** Map a pointer into the visible image, excluding object-fit letterboxing. */

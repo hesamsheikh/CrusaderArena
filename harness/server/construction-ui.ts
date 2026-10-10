@@ -35,10 +35,10 @@ function checkedScale(frame: Pick<Frame, "width" | "height">) {
 export function constructionClicks(frame: Frame, name: string, target: { x: number; y: number }): GameAction[] {
   if (!Number.isInteger(target.x) || !Number.isInteger(target.y) ||
       target.x < 0 || target.y < 0 || target.x >= frame.width || target.y >= frame.height)
-    throw new Error("Placement target must be inside the current game image.");
+    throw new Error("Placement target must be inside the current game image: give x and y within the latest screenshot's width and height, or give tile_x/tile_y.");
   // Keep scripted placement out of the construction tray and bottom reports.
   if (target.y >= frame.height * 0.82)
-    throw new Error("Placement target overlaps the bottom HUD; choose visible world terrain.");
+    throw new Error(`Placement target overlaps the bottom HUD: y must be below ${Math.floor(frame.height * 0.82)}. Choose a spot higher on screen, or give tile_x/tile_y.`);
   return [...menuClicks(frame, name), { type: "click", ...target, button: 1 }];
 }
 

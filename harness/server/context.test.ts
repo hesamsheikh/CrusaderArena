@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ContextBudget, contextEstimate, pruneImages } from "./context.js";
+import { capImages, ContextBudget, contextEstimate, IMAGE_CAP, IMAGES_AFTER_CAP, IMAGE_LOGGED_ELSEWHERE, omitDuplicateToolImages, pruneImages } from "./context.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 const text = (value: string): AgentMessage => ({
   role: "user",
@@ -91,4 +91,49 @@ test("a measured small context does not compact merely because UTF-8 bytes excee
   );
   budget.record(messages, "controls", tools, 40000);
   assert.ok(budget.estimate(messages, "controls", tools) > threshold);
+});
+
+test("omitDuplicateToolImages replaces a toolResult message's image data without touching the original", () => {
+  const original = {
+    role: "toolResult" as const,
+    toolCallId: "c1",
+    toolName: "observe",
+    content: [
+      { type: "text" as const, text: "{\"ok\":true}" },
+      { type: "image" as const, data: "a".repeat(2000), mimeType: "image/png" },
+    ],
+    isError: false,
+    timestamp: 1,
+  };
+  const slim = omitDuplicateToolImages(original);
+  assert.notEqual(slim, original);
+  assert.deepEqual(slim.content[0], original.content[0]);
+  assert.deepEqual(slim.content[1], { type: "image", mimeType: "image/png", omitted: IMAGE_LOGGED_ELSEWHERE });
+  // The original (the very array the live conversation and tool_execution_end both hold) is untouched.
+  assert.deepEqual(original.content[1], { type: "image", data: "a".repeat(2000), mimeType: "image/png" });
+});
+
+test("omitDuplicateToolImages leaves non-toolResult messages and image-free toolResults as they are", () => {
+  const user: AgentMessage = { role: "user", content: [{ type: "image", data: "x".repeat(2000), mimeType: "image/png" }], timestamp: 1 };
+  assert.equal(omitDuplicateToolImages(user), user);
+  const noImage = { role: "toolResult" as const, toolCallId: "c1", toolName: "observe", content: [{ type: "text" as const, text: "ok" }], isError: false, timestamp: 1 };
+  assert.equal(omitDuplicateToolImages(noImage), noImage);
+});
+
+test("screenshots stay until there are more than IMAGE_CAP, then the oldest go in one batch", () => {
+  const shot = (n: number): AgentMessage => ({ role: "user", content: [{ type: "text", text: `shot ${n}` }, { type: "image", data: `img${n}`, mimeType: "image/jpeg" }], timestamp: n });
+  const guide = shot(0);
+  const pinned = new Set([guide]);
+  let messages = [guide];
+  for (let n = 1; n <= IMAGE_CAP; n++) {
+    const next = capImages([...messages, shot(n)], pinned);
+    // Unchanged up to the cap: the same message objects, so every request repeats the last.
+    assert.deepEqual(next.slice(0, messages.length), messages);
+    messages = next;
+  }
+  const images = (list: AgentMessage[]) => JSON.stringify(list).split('"type":"image"').length - 1;
+  assert.equal(images(messages), IMAGE_CAP + 1, "all screenshots and the pinned guide image");
+  const over = capImages([...messages, shot(IMAGE_CAP + 1)], pinned);
+  assert.equal(images(over), IMAGES_AFTER_CAP + 1, "down to the newest few, plus the guide");
+  assert.equal(over[0], guide, "the pinned guide keeps its image");
 });

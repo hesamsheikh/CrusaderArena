@@ -101,6 +101,7 @@ function App() {
       wallLimitMinutes: 360,
       waitSeconds: 5,
       minTurnSeconds: 8,
+      fallbackObservation: "when-needed",
       contextBudget: 120000,
       recordVideo: true,
       modelId: "",
@@ -283,6 +284,7 @@ function App() {
       wallLimitMinutes: run.config?.wallLimitMinutes || 360,
       waitSeconds: run.config?.defaultWaitSeconds ?? 5,
       minTurnSeconds: run.config?.minTurnSeconds ?? 8,
+      fallbackObservation: run.config?.fallbackObservation ?? "when-needed",
       contextBudget: run.config?.contextBudget || 120000,
       recordVideo: run.config?.recordVideo ?? true,
     });
@@ -688,6 +690,7 @@ function App() {
                   wallLimitMinutes: draft.wallLimitMinutes,
                   defaultWaitSeconds: draft.waitSeconds,
                   minTurnSeconds: draft.minTurnSeconds,
+                  fallbackObservation: draft.fallbackObservation,
                   contextBudget: draft.contextBudget,
                   imageTokenEstimate: 4096,
                   recordVideo: draft.recordVideo,

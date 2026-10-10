@@ -34,10 +34,31 @@ export function pruneImages(
     })
     .reverse();
 }
+/** What an events.jsonl record keeps in place of a duplicate image's data (store.ts, index.ts). */
+export const IMAGE_LOGGED_ELSEWHERE = "see tool_execution_end";
+/**
+ * pi-agent-core emits a tool call's image result three times: tool_execution_end's own result,
+ * and message_start and message_end of the toolResult message it builds from that same result
+ * (the same content array, not a copy). For the event log, index.ts keeps tool_execution_end's
+ * copy full and passes the message_start/message_end ones through here, so only one of the three
+ * keeps the image's data; the other two keep its mimeType and a pointer to where it is. Returns a
+ * new message (or the same one, when there is nothing to replace); the live conversation, which
+ * holds the very same content array tool_execution_end emitted, is never mutated.
+ */
+export function omitDuplicateToolImages<T extends { role: string; content?: unknown }>(message: T): T {
+  if (message.role !== "toolResult" || !Array.isArray(message.content)) return message;
+  if (!message.content.some((part) => (part as { type?: string })?.type === "image")) return message;
+  return {
+    ...message,
+    content: message.content.map((part) =>
+      (part as { type?: string })?.type === "image"
+        ? { type: "image", mimeType: (part as { mimeType?: unknown }).mimeType, omitted: IMAGE_LOGGED_ELSEWHERE }
+        : part,
+    ),
+  };
+}
 type PayloadMessage = { role: string; content?: unknown };
 type CacheControl = Record<string, unknown>;
-const hasImage = (message: PayloadMessage) =>
-  Array.isArray(message.content) && message.content.some((part) => part?.type === "image_url");
 /** Marks the message's last text part; false when it has none. */
 function markText(message: PayloadMessage, cacheControl: CacheControl) {
   if (typeof message.content === "string" && message.content) {
@@ -51,13 +72,22 @@ function markText(message: PayloadMessage, cacheControl: CacheControl) {
   return Boolean(text);
 }
 /**
- * Moves Anthropic cache breakpoints in an OpenAI-format request (Claude through OpenRouter) to
- * places the next request repeats. Pi marks the system prompt, the last tool and the last
- * message, but the last message never pays off here: every turn prunes the oldest kept
- * screenshot, which changes the conversation before it, so each turn would write a cache entry
- * that no later request reads. Instead mark the end of the pinned guide, unchanged for the whole
- * run, and the last message before the oldest unpinned image; everything up to it is sent
- * unchanged next turn. `pinned` counts the guide messages at the start of the conversation.
+ * The message the previous request ended with: the one just before the latest assistant reply,
+ * since a request is the previous one plus that reply, its tool results and the host's message.
+ * -1 when the conversation has no reply after the guide yet.
+ */
+function previousEnd(messages: PayloadMessage[], after: number) {
+  for (let i = messages.length - 1; i > after; i--) if (messages[i].role === "assistant") return i - 1;
+  return -1;
+}
+/**
+ * Moves Anthropic cache breakpoints in an OpenAI-format request (Claude through OpenRouter). Pi
+ * marks the system prompt, the last tool and the last message. The conversation only grows
+ * between compactions (screenshots stay in it; see capImages), so every request repeats the
+ * previous one: the second conversation mark goes where the previous request ended, whose entry
+ * it wrote at its own last message, and is read back from there even after a turn with more
+ * content than Anthropic searches back over (about 20 blocks) from the new last message. Both
+ * marks fall on the last message with text at or before their place, the same rule both times.
  */
 export function placeCacheBreakpoints(params: { messages: PayloadMessage[] }, pinned: number) {
   const { messages } = params;
@@ -73,28 +103,18 @@ export function placeCacheBreakpoints(params: { messages: PayloadMessage[] }, pi
   }
   if (!cacheControl) return;
   const guideEnd = start + pinned - 1;
-  if (pinned > 0 && messages[guideEnd]) markText(messages[guideEnd], cacheControl);
-  const oldest = messages.findIndex((message, i) => i > guideEnd && hasImage(message));
-  if (oldest < 0) {
-    markText(messages[messages.length - 1], cacheControl);
-    return;
-  }
-  // Pi sends the images of a group of tool results in a user message after the group's tool
-  // messages; their text changes with the images, so the breakpoint goes before the group.
-  let i = oldest - 1;
-  const content = messages[oldest].content as { text?: string }[];
-  if (content[0]?.text === "Attached image(s) from tool result:")
-    while (i > guideEnd && messages[i].role === "tool") i--;
-  for (; i > guideEnd; i--) if (markText(messages[i], cacheControl)) return;
+  const markAtOrBefore = (index: number) => {
+    for (let i = index; i > guideEnd; i--) if (markText(messages[i], cacheControl!)) return;
+  };
+  markAtOrBefore(messages.length - 1);
+  const previous = previousEnd(messages, guideEnd);
+  // Before the first reply after the guide, the guide's own end is the entry to read.
+  if (previous > guideEnd) markAtOrBefore(previous);
+  else if (pinned > 0 && messages[guideEnd]) markText(messages[guideEnd], cacheControl);
 }
 type AnthropicBlock = { type?: string; content?: unknown; cache_control?: CacheControl };
 const anthropicBlocks = (message: PayloadMessage) =>
   Array.isArray(message.content) ? (message.content as AnthropicBlock[]) : [];
-/** An image block, also inside a tool result. */
-const anthropicImage = (message: PayloadMessage) =>
-  anthropicBlocks(message).some(
-    (block) => block?.type === "image" || (block?.type === "tool_result" && Array.isArray(block.content) && block.content.some((part) => part?.type === "image")),
-  );
 const MARKABLE = new Set(["text", "image", "tool_use", "tool_result"]);
 /** Marks the message's last block that can carry a breakpoint (not thinking); false when it has none. */
 function markBlock(message: PayloadMessage, cacheControl: CacheControl) {
@@ -108,13 +128,10 @@ function markBlock(message: PayloadMessage, cacheControl: CacheControl) {
 }
 /**
  * Places the cache breakpoints of an Anthropic Messages request (Claude through Anthropic's own
- * API) for the same reason as placeCacheBreakpoints: Pi marks the system prompt and the last
- * message, and the last message never pays off. Marks the end of the pinned guide, the last
- * message before the oldest unpinned image (written this turn, read next turn), and the last
- * message before the newest placeholder: where the previous request wrote. Anthropic looks for an
- * earlier entry only about 20 blocks back from a breakpoint, and a turn with many tool calls has
- * more, so the previous entry is read at its own breakpoint. With the system prompt, four marks,
- * Anthropic's limit.
+ * API) for the same reason as placeCacheBreakpoints: the end of the pinned guide (read again
+ * after a compaction, which keeps the guide), where the previous request ended (read), and the
+ * last message (written, read next turn). With the system prompt, which covers the tools before
+ * it, four marks, Anthropic's limit.
  */
 export function placeAnthropicCacheBreakpoints(params: { messages: PayloadMessage[] }, pinned: number) {
   const { messages } = params;
@@ -129,19 +146,30 @@ export function placeAnthropicCacheBreakpoints(params: { messages: PayloadMessag
   if (!cacheControl) return;
   const guideEnd = pinned - 1;
   if (pinned > 0 && messages[guideEnd]) markBlock(messages[guideEnd], cacheControl);
-  const markBefore = (index: number) => {
-    for (let i = index - 1; i > guideEnd; i--) if (markBlock(messages[i], cacheControl!)) return;
+  const markAtOrBefore = (index: number) => {
+    for (let i = index; i > guideEnd; i--) if (markBlock(messages[i], cacheControl!)) return;
   };
-  const oldest = messages.findIndex((message, i) => i > guideEnd && anthropicImage(message));
-  if (oldest < 0) {
-    markBlock(messages[messages.length - 1], cacheControl);
-    return;
-  }
-  markBefore(oldest);
-  let pruned = -1;
-  for (let i = oldest - 1; i > guideEnd && pruned < 0; i--)
-    if (JSON.stringify(messages[i].content).includes(IMAGE_PLACEHOLDER)) pruned = i;
-  if (pruned > guideEnd) markBefore(pruned);
+  markAtOrBefore(messages.length - 1);
+  const previous = previousEnd(messages, guideEnd);
+  if (previous > guideEnd) markAtOrBefore(previous);
+}
+/**
+ * Screenshots stay in the conversation between compactions, so every request repeats the
+ * previous one and the provider's prompt cache covers it; removing an old image would change the
+ * conversation from that point on and turn everything after it into uncached input (live
+ * 2026-10-11: 20–47k uncached tokens after each new image when only the newest two were kept).
+ * Compaction bounds them, as their tokens count toward the context budget. Past IMAGE_CAP
+ * unpinned images, a safety limit for providers' per-request image limits, the oldest are
+ * replaced in one go, down to IMAGES_AFTER_CAP: one cache miss instead of one per new image.
+ */
+export const IMAGE_CAP = 16;
+export const IMAGES_AFTER_CAP = 4;
+export function capImages(messages: AgentMessage[], pinned: ReadonlySet<AgentMessage> = new Set()): AgentMessage[] {
+  let count = 0;
+  for (const message of messages)
+    if (!pinned.has(message) && "content" in message && Array.isArray(message.content))
+      count += message.content.filter((block) => block.type === "image").length;
+  return count > IMAGE_CAP ? pruneImages(messages, IMAGES_AFTER_CAP, pinned) : messages;
 }
 /**
  * Text tokens estimated at 2.5 UTF-8 bytes each (the harness's JSON and prose measured about
@@ -166,6 +194,8 @@ export function contextEstimate(
   return textTokens(Buffer.byteLength(text + system)) + images * imageTokens;
 }
 export const handoffInstruction = `Your conversation context is about to be compacted. Write a concise handoff to your future self to continue this same run without repeating completed work. Include verified progress with evidence IDs/timestamps, decisions and brief reasons, failed attempts, unresolved issues, uncertain action outcomes, constraints and immediate next steps. Separate observations from assumptions. Do not perform actions or disclose private chain-of-thought. The harness keeps the benchmark rules, the operator's instruction, the controls, the plan and the notebook separately, so do not restate them. Return only the handoff, between 40 and 12000 UTF-8 bytes.`;
+/** The instruction's own estimated size, fixed since its text never changes. */
+export const handoffInstructionTokens = textTokens(Buffer.byteLength(handoffInstruction));
 
 /** Last assistant response plus its complete tool results, with stale images removed. */
 export function recentExchange(messages: AgentMessage[]) {

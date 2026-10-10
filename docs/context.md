@@ -13,7 +13,8 @@ keeps that within a working budget. The code is in `harness/server/preparation.t
 Each request to the model contains three things:
 
 1. **The system prompt**, the same for the whole run.
-2. **The tool definitions**: names, descriptions and parameters of the 27 tools.
+2. **The tool definitions**: names, descriptions and parameters of the 25 tools (28 in
+   a learning series's episodes).
 3. **The conversation so far**, starting with the preparation message and the model's
    `BEGIN` reply, then turns of model replies, tool results and host messages.
 
@@ -61,10 +62,13 @@ available:
 
 These images are game screenshots, so they are **not in the repository**. They live
 in `.internal/ui-reference/`, which git ignores; see [Setup](setup.md#3-guide-images).
-Without the guide image the model gets the same guide as text: every page's button
-names and roles, which come from `harness/server/visual-atlas.ts`. The run log says
-so, and `inputs.json` records `preparationGuide: "text only"`. The settlement image is
-skipped if absent.
+The combined construction guide is sent as a JPEG when `construction-trays.jpg` is
+installed (preferred: the same image size at about a third of the PNG's bytes, for
+the same token cost), or as the older PNG when only `construction-trays.png` exists. Without the
+guide image the model gets the same guide as text: every page's button names and roles,
+which come from `harness/server/visual-atlas.ts`. The run log says so, and
+`inputs.json` records `preparationGuide: "text only"` (or the installed file's name,
+`construction-trays.jpg` or `.png`). The settlement image is skipped if absent.
 
 The preparation message and the accepted reply are **pinned**: they open every later
 request unchanged and are never trimmed or compacted, so the guide stays in view (and
@@ -77,7 +81,8 @@ observation, and the host sends one itself when a turn needs it. When a reply's 
 tool result has no observation, the host appends a "Game time left: … of …" line to
 it, so every request shows the time left. An observation has:
 
-- **A screenshot**: JPEG of the game window only, at the window's own size.
+- **A screenshot**: JPEG of the game window only, at the window's own size. `width` and
+  `height` in the JSON block are this image's pixels, which clicks target.
 - **A JSON block**:
 
 | Field | Contents |
@@ -117,14 +122,43 @@ The host also adds short messages of its own, for example "Timed play has starte
 before the first screenshot, or a note that it let 5 game seconds pass because the
 model acted without looking.
 
-Most other tools return text only. `map_overview` returns a colour-coded map image and
-`guide_page` returns one page of the construction menu guide.
+### Text-only observations
+
+`wait_and_observe`'s `screenshot: false` (default `true`) skips the screenshot: it waits
+the same way (seconds, `until`, the minimum turn) and returns the same `run_clock`,
+`stats`, `game_events`, `game_events_dropped` and `reader_unavailable_seconds` as above
+(no `width`/`height`, since there is no image), with a leading line saying no screenshot
+was taken and that `observe` or `wait_and_observe` gets one. It does not replace the
+targeting frame: a pixel-targeting tool still judges its thirty-second age limit against
+the last real screenshot.
+
+The run setting `fallbackObservation` (`--fallback-observation`, default `when-needed`)
+picks what the host's own observation is after a turn that acted without looking or
+ran short of the minimum turn, and for the reading-only top-up from the 12th such
+reply: `when-needed` sends this text-only observation unless the turn sent input that
+works from the screenshot (any `game_action`, `inspect_building`, or a `build_structure`
+placement given by `x`/`y`), and a screenshot then; `always` sends a
+screenshot every time, as every run before 1.3.0 did, for comparison. A reply with no
+tool calls, the first observation of timed play and the observation after a compaction
+are screenshots under either setting. The host logs each push as a `host_observation`
+event; a text-only one has `screenshot: false` and no image.
+
+Most other tools return text only. `map_overview` returns a colour-coded map image.
 
 ## Keeping the context small
 
-- **Old images are dropped.** Only the two newest images stay in the conversation
-  (the pinned guide does not count). Older ones become a short placeholder telling the
-  model to target only the latest screenshot. Full images stay on disk.
+- **Screenshots stay until compaction.** Removing an old image would change the
+  conversation from that point on, so everything after it would miss the provider's
+  prompt cache: when only the two newest were kept, each new screenshot cost 20–47k
+  uncached tokens (GLM 5.3 Flash, 2026-10-11). Images count toward the context budget
+  (see Compaction), which bounds them. Only past 16 unpinned images, a safety limit for
+  providers' per-request image limits, are the oldest replaced in one batch by a short
+  placeholder (down to the newest 4): one cache miss instead of one per new image. Full
+  images stay on disk.
+- **Every request repeats the previous one.** Between compactions nothing earlier in
+  the conversation changes: the system prompt and tools are fixed for the run, and new
+  messages are only appended. A test (`controller.test.ts`) checks that each request
+  starts with the previous one unchanged.
 - **Text stays until compaction.** Old readings and tool results remain in the
   conversation until it is compacted.
 - **Plan and notebook are not repeated.** The model sees them when it reads or writes
@@ -139,8 +173,10 @@ writes for its future self.
   (32,000 to 200,000). It is a setting, not a check of the model's real limit; set it
   at or below what the model supports.
 - **Trigger.** Before each request the host estimates the size. It compacts when the
-  estimate passes 65% of the budget, or earlier if the text-only summary request
-  (below) would get too close to the limit.
+  estimate passes 65% of the budget, or earlier if that same anchored estimate, plus
+  the summary request's own fixed instruction, would get too close to the limit —
+  both checks read the same anchored scale, so a provider that reports low real usage
+  does not compact early on a fresh byte recount of the whole conversation.
 - **Estimate.** Before any measurement the host counts text bytes (including tool
   definitions) at 2.5 bytes per token, plus a fixed allowance per image (4,096 tokens
   by default). After each reply it anchors on the token usage the provider reported
@@ -175,27 +211,44 @@ Providers that do not report cache writes show 0.
 
 Every request's cost is recorded as a `request_cost` event, and the run's total as
 `cost` in `run.json`. OpenRouter is asked to report what it billed for each request,
-and the host reads that from the reply's last usage chunk (`source: "billed"`). Other
-endpoints, Anthropic's and Moonshot's included, report only token counts, so the host
-prices each request's tokens with the model profile's prices (`source: "prices"`, see
-[model settings](harness.md#model-profiles)). A failed or cut-off request is priced too, since its
-tokens count. A run cannot start on such an endpoint until its profile has prices, so no
-run goes without a cost. `npm run cost` prices earlier runs that recorded none
-([Comparing runs](benchmark.md#comparing-runs)).
+and the host reads that from the reply's last usage chunk (`source: "billed"`), along
+with which upstream provider it routed the request to (`upstream`, e.g. "DeepInfra"),
+when it reports one. Other endpoints, Anthropic's and Moonshot's included, report only
+token counts, so the host prices each request's tokens with the model profile's prices
+(`source: "prices"`, see [model settings](harness.md#model-profiles)). A failed or
+cut-off request is priced too, since its tokens count. A run cannot start on such an
+endpoint until its profile has prices, so no run goes without a cost. `npm run cost`
+prices earlier runs that recorded none ([Comparing runs](benchmark.md#comparing-runs)).
+
+The post-episode [interview](benchmark.md#the-interview)'s requests repeat the run's
+own conversation but are not part of any of the above: their tokens and cost live only
+in `interview.json`, apart from the run's own total. `npm run report` reads them from
+there into their own columns when the file is present.
+
+OpenRouter also offers session affinity: a request carrying the same `x-session-id`
+tends to be served by the upstream deployment that served the run's earlier requests,
+so that deployment's own prompt cache keeps paying off. The host sends the run's id
+for every OpenRouter profile — the gameplay agent and the compaction handoff,
+reflection, preparation and interview requests that repeat its conversation outside
+the main loop — so they all favor the same cached upstream connection. This is
+separate from provider pinning (the "Providers, allow fallbacks" model setting, see
+[model profiles](harness.md#model-profiles)), which restricts OpenRouter to specific
+upstream providers; session affinity additionally favors the same connection among
+whichever providers are allowed.
 
 Most providers cache repeated prompt prefixes on their own, which the fixed system
 prompt, the pinned opening and the unchanged history are designed to benefit. Claude
 models through OpenRouter (model IDs starting `anthropic/`) cache only what the
 request marks, so for them the host marks four points: the system prompt, the tool
-definitions, the end of the pinned preparation exchange, and the conversation up to
-the oldest screenshot still shown. Every turn replaces that screenshot with a
-placeholder, so the history before it is what the next request repeats unchanged;
-a mark on the newest message would write a cache entry that no later request reads.
+definitions, where the previous request ended (its cache entry, read back), and the
+newest message (written, read by the next request). Anthropic looks for an earlier
+cache entry only about 20 content blocks back from a mark, and a turn with many tool
+calls has more, so the previous entry is read at a mark of its own. Before the first
+reply after the guide, the end of the pinned preparation exchange takes the place of
+the previous request's end.
 
 Claude through Anthropic's own API (endpoint `https://api.anthropic.com`) caches the
 same way, with the four marks spent differently: the system prompt (which covers the
-tool definitions before it), the end of the pinned preparation exchange, the
-conversation up to the oldest screenshot still shown, and the conversation up to the
-newest placeholder, which is about where the previous request wrote. Anthropic looks
-for an earlier cache entry only about 20 content blocks back from a mark, and a turn
-with many tool calls has more, so the previous entry is read at a mark of its own.
+tool definitions before it), the end of the pinned preparation exchange (read again
+after a compaction, which keeps it), where the previous request ended, and the newest
+message.

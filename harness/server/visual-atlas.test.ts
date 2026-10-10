@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { atlasHtml, atlasIndex, atlasPage, atlasPages, availableAtlasPages, constructionAtlas } from "./visual-atlas.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  atlasHtml,
+  atlasIndex,
+  atlasPage,
+  atlasPages,
+  availableAtlasPages,
+  constructionAtlas,
+  pickGuideImageFile,
+} from "./visual-atlas.js";
 
 test("guide pages use unique safe IDs and bounded screenshot regions", () => {
   assert.equal(new Set(atlasPages.map((p) => p.id)).size, atlasPages.length);
@@ -48,7 +59,32 @@ test("the preparation guide lists all ten pages with or without the private imag
 test("combined preparation guide contains ten cropped construction trays", () => {
   const guide = constructionAtlas();
   if (!guide.image) return;
-  const png = Buffer.from(guide.image, "base64");
-  assert.equal(png.readUInt32BE(16), 1912);
-  assert.equal(png.readUInt32BE(20), 2838);
+  const data = Buffer.from(guide.image, "base64");
+  if (guide.mimeType === "image/jpeg") {
+    assert.ok(data.subarray(0, 2).equals(Buffer.from([0xff, 0xd8])));
+    return;
+  }
+  assert.equal(data.readUInt32BE(16), 1912);
+  assert.equal(data.readUInt32BE(20), 2838);
+});
+
+test("pickGuideImageFile prefers the JPEG, falls back to the PNG, and reports neither", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "guide-image-"));
+  try {
+    assert.equal(pickGuideImageFile(dir), null);
+    writeFileSync(path.join(dir, "construction-trays.png"), "png bytes");
+    assert.deepEqual(pickGuideImageFile(dir), {
+      file: path.join(dir, "construction-trays.png"),
+      name: "construction-trays.png",
+      mimeType: "image/png",
+    });
+    writeFileSync(path.join(dir, "construction-trays.jpg"), "jpeg bytes");
+    assert.deepEqual(pickGuideImageFile(dir), {
+      file: path.join(dir, "construction-trays.jpg"),
+      name: "construction-trays.jpg",
+      mimeType: "image/jpeg",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

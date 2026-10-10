@@ -11,9 +11,8 @@ two. The project website shows this file, so keep that shape.
 ## Now
 
 - **Find the bugs we have not hit yet.** Run more models for longer, and try in the live
-  game what is so far only tested in code: the fixed game speed in an agent run, the
-  minimum turn length while waiting, and the automatic re-run after an infrastructure
-  failure.
+  game what is so far only tested in code: the fixed game speed in an agent run and the
+  minimum turn length while waiting.
 - **Full-length runs.** Make the default 25 game minutes reliable. The game's garbage
   collector can stall under Proton, which ended earlier long runs; with the reader's
   watchdog against it, three 25-game-minute episodes have run in full, which is too few

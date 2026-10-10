@@ -98,7 +98,8 @@ Screenshots are base64 inside the logs; strings of 512 or more base64 characters
 `data:image` URLs, are skipped, so letters inside an image are never a finding. Lines that
 need no change are copied byte for byte. If text the video is drawn from (`run.json`,
 `episode.json`, `events.jsonl`) was replaced, the video is rendered again from the scrubbed
-files and the original `recording/`; without `recording/` that is a problem.
+files and the original `recording/` (JPEGs, or the `frames.mp4` they were compacted into);
+without `recording/` that is a problem.
 
 ## Smaller than the run
 
@@ -110,9 +111,12 @@ folder keeps the originals.
   `images/<hash>.webp`: WebP at quality 70 and full size, or the original bytes when those
   are smaller. An image block `{"type": "image", "data": …}` becomes
   `{"type": "image", "mimeType": …, "path": "images/…"}`, and any other field that held an
-  image (the final frames' `frame.image`) holds the path. A tool's screenshot is logged three
-  times, in the tool's result and at the start and end of the message that carries it, so
-  one file serves all three.
+  image (the final frames' `frame.image`) holds the path. A tool's screenshot appears in a
+  run's own `events.jsonl` under the tool's result and again at the start and end of the
+  message that carries it, but the host keeps the image data in the result only; the other
+  two already hold a small `{"type": "image", "mimeType": …, "omitted": "see tool_execution_end"}`
+  in its place, so there is only one copy to turn into a file (runs recorded before this,
+  with all three in full, still end up as one file: the same bytes hash the same).
 - **Token deltas are dropped.** `message_update` events stream a reply as it is written; the
   reply's `message_end` holds all of it.
 - **The video is 720p**, scaled from the run's 1080p render (after re-rendering it, when the
@@ -133,8 +137,9 @@ v<major>.<minor>/<benchmark>/<model ID with "/" as "--">/<series id>/
 ```
 
 A single run that is not part of a series is staged as `run-<start time>-<id>/episode-1/`.
-Not published: `recording/` (the raw frames; the video replaces them), `checkpoint.json`
-(the conversation again) and `controls-guide.html`.
+Not published: `recording/` (the raw frames, or the video they were compacted into; the
+rendered video replaces either), `checkpoint.json` (the conversation again) and
+`controls-guide.html`.
 
 The dataset card defines three tables, read by the Hub's viewer and by `load_dataset`:
 

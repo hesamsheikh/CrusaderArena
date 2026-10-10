@@ -70,7 +70,8 @@ git identity or other git configuration.
   Code and tests must not depend on them.
 - **Check before finishing:** `npm test` and `npm run build`; for the video renderer,
   `python3 -m unittest discover -s tools/video`; for the dataset tools,
-  `python3 -m unittest discover -s tools/dataset`. Tests in `tools/ubuntu/` and
+  `python3 -m unittest discover -s tools/dataset`; for the runner's screen probe,
+  `python3 -m unittest discover -s tools/runner`. Tests in `tools/ubuntu/` and
   `tests/` run on the game machine (see [setup](docs/setup.md)).
 - **Ask before billed model runs.** They cost money.
 

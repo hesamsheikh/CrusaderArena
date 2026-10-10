@@ -58,6 +58,6 @@ buildings go on to produce more than the buying cost.
 
 ## Start
 
-Place the required granary near the keep with `build_structure` and the name
-`Granary`. Then build wood production, housing and food as resources and terrain
-permit, and keep expanding. Do not spend the run surveying.
+Place the required granary with `build_structure` and the name `Granary`. Then build
+wood production, housing and food as resources and terrain permit, and keep expanding.
+Do not spend the run surveying.

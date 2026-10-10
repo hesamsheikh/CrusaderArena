@@ -187,6 +187,14 @@ export type AnchorContext = {
   device: GameDevice;
   /** Fresh game-window capture registered for actions. */
   capture: () => Promise<Frame>;
+  /**
+   * A game-window capture for sending input only: the call's own last frame, reused while it is
+   * comfortably younger than the device's 30 s action limit (validateFrameAction,
+   * shared/protocol.ts), else a fresh one. Only the window's size and id matter for a click or a
+   * minimap fraction, not its pixels, so an unseen frame a few seconds old is as good as a new one.
+   * Do not use this where pixels are inspected or a screenshot is returned to the model.
+   */
+  frame: () => Promise<Frame>;
   send: (frame: Frame, action: GameAction) => Promise<Ack>;
   hotkey: (name: GameHotkey) => Promise<Ack>;
   pause: (seconds: number) => Promise<unknown>;
@@ -195,6 +203,24 @@ export type AnchorContext = {
   /** Per-run memory: the located stockpile's camera tile (bookmarked). */
   state: { stockpile?: string };
 };
+
+/** How much younger than the 30 s action limit a cached frame must be to be reused (anchors.ts, AnchorContext.frame). */
+export const FRAME_REUSE_MS = 20_000;
+
+/**
+ * Wraps a capture function with a per-call cache: repeated calls return the same frame while it
+ * stays under `FRAME_REUSE_MS` old by `now`, otherwise `capture` runs again and its result is kept.
+ * Build one fresh per tool call (e.g. inside model.ts's `anchorContext`) so the cache never
+ * outlives the call it was made for.
+ */
+export function frameCache(capture: () => Promise<Frame>, now: () => number = Date.now) {
+  let cached: Frame | null = null;
+  return async () => {
+    if (cached && now() - cached.receivedAt < FRAME_REUSE_MS) return cached;
+    cached = await capture();
+    return cached;
+  };
+}
 
 const selectedId = (o: Observation | null | undefined) =>
   (o?.selected_building as { id?: number } | null | undefined)?.id ?? null;
@@ -229,7 +255,7 @@ export type CentreResult = {
 /** Centre the camera on an anchor building and close any panel the hotkey opened. */
 export async function centerOn(ctx: AnchorContext, anchor: Anchor): Promise<CentreResult> {
   if (anchor === "stockpile") return centerOnStockpile(ctx);
-  const frame = await ctx.capture();
+  const frame = await ctx.frame();
   const before = await sampleAfter(ctx, 0, () => true, 1);
   if (!before) return { status: "failed", anchor, note: "Reader unavailable; the camera cannot be confirmed." };
   const beforeCamera = cameraKey(before);
@@ -275,7 +301,7 @@ async function centerOnStockpile(ctx: AnchorContext): Promise<CentreResult> {
     // The bookmark no longer matches (e.g. overwritten); locate again.
     delete ctx.state.stockpile;
   }
-  const frame = await ctx.capture();
+  const frame = await ctx.frame();
   const placer = await new Placer(ctx.device, { send: (a) => ctx.send(frame, a), pause: ctx.pause, frame }).init();
   if (!placer.readerReady) return { status: "failed", anchor, note: "Reader unavailable; the stockpile cannot be located." };
   if ((await placer.select("Stockpile")) === "failed")
@@ -337,7 +363,7 @@ export async function placeAdjacent(
   const placedTiles: [number, number][] = [];
   if (centre.status === "not_found" || centre.status === "failed")
     return { status: centre.status, anchor, placed, probes: 0, note: centre.note };
-  const frame = await ctx.capture();
+  const frame = await ctx.frame();
   const first = await sampleAfter(ctx, 0, () => true, 1);
   const span = cameraSpanOf(first);
   let anchorCamera = cameraKey(first);
@@ -440,7 +466,7 @@ export async function goToTile(ctx: AnchorContext, target: { x: number; y: numbe
   let clicks = 0, still = 0;
   while (clicks < GO_TO_CLICKS && Math.max(Math.abs(target.x - camera.x), Math.abs(target.y - camera.y)) > 2) {
     const f = minimapFraction(camera, target, extent);
-    const frame = await ctx.capture();
+    const frame = await ctx.frame();
     const ack = await ctx.send(frame, minimapClick(frame, f.x, f.y));
     clicks++;
     // Let the camera settle, then read it from a sample taken after the click.

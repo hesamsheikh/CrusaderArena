@@ -17,8 +17,11 @@ Ubuntu laptop running the game. Other setups may work but are untested.
   and from the regular package. The window bridge needs X11 access to the game window,
   so other desktops and native-Wayland setups need their own bridge.
 - **A host machine** with Node.js 22.12 or newer (tested with 24.4.1), Python 3 and
-  OpenSSH. Tested on macOS. Run videos also need Pillow and ffmpeg with libx264.
-  Generating the guide images needs macOS.
+  OpenSSH. Tested on macOS. Pillow lets `npm run episodes` recognise the game's main
+  menu instead of waiting out fixed timeouts (about 105 s more per launch without it).
+  Run videos also need Pillow and ffmpeg with libx264; the
+  recording is later compacted into a smaller video with the same ffmpeg install's
+  `ffprobe`, which verifies it. Generating the guide images needs macOS.
 - **SSH key login** from the host to the game machine.
 - **A model API key**: Moonshot, OpenRouter or another OpenAI-compatible provider
   whose model accepts images and tool calls.
@@ -87,7 +90,8 @@ ssh player@192.168.1.20 true
 ```
 
 For run videos, install Pillow and ffmpeg on the host (on macOS:
-`brew install ffmpeg` and `python3 -m pip install pillow`).
+`brew install ffmpeg` and `python3 -m pip install pillow`); `brew install ffmpeg`
+also installs `ffprobe`, which the recording's later compaction uses to verify it.
 
 ## 3. Guide images
 
@@ -99,9 +103,19 @@ included**. The files live in `.internal/ui-reference/`, which git ignores:
 
 | File | Used for | Without it |
 | --- | --- | --- |
-| `construction-trays.png` | The combined image guide in the preparation message | The guide is sent as text only |
-| `trays/<page>.png` | Single pages for `guide_page` | `guide_page` reports the page unavailable |
+| `construction-trays.jpg` (or `.png`) | The combined image guide in the preparation message | The guide is sent as text only |
+| `trays/<page>.png` | Single pages for the dashboard's per-page guide view and the first observation's overview image | The dashboard page 404s; the overview image is skipped |
 | `example-settlement.jpg` | A developed settlement shown once for scale | Skipped |
+
+The combined guide is preferred as a JPEG: at quality 90 it has about a third of the
+PNG's bytes at the same image size and model token cost, and it is resent in every
+request body. A checkout with only the older `construction-trays.png` still works; the
+host prefers the `.jpg` when both exist. To convert one by hand (Pillow, already needed
+by [the video renderer](harness.md#run-videos)):
+
+```bash
+python3 -c "from PIL import Image; Image.open('.internal/ui-reference/construction-trays.png').convert('RGB').save('.internal/ui-reference/construction-trays.jpg', quality=90)"
+```
 
 To make them, put one source PNG per menu page in `.internal/ui-reference/legends/`,
 named after the `file` of each of the ten pages in `harness/server/visual-atlas.ts`.
@@ -118,8 +132,9 @@ node --import tsx tools/make-construction-trays.mjs
 ```
 
 It crops the menu tray (the bottom 230 pixels from x 795 to 1575) from each source
-into `trays/`, and lays out all ten crops with their labels in
-`construction-trays.png`. Only the tray is used, so the boxes must lie inside it.
+into `trays/` (PNG), and lays out all ten crops with their labels into
+`construction-trays.jpg` (JPEG, quality 90). Only the tray is used, so the boxes must
+lie inside it.
 
 ## 4. First run
 

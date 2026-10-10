@@ -2,7 +2,7 @@ import path from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { layoutNote, visualGuide } from "./visual-guide.js";
-import { atlasIndex, atlasPage, constructionAtlasInstalled } from "./visual-atlas.js";
+import { atlasIndex, atlasPage, constructionAtlasFileName, constructionAtlasInstalled } from "./visual-atlas.js";
 import type { Agent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type {
@@ -22,6 +22,8 @@ import {
   ContextBudget,
   contextEstimate,
   handoffInstruction,
+  handoffInstructionTokens,
+  capImages,
   pruneImages,
   recentExchange,
 } from "./context.js";
@@ -29,6 +31,7 @@ import {
   compactHandoff,
   gameControls,
   HOST_OBSERVATION,
+  HOST_TEXT_OBSERVATION,
   interviewReply,
   makeAgent,
   prepareModel,
@@ -53,7 +56,7 @@ import {
   reflectionInstruction,
   runSystemPrompt,
 } from "./preparation.js";
-import type { GameDevice } from "./device.js";
+import { readerIntervalMs, type GameDevice } from "./device.js";
 import { ackTime, goToTile, sampleAfter, type AnchorContext } from "./anchors.js";
 import { MapView } from "./map-view.js";
 import { cameraKey } from "./construction-ui.js";
@@ -127,6 +130,8 @@ export class RunController {
       failed: 0,
       aborted: 0,
       compactionMs: 0,
+      preparationMs: 0,
+      reflectionMs: 0,
     },
   };
   constructor(
@@ -196,6 +201,7 @@ export class RunController {
       },
     );
     this.runtime = {
+      runId: run.id,
       session: this.session,
       cycle: this.cycle,
       memory: this.memory,
@@ -220,7 +226,7 @@ export class RunController {
       isPaused: () => this.pauseStartedAt !== undefined,
       pausedMilliseconds: () => this.pausedMilliseconds(),
       pinned: () => this.pinned(),
-      cost: (kind, dollars, source) => this.recordCost(kind, dollars, source),
+      cost: (kind, dollars, source, upstream) => this.recordCost(kind, dollars, source, upstream),
       requestStarted: () => {
         this.requestStartedAt = performance.now();
         this.firstDeltaMs = undefined;
@@ -246,7 +252,10 @@ export class RunController {
             : {}),
         });
         const timing = this.progress.inference;
-        if (kind === "reflection") return;
+        if (kind === "reflection") {
+          timing.reflectionMs += ms;
+          return;
+        }
         if (kind === "compaction") timing.compactionMs += ms;
         else if (outcome === "aborted") timing.aborted++;
         else if (outcome === "error") timing.failed++;
@@ -358,7 +367,7 @@ export class RunController {
       controls: gameControls,
       systemPrompt: this.systemPromptText,
       benchmarkRules: benchmarkMarkdown(run.benchmarkType || ""),
-      preparationGuide: constructionAtlasInstalled() ? "construction-trays.png" : "text only",
+      preparationGuide: constructionAtlasFileName() ?? "text only",
       startedAt: run.startedAt,
     });
   }
@@ -379,9 +388,17 @@ export class RunController {
     this.store.update(this.run.id, { progress: this.progress });
     this.changed();
   }
-  /** What one request cost (see CostSource); the run's total is kept in run.json. */
-  private recordCost(kind: "preparation" | "gameplay" | "compaction" | "reflection", dollars: number, source: CostSource) {
-    this.store.event(this.run.id, { type: "request_cost", kind, dollars, source });
+  /**
+   * What one request cost (see CostSource); the run's total is kept in run.json. `upstream` is the
+   * provider OpenRouter routed the request to, when it reported one (OpenRouter billing only).
+   */
+  private recordCost(
+    kind: "preparation" | "gameplay" | "compaction" | "reflection",
+    dollars: number,
+    source: CostSource,
+    upstream?: string,
+  ) {
+    this.store.event(this.run.id, { type: "request_cost", kind, dollars, source, ...(upstream ? { upstream } : {}) });
     this.store.update(this.run.id, { cost: (this.run.cost ?? 0) + dollars });
   }
   /**
@@ -454,13 +471,20 @@ export class RunController {
         this.pauseStartedAt = undefined;
       }
     };
+    // Poll as often as the reader samples, so a fresh one is seen as soon as it exists; the
+    // deadline (not an attempt count, which would round away to zero retries at a slow
+    // configured interval) keeps the same roughly-three-second budget at any interval.
+    const pollMs = readerIntervalMs();
+    const attempts = Math.max(1, Math.round(3000 / pollMs));
     const freshState = async () => {
-      for (let i = 0; i < 16; i++) {
+      const deadline = Date.now() + 3000;
+      for (;;) {
         allowed();
         const stats = this.device.currentStats();
         if (stats.status === "ok" && typeof stats.observation?.paused === "boolean")
           return stats;
-        if (i < 15) await new Promise((resolve) => setTimeout(resolve, 200));
+        if (Date.now() >= deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
       }
       throw new Error("Fresh pause state unavailable after three seconds; refusing to toggle P blindly.");
     };
@@ -476,15 +500,17 @@ export class RunController {
     allowed();
     let before = await freshState();
     if (before.observation?.paused === target) return reached();
-    const frame = await this.device.capture();
+    // P carries no coordinates, so the latest capture (from this turn's observation or an earlier
+    // tool call) serves as well as a fresh one; capture only when nothing has been captured yet.
+    if (!this.device.latest) await this.device.capture();
     allowed();
     before = await freshState();
     if (before.observation?.paused === target) return reached();
-    await this.device.action({ type: "key", key: "P" }, frame.id, allowed);
+    await this.device.pressKey("P", allowed);
     toggle.sent = true;
     const previousExpiry = before.valid_until_unix_ms || 0;
-    for (let i = 0; i < 15; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+    for (let i = 0; i < attempts; i++) {
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
       allowed();
       const current = this.device.currentStats();
       if (
@@ -516,9 +542,9 @@ export class RunController {
           : null;
       },
       press: async (key) => {
-        const frame = await this.device.capture();
+        if (!this.device.latest) await this.device.capture();
         allowed();
-        await this.device.action({ type: "key", key }, frame.id, allowed);
+        await this.device.pressKey(key, allowed);
       },
       sleep: (ms) => {
         allowed();
@@ -551,7 +577,8 @@ export class RunController {
           this.systemPromptText,
           message as import("@earendil-works/pi-ai").UserMessage,
           this.session.abort.signal,
-          (dollars, source) => this.recordCost("preparation", dollars, source),
+          (dollars, source, upstream) => this.recordCost("preparation", dollars, source, upstream),
+          this.run.id,
         );
     // The game stays paused during preparation, so transient provider failures are retried.
     // A reply without BEGIN is also retried twice (GLM 5.3 Flash, 2026-09-28).
@@ -577,7 +604,9 @@ export class RunController {
       this.log("error", `Preparation reply did not end with BEGIN${cutOff}; retrying.`);
       reply = undefined;
     }
-    this.store.event(this.run.id, { type: "preparation_reply", reply, durationMs: performance.now() - started });
+    const preparationMs = performance.now() - started;
+    this.store.event(this.run.id, { type: "preparation_reply", reply, durationMs: preparationMs });
+    this.progress.inference.preparationMs += preparationMs;
     this.store.update(this.run.id, { tokens: this.run.tokens + reply.usage.totalTokens });
     this.guide = [message, reply];
     this.agent.state.messages = [message, reply];
@@ -629,6 +658,49 @@ export class RunController {
     };
     this.store.event(this.run.id, { type: "host_observation", message, waitSeconds: seconds });
     this.agent.state.messages = [...this.agent.state.messages, message];
+  }
+  /**
+   * Let `seconds` of game time pass, then send the text-only observation (no screenshot): the
+   * `fallbackObservation: "when-needed"` host push for a turn that sent no input working from the
+   * screenshot.
+   * `note` says why the host waited; without one, the same reason `observe` gives.
+   */
+  private async observeText(seconds: number, note?: string) {
+    this.recorder?.setActive(true);
+    await this.ensurePauseState(false);
+    this.runtime.phase("waiting");
+    await this.session.waitGame(seconds);
+    const tool = this.agent.state.tools.find((t) => t.name === "observe")!;
+    const result = await tool.execute(
+      HOST_TEXT_OBSERVATION,
+      {},
+      this.session.abort.signal,
+    );
+    const message: AgentMessage = {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: note
+            ?? (seconds > 0
+              ? `You acted without requesting a screenshot, so the host let ${seconds} game seconds pass.`
+              : "No screenshot was taken for this turn."),
+        },
+        ...result.content,
+      ],
+      timestamp: Date.now(),
+    };
+    this.store.event(this.run.id, { type: "host_observation", message, waitSeconds: seconds, screenshot: false });
+    this.agent.state.messages = [...this.agent.state.messages, message];
+  }
+  /**
+   * Whether the host's own fallback observation should be a screenshot right now:
+   * `fallbackObservation: "always"` always is; otherwise only a turn that sent input working from
+   * the screenshot (any game_action, inspect_building, a build_structure placement given in
+   * pixels) is.
+   */
+  private fallbackNeedsScreenshot() {
+    return this.runtime.config.fallbackObservation === "always" || this.cycle.pixelInput;
   }
   async runSession() {
     const unsubscribe = this.device.events.subscribe((record) => {
@@ -725,7 +797,7 @@ export class RunController {
       while (true) {
         this.session.check();
         this.agent.state.systemPrompt = this.systemPrompt();
-        this.agent.state.messages = pruneImages(this.agent.state.messages, 2, this.pinned());
+        this.agent.state.messages = capImages(this.agent.state.messages, this.pinned());
         this.progress.contextEstimate = this.contextBudget.estimate(
           this.agent.state.messages,
           this.agent.state.systemPrompt,
@@ -733,14 +805,12 @@ export class RunController {
           this.runtime.config.imageTokenEstimate,
         );
         // Compact while the fallback handoff request (text only) still fits with room to spare.
+        // Both checks below must read the same (anchored, provider-measured) scale: a fresh
+        // byte recount here ran about 1.3x hot against real provider usage (3.2 observed
+        // bytes/token vs. BYTES_PER_TOKEN's 2.5), so it used to trip this headroom long before
+        // the anchored contextEstimate above ever neared its own 65% trigger.
         const handoffHeadroom = this.runtime.config.contextBudget - Math.min(30000, this.runtime.config.contextBudget * 0.25);
-        const nextHandoffEstimate = contextEstimate(
-          [
-            ...pruneImages(this.agent.state.messages, 0),
-            { role: "user", content: handoffInstruction, timestamp: Date.now() },
-          ],
-          this.agent.state.systemPrompt,
-        );
+        const nextHandoffEstimate = this.progress.contextEstimate + handoffInstructionTokens;
         if (
           this.progress.contextEstimate > this.runtime.config.contextBudget * 0.65 ||
           nextHandoffEstimate > handoffHeadroom
@@ -846,7 +916,7 @@ export class RunController {
             requestTools,
             last.usage.input + last.usage.cacheRead + last.usage.cacheWrite,
           );
-        this.agent.state.messages = pruneImages(this.agent.state.messages, 2, this.pinned());
+        this.agent.state.messages = capImages(this.agent.state.messages, this.pinned());
         this.memory.checkpoint(this.agent.state.messages, {
           remainingMs: this.session.remaining(),
           progress: this.progress,
@@ -871,21 +941,23 @@ export class RunController {
           // costs at least a minimum turn, which caps their requests like any other turn's.
           const seconds = Math.max(defaultWaitSeconds, minTurnSeconds);
           this.store.event(this.run.id, { type: "reading_only_wait", replies: readingOnly, seconds });
-          await this.observe(
-            seconds,
-            `Your last ${readingOnly} replies only read, which keeps the game paused. From the ${READING_ONLY_LIMIT}th such reply in a row, the host lets ${seconds} game seconds pass after each one. Fresh screenshot:`,
-          );
+          const note = `Your last ${readingOnly} replies only read, which keeps the game paused. From the ${READING_ONLY_LIMIT}th such reply in a row, the host lets ${seconds} game seconds pass after each one.`;
+          if (this.fallbackNeedsScreenshot()) await this.observe(seconds, `${note} Fresh screenshot:`);
+          else await this.observeText(seconds, note);
         } else {
           const wait = this.cycle.hostWait(ranSeconds, defaultWaitSeconds, minTurnSeconds);
-          if (wait !== null)
-            await this.observe(
-              wait,
-              this.cycle.observed
-                ? `This turn ran the game for ${Math.round(ranSeconds * 10) / 10} game seconds, less than the minimum of ${minTurnSeconds}, so the host let ${wait} more pass. Fresh screenshot:`
-                : this.cycle.tools === 0
-                  ? `Your reply called no tools, so the host let ${wait} game seconds pass. ${EMPTY_REPLY_LIMIT} replies in a row without a tool call end the run. Fresh screenshot:`
-                  : undefined,
-            );
+          if (wait !== null) {
+            const noTools = this.cycle.tools === 0;
+            const note = this.cycle.observed
+              ? `This turn ran the game for ${Math.round(ranSeconds * 10) / 10} game seconds, less than the minimum of ${minTurnSeconds}, so the host let ${wait} more pass.`
+              : noTools
+                ? `Your reply called no tools, so the host let ${wait} game seconds pass. ${EMPTY_REPLY_LIMIT} replies in a row without a tool call end the run.`
+                : undefined;
+            // A reply without tool calls always gets a screenshot; otherwise the fallback-observation
+            // setting decides (text only unless the turn sent input working from the screenshot).
+            if (noTools || this.fallbackNeedsScreenshot()) await this.observe(wait, note && `${note} Fresh screenshot:`);
+            else await this.observeText(wait, note);
+          }
         }
       }
     } catch (error) {
@@ -1068,8 +1140,6 @@ export class RunController {
     };
     try {
       allowed();
-      let frame = await this.device.capture();
-      allowed();
       let stats = this.device.currentStats();
       for (let i = 0; i < 10 && (stats.status !== "ok" || typeof stats.observation?.paused !== "boolean"); i++) {
         await new Promise((r) => setTimeout(r, 200));
@@ -1079,7 +1149,10 @@ export class RunController {
       if (stats.status !== "ok" || typeof stats.observation?.paused !== "boolean")
         throw new Error("Fresh pause state unavailable.");
       if (!stats.observation.paused) {
-        await this.device.action({ type: "key", key: "P" }, frame.id, allowed);
+        // P carries no coordinates, so the latest capture serves as well as a fresh one.
+        if (!this.device.latest) await this.device.capture();
+        allowed();
+        await this.device.pressKey("P", allowed);
         const after = Date.now();
         let confirmed = false;
         for (let i = 0; i < 10; i++) {
@@ -1100,7 +1173,7 @@ export class RunController {
             "Pause input sent but not confirmed by a new reader sample.",
           );
       }
-      frame = await this.device.capture();
+      const frame = await this.device.capture();
       allowed();
       this.refresh(frame);
       this.store.event(this.run.id, {
@@ -1134,12 +1207,16 @@ export class RunController {
       this.log("system", "Final overview skipped: the reader has no camera position.");
       return;
     }
+    const capture = async () => {
+      allowed();
+      return this.device.capture();
+    };
     const ctx: AnchorContext = {
       device: this.device,
-      capture: async () => {
-        allowed();
-        return this.device.capture();
-      },
+      capture,
+      // Host-only, run-ending finalization with camera tools while paused: left uncached (a fresh
+      // capture every time, as before) rather than guessed at without a live check.
+      frame: capture,
       send: async (frame, action) => (await this.device.action(action, frame.id, allowed)) as Ack,
       hotkey: (name) => this.device.hotkey(name, allowed),
       pause: (seconds) => wait(seconds * 1000),

@@ -12,7 +12,6 @@ import type { ObservationCycle, Session } from "./session.js";
 import { minutesSeconds, requestTimeout } from "./session.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
-import { atlasPage, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 import {
   buildableNames,
   buildingCost,
@@ -45,14 +44,14 @@ const RETRIES_PER_CALL = 12;
  */
 const READING_TOOLS = new Set([
   "status", "get_inventory", "find_sites", "map_overview", "flat_view",
-  "building_info", "list_buildings", "guide_page",
-  "update_plan", "notebook_read", "notebook_write", "notebook_edit", "notification_history",
+  "building_info",
+  "update_plan", "notebook_read", "notebook_write", "notification_history",
   "playbook_read", "playbook_write", "playbook_edit",
 ]);
-import { buildingInfo, listBuildings } from "./building-info.js";
+import { buildingInfo } from "./building-info.js";
 import { InventoryTracker } from "./inventory.js";
 import { Placer, type Ack } from "./placement.js";
-import { anchorNames, centerOn, goToTile, placeAdjacent, sides, TOO_CLOSE_MARGIN, type AnchorContext, type MapExtent } from "./anchors.js";
+import { anchorNames, centerOn, frameCache, goToTile, placeAdjacent, sides, TOO_CLOSE_MARGIN, type AnchorContext, type MapExtent } from "./anchors.js";
 import { categories, MapView } from "./map-view.js";
 import { marketTrade, rationLevels, setRations, setTax, taxLevels, tradeGoods } from "./economy.js";
 import { describeBuilding, observationStats, statusReport } from "./status.js";
@@ -60,6 +59,10 @@ import type { GameHotkey } from "./device.js";
 import type { RunConfig } from "../shared/protocol.js";
 /** The tool-call ID of the host's own screenshots, which never wait for the minimum turn. */
 export const HOST_OBSERVATION = "host-observation";
+/** The tool-call ID of the host's own text-only observations (no screenshot); same exemption. */
+export const HOST_TEXT_OBSERVATION = "host-text-observation";
+/** The text observation's lead line: said once from the tool, and reused for the host's own push. */
+export const NO_SCREENSHOT_NOTE = "No screenshot taken; call observe or wait_and_observe for one.";
 
 export { minutesSeconds };
 
@@ -77,6 +80,8 @@ export function runClock(session: Session) {
 }
 
 export interface AgentRuntime {
+  /** The run's own id, passed to providers that offer it session affinity for their prompt cache. */
+  runId: string;
   session: Session;
   cycle: ObservationCycle;
   memory: RunMemory;
@@ -95,8 +100,14 @@ export interface AgentRuntime {
   pausedMilliseconds?: () => number;
   /** Messages that open every request unchanged (the preparation guide). */
   pinned?: () => ReadonlySet<AgentMessage>;
-  /** What one request cost: billed by OpenRouter, or its tokens at the profile's prices. */
-  cost?: (kind: "gameplay" | "compaction" | "reflection", dollars: number, source: CostSource) => void;
+  /** What one request cost: billed by OpenRouter, or its tokens at the profile's prices. `upstream`
+   * is the provider OpenRouter routed it to (e.g. "DeepInfra"), when it reported one. */
+  cost?: (
+    kind: "gameplay" | "compaction" | "reflection",
+    dollars: number,
+    source: CostSource,
+    upstream?: string,
+  ) => void;
   requestStarted?: () => void;
   timing: (
     milliseconds: number,
@@ -106,8 +117,19 @@ export interface AgentRuntime {
 }
 
 import { footprintOf } from "./footprints.js";
+import { adjacentRemedy, anchorRemedy, placementRemedy, READER_RETRY } from "./remedies.js";
+
+/** place_near's and expand_storage's result with what to do when it placed fewer than asked. */
+function withAdjacentRemedy<T extends { status: string; note?: string; stopped?: string; missing?: Record<string, number> }>(result: T, building: string, anchor: string) {
+  if (result.status === "placed") return result;
+  const remedy = result.status === "not_found" ? anchorRemedy(anchor)
+    : result.status === "failed" ? READER_RETRY
+    : result.status === "not_selected" ? "The construction menu did not select it: right-click open ground with game_action to close any open panel, observe, then try again."
+    : adjacentRemedy({ ...result, anchor }, building);
+  return { ...result, remedy };
+}
 import { shortfall } from "./building-info.js";
-import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, needsOpenSide, onScreen, tilePixel, type TileCamera } from "./tile-map.js";
+import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, needsOpenSide, onScreen, resourceGroundNames, tilePixel, type TileCamera } from "./tile-map.js";
 import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
@@ -178,6 +200,11 @@ export function modelConfig(
       ...(openRouter && settings.providers.length
         ? { openRouterRouting: { order: settings.providers, allow_fallbacks: settings.allowFallbacks } }
         : {}),
+      // OpenRouter's own session affinity: besides pinning a deployment, it keeps a run's
+      // requests on one upstream account/connection for that deployment's cache (x-session-id,
+      // Pi's "openrouter" format, auto-detected from this baseUrl). Non-OpenRouter profiles are
+      // unaffected: Pi defaults this off.
+      ...(openRouter ? { sendSessionAffinityHeaders: true } : {}),
     },
   };
 }
@@ -210,8 +237,13 @@ function payloadHook(
 /**
  * OpenRouter reports what it billed for a request in the stream's last usage chunk, which Pi
  * does not keep. This fetch hands Pi the response unchanged and reads the amount from a copy.
+ * Each chunk also carries, at its top level, which upstream provider served it (e.g. "DeepInfra"):
+ * OpenRouter can route the same model to several, so this is passed along for reporting.
  */
-export function costReader(onCost: (dollars: number) => void, inner: typeof fetch = fetch): typeof fetch {
+export function costReader(
+  onCost: (dollars: number, upstream?: string) => void,
+  inner: typeof fetch = fetch,
+): typeof fetch {
   return async (input, init) => {
     const response = await inner(input, init);
     if (!response.ok || !response.body) return response;
@@ -220,7 +252,7 @@ export function costReader(onCost: (dollars: number) => void, inner: typeof fetc
     return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
   };
 }
-async function readCost(stream: ReadableStream<Uint8Array>, onCost: (dollars: number) => void) {
+async function readCost(stream: ReadableStream<Uint8Array>, onCost: (dollars: number, upstream?: string) => void) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -234,8 +266,10 @@ async function readCost(stream: ReadableStream<Uint8Array>, onCost: (dollars: nu
       for (const line of lines) {
         if (!line.startsWith("data:") || !line.includes('"cost"')) continue;
         try {
-          const cost = JSON.parse(line.slice(5)).usage?.cost;
-          if (typeof cost === "number") onCost(cost);
+          const chunk = JSON.parse(line.slice(5));
+          const cost = chunk.usage?.cost;
+          if (typeof cost === "number")
+            onCost(cost, typeof chunk.provider === "string" ? chunk.provider : undefined);
         } catch {}
       }
     }
@@ -251,9 +285,15 @@ export type CostSource = "billed" | "prices";
  * `settle` records it once the reply is complete, failed and cut-off replies included, as their
  * tokens are counted too.
  */
-function costTracking(profile: ModelProfile, onCost?: (dollars: number, source: CostSource) => void) {
+function costTracking(
+  profile: ModelProfile,
+  onCost?: (dollars: number, source: CostSource, upstream?: string) => void,
+) {
   if (isOpenRouter(profile.baseUrl))
-    return { options: { fetch: costReader((dollars) => onCost?.(dollars, "billed")) }, settle: () => {} };
+    return {
+      options: { fetch: costReader((dollars, upstream) => onCost?.(dollars, "billed", upstream)) },
+      settle: () => {},
+    };
   return {
     options: {},
     settle: (usage: Usage) => {
@@ -294,6 +334,31 @@ function amountOf(observation: Record<string, unknown> | null | undefined, amoun
   return typeof value === "number" ? value : undefined;
 }
 
+/** One `build_structure` placement's raw arguments: a pixel pair, a tile pair, or (invalid) neither/both. */
+type PlacementInput = { name: string; x?: number; y?: number; tile_x?: number; tile_y?: number; exact?: boolean };
+export type TargetKind =
+  | { status: "pixel"; x: number; y: number }
+  | { status: "tile"; x: number; y: number }
+  | { status: "invalid"; reason: string };
+/**
+ * Which of a placement's two coordinate pairs was given: pixels in the latest screenshot (x, y,
+ * as game_action), or a map tile (tile_x, tile_y, as named by map_overview/find_sites). Exactly
+ * one pair, in full, is required; flat optional fields rather than anyOf/oneOf, since some
+ * providers (e.g. Moonshot) reject a top-level anyOf in a tool schema.
+ */
+export function targetKind(plan: PlacementInput): TargetKind {
+  const hasX = plan.x !== undefined, hasY = plan.y !== undefined;
+  const hasTileX = plan.tile_x !== undefined, hasTileY = plan.tile_y !== undefined;
+  const pixelGiven = hasX || hasY;
+  const tileGiven = hasTileX || hasTileY;
+  if (pixelGiven && tileGiven) return { status: "invalid", reason: "Give x/y or tile_x/tile_y, not both." };
+  if (pixelGiven)
+    return hasX && hasY ? { status: "pixel", x: plan.x!, y: plan.y! } : { status: "invalid", reason: "A pixel target needs both x and y." };
+  if (tileGiven)
+    return hasTileX && hasTileY ? { status: "tile", x: plan.tile_x!, y: plan.tile_y! } : { status: "invalid", reason: "A tile target needs both tile_x and tile_y." };
+  return { status: "invalid", reason: "Give x/y or tile_x/tile_y." };
+}
+
 export function makeAgent(
   device: GameDevice,
   refresh: (f: Frame) => void,
@@ -305,6 +370,13 @@ export function makeAgent(
 ) {
   const models = registry(profile);
   let observed: Frame | null = null;
+  // The tool that last cleared `observed` without re-observing, so "Observe the game first"
+  // can say which one left the screenshot unusable (40 of these across 21 runs, most right
+  // after market_trade).
+  let observedClearedBy: string | null = null;
+  const observeFirstError = () => new Error(
+    `Observe the game first${observedClearedBy ? `: ${observedClearedBy} returned no screenshot` : ""}. ` +
+    "Call observe (or wait_and_observe) and take pixel targets from that screenshot; build_structure also takes tile_x/tile_y without one.");
   let observedPausedMs = 0;
   let observedCamera: string | null = null;
   let observedSpan: ReturnType<typeof cameraSpanOf> = null;
@@ -327,6 +399,14 @@ export function makeAgent(
   // paused for the model, so find_sites and build_structure use it without spending game time.
   let viewTiles: { frame: Frame; map: Promise<TileMap | null> } | null = null;
   const tilesFor = (frame: Frame) => (viewTiles?.frame === frame ? viewTiles.map : readTileMap(frame, observedCameraSample));
+  /** A camera's identity as cameraKey gives it for a reader sample; null without a camera. */
+  const keyOf = (camera: TileCamera | null | undefined) => (camera ? cameraKey({ camera }) : null);
+  /**
+   * The live view's map that find_sites read without a screenshot of that view, for build_structure's
+   * tile targets in it: good while the camera is unchanged and nothing has sent the game input since
+   * (device.inputSerial unmoved), as for the construction tray's category below.
+   */
+  let siteTiles: { key: string; map: TileMap; serial: number } | null = null;
   let turns = 0;
   let eventCursor = device.events.cursor();
   let lastDeliveryAt = Date.now();
@@ -336,33 +416,46 @@ export function makeAgent(
   const anchorState: AnchorContext["state"] = {};
   // The map's extent in screen axes, for minimap clicks; read once per run.
   let mapExtent: MapExtent | undefined;
-  const anchorContext = (signal?: AbortSignal): AnchorContext => ({
-    device,
-    capture: async () => {
+  /**
+   * build_structure's construction-tray category, remembered across calls together with the
+   * device's input count as of when it was recorded: still good only while that count has not
+   * moved, i.e. nothing else (any other tool or the host's own key presses) has sent the game
+   * input since (see GameDevice.inputSerial).
+   */
+  let menuMemory: { category: string | undefined; serial: number } | undefined;
+  const anchorContext = (signal?: AbortSignal): AnchorContext => {
+    const captureAndRefresh = async () => {
       const frame = await device.capture();
       refresh(frame);
       return frame;
-    },
-    send: async (frame, action) => {
-      if (signal?.aborted) throw new Error("Stopped");
-      runtime?.session.check();
-      runtime?.phase("acting");
-      const ack = await device.action(action, frame.id, () => runtime?.session.check());
-      log("action", JSON.stringify(action));
-      return ack as Ack;
-    },
-    hotkey: async (name) => {
-      if (signal?.aborted) throw new Error("Stopped");
-      runtime?.session.check();
-      runtime?.phase("acting");
-      const ack = await device.hotkey(name, () => runtime?.session.check());
-      log("action", JSON.stringify({ type: "hotkey", name }));
-      return ack;
-    },
-    pause: (seconds) => (runtime ? runtime.session.wait(seconds) : new Promise((r) => setTimeout(r, seconds * 1000))),
-    tiles: (frame) => readTileMap(frame, device.currentStats().observation?.camera as TileCamera | undefined),
-    state: anchorState,
-  });
+    };
+    return {
+      device,
+      capture: captureAndRefresh,
+      // A frame reused across this call's own input-only sends (clicks, minimap fractions):
+      // window size and id do not change between them, so one capture does for all of them.
+      frame: frameCache(captureAndRefresh),
+      send: async (frame, action) => {
+        if (signal?.aborted) throw new Error("Stopped");
+        runtime?.session.check();
+        runtime?.phase("acting");
+        const ack = await device.action(action, frame.id, () => runtime?.session.check());
+        log("action", JSON.stringify(action));
+        return ack as Ack;
+      },
+      hotkey: async (name) => {
+        if (signal?.aborted) throw new Error("Stopped");
+        runtime?.session.check();
+        runtime?.phase("acting");
+        const ack = await device.hotkey(name, () => runtime?.session.check());
+        log("action", JSON.stringify({ type: "hotkey", name }));
+        return ack;
+      },
+      pause: (seconds) => (runtime ? runtime.session.wait(seconds) : new Promise((r) => setTimeout(r, seconds * 1000))),
+      tiles: (frame) => readTileMap(frame, device.currentStats().observation?.camera as TileCamera | undefined),
+      state: anchorState,
+    };
+  };
   /**
    * Game seconds this turn still owes the minimum turn length. The model's looks (observe,
    * wait_and_observe) return the game only once the turn has run that long, so the host does not
@@ -373,33 +466,15 @@ export function makeAgent(
     const ran = (runtime.session.gameUsedTicks() - runtime.cycle.startTicks) / TICKS_PER_GAME_SECOND;
     return Math.round(Math.max(0, runtime.config.minTurnSeconds - ran) * 10) / 10;
   };
-  const turnNote = (seconds: number) => ({
+  const turnNote = (seconds: number, screenshot = true) => ({
     type: "text" as const,
-    text: `Minimum turn (${runtime?.config.minTurnSeconds} game seconds): the host let ${seconds} more game seconds pass before this screenshot.`,
+    text: `Minimum turn (${runtime?.config.minTurnSeconds} game seconds): the host let ${seconds} more game seconds pass before this ${screenshot ? "screenshot" : "observation"}.`,
   });
-  const observe = async () => {
-    runtime?.session.check();
-    runtime?.phase("observing");
-    observed = await device.capture();
-    observedPausedMs = runtime?.pausedMilliseconds?.() ?? 0;
-    // The camera recorded with this image enables the camera guard and placement retries. A live
-    // stream gives occasional unavailable samples (the double read differed), so wait briefly for a
-    // valid one; without a stream (no capture time) there is nothing to wait for. An expired sample
-    // has no capture time either, so a connected device always waits (a missed camera silently
-    // disabled placement retries, live 2026-09-29).
-    let stats = device.currentStats();
-    for (let i = 0; !cameraKey(stats.observation) && (typeof stats.captured_unix_ms === "number" || device.connected) && i < 30; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      stats = device.currentStats();
-    }
-    const cameraSample = stats.observation;
-    observedCamera = cameraKey(cameraSample);
-    observedSpan = cameraSpanOf(cameraSample);
-    observedCameraSample = observedCamera ? (cameraSample?.camera as TileCamera) : null;
-    viewTiles = { frame: observed, map: readTileMap(observed, observedCameraSample) };
-    runtime?.session.check();
-    runtime?.cycle.observe();
-    refresh(observed);
+  /**
+   * Game events buffered since the previous observation (screenshot or text), consumed once: it
+   * advances the delivery cursor, so only one of `observe`/`observeText` may call this per look.
+   */
+  const pendingEvents = () => {
     const now = Date.now();
     // The journal records every delivered event ID; the model gets each distinct message once and
     // none of the reader's gap/boundary bookkeeping (about two thirds of observation text before).
@@ -413,6 +488,39 @@ export function makeAgent(
       at: now,
       eventIds: delivered.events.map((e) => e.id).filter(Boolean),
     });
+    return messages;
+  };
+  /**
+   * The newest reader sample that has a camera. A live stream gives occasional unavailable samples
+   * (the double read differed), so wait briefly for a valid one; without a stream (no capture time)
+   * there is nothing to wait for. An expired sample has no capture time either, so a connected
+   * device always waits (a missed camera silently disabled placement retries, live 2026-09-29).
+   */
+  const cameraObservation = async () => {
+    let stats = device.currentStats();
+    for (let i = 0; !cameraKey(stats.observation) && (typeof stats.captured_unix_ms === "number" || device.connected) && i < 30; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      stats = device.currentStats();
+    }
+    return stats.observation;
+  };
+  const readLiveCamera = async () => ((await cameraObservation())?.camera as TileCamera | undefined) ?? undefined;
+  const observe = async () => {
+    runtime?.session.check();
+    runtime?.phase("observing");
+    observed = await device.capture();
+    observedClearedBy = null;
+    observedPausedMs = runtime?.pausedMilliseconds?.() ?? 0;
+    // The camera recorded with this image enables the camera guard and placement retries.
+    const cameraSample = await cameraObservation();
+    observedCamera = cameraKey(cameraSample);
+    observedSpan = cameraSpanOf(cameraSample);
+    observedCameraSample = observedCamera ? (cameraSample?.camera as TileCamera) : null;
+    viewTiles = { frame: observed, map: readTileMap(observed, observedCameraSample) };
+    runtime?.session.check();
+    runtime?.cycle.observe();
+    refresh(observed);
+    const messages = pendingEvents();
     const readerStats = device.currentStats();
     return {
       content: [
@@ -438,6 +546,35 @@ export function makeAgent(
       details: { frameId: observed.id, readerStats },
     };
   };
+  /**
+   * Text-only observation: the same run_clock, stats, game_events and camera as `observe`, without
+   * capturing or attaching a screenshot. It leaves the targeting frame (`observed`) untouched, so
+   * game_action, inspect_building and build_structure still judge their thirty-second age limit
+   * against the last real screenshot, not this call.
+   */
+  const observeText = async () => {
+    runtime?.session.check();
+    runtime?.phase("observing");
+    runtime?.cycle.observe();
+    const messages = pendingEvents();
+    const readerStats = device.currentStats();
+    return {
+      content: [
+        { type: "text" as const, text: NO_SCREENSHOT_NOTE },
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            ...(runtime ? { run_clock: runClock(runtime.session) } : {}),
+            stats: observationStats(readerStats, { military: runtime?.military ?? true }),
+            game_events: messages.messages,
+            ...(messages.dropped ? { game_events_dropped: messages.dropped } : {}),
+            ...(messages.unavailableSeconds ? { reader_unavailable_seconds: messages.unavailableSeconds } : {}),
+          }),
+        },
+      ],
+      details: { readerStats },
+    };
+  };
   const tools: AgentTool<any>[] = [
     {
       name: "observe",
@@ -446,39 +583,13 @@ export function makeAgent(
         "Screenshot of the game window with its stats, buffered game events and run_clock (game time left and used). It returns once your turn has run the minimum turn length of game time (the host lets the rest pass first). Coordinates are image pixels; a screenshot older than thirty seconds cannot be used for clicks.",
       parameters: Type.Object({}),
       execute: async (toolCallId) => {
-        const owed = toolCallId === HOST_OBSERVATION ? 0 : turnShortfall();
+        const owed = toolCallId === HOST_OBSERVATION || toolCallId === HOST_TEXT_OBSERVATION ? 0 : turnShortfall();
         if (owed > 0) {
           runtime!.phase("waiting");
           await runtime!.session.waitGame(owed);
         }
-        const view = await observe();
+        const view = toolCallId === HOST_TEXT_OBSERVATION ? await observeText() : await observe();
         return owed > 0 ? { ...view, content: [turnNote(owed), ...view.content] } : view;
-      },
-    },
-    {
-      name: "guide_page",
-      label: "Historical interface guide",
-      description:
-        "Retrieve one optional historical screenshot legend by page ID. It is reference UI only, never current state or a targeting frame. Use observe for current actions.",
-      parameters: Type.Object({
-        page: Type.Union(atlasPages.map((p) => Type.Literal(p.id))),
-      }),
-      execute: async (_id, args) => {
-        const requested = (args as { page?: unknown })?.page;
-        const page = atlasPages.find((entry) => entry.id === requested);
-        const reference = page ? atlasPage(page.id as AtlasPageId) : null;
-        return reference
-          ? {
-              content: [
-                { type: "text" as const, text: reference.text },
-                { type: "image" as const, data: reference.image, mimeType: "image/png" as const },
-              ],
-              details: { page: requested, historical: true },
-            }
-          : {
-              content: [{ type: "text" as const, text: "This private guide page is unavailable on this host. Inspect the live UI instead." }],
-              details: { page: requested, historical: true, unavailable: true },
-            };
       },
     },
     defineTool({
@@ -489,17 +600,6 @@ export function makeAgent(
       parameters: Type.Object({ name: Type.String({ minLength: 1, maxLength: 80 }) }),
       execute: async (_id, args) => ({
         content: [{ type: "text" as const, text: JSON.stringify(buildingInfo(args.name)) }],
-        details: { reference: true },
-      }),
-    }),
-    defineTool({
-      name: "list_buildings",
-      label: "List building names",
-      description:
-        "List documented building names, optionally within a category. Use building_info for one building's cost, role and requirements. Historical reference only; no game action.",
-      parameters: Type.Object({ category: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })) }),
-      execute: async (_id, args) => ({
-        content: [{ type: "text" as const, text: JSON.stringify(listBuildings(args.category)) }],
         details: { reference: true },
       }),
     }),
@@ -525,7 +625,7 @@ export function makeAgent(
       name: "game_action",
       label: "Control game",
       description:
-        "Send one mouse or keyboard action to the game window only, for what no other tool covers. x/y are pixels in the latest screenshot, exactly as in build_structure. No OS shortcuts or desktop access. Never P, Escape or Space; the game speed is fixed. After your actions call observe or wait_and_observe; otherwise the host applies its default wait and sends a screenshot.",
+        "Send one mouse or keyboard action to the game window only, for what no other tool covers. x/y are pixels in the latest screenshot, exactly as in build_structure. No OS shortcuts or desktop access. Never P, Escape or Space; the game speed is fixed. After your actions call observe or wait_and_observe; otherwise the host applies its default wait and sends an observation.",
       // One object schema (some providers, e.g. Moonshot, reject a top-level anyOf); modelToolAction
       // keeps only the fields of the chosen type and validates them against actionSchema.
       parameters: Type.Object({
@@ -543,16 +643,18 @@ export function makeAgent(
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
-        if (!observed) throw new Error("Observe the game first.");
+        if (!observed) throw observeFirstError();
         const action = modelToolAction(args as Record<string, unknown>);
         if (runtime && action.type === "key" && action.key === "P")
-          throw new Error("The host owns pause during timed runs; do not send P.");
+          throw new Error("The host owns pause during timed runs; do not send P. The game is paused while you think; wait_and_observe lets game time pass.");
         // Escape opens Game Options, which halts play and blocks the host's pause (live 2026-09-25).
         if (runtime && action.type === "key" && action.key === "Escape")
           throw new Error("Escape opens the game menu during timed runs; right-click to cancel a selection or placement mode.");
         if (runtime && action.type === "key" && (action.key === "+" || action.key === "-"))
-          throw new Error(`The benchmark runs at a fixed game speed of ${GAME_SPEED}; + and - are disabled.`);
-        runtime?.cycle.action();
+          throw new Error(`The benchmark runs at a fixed game speed of ${GAME_SPEED}; + and - are disabled. wait_and_observe lets game time pass.`);
+        // Raw input works from what the latest screenshot showed: clicks, drags and scrolls aim at
+        // its pixels, and keys such as zoom or the arrows change the view it shows.
+        runtime?.cycle.action(true);
         runtime?.phase("acting");
         const frameId = observed.id;
         // A rejected or ambiguous action must be followed by a fresh observation.
@@ -561,6 +663,7 @@ export function makeAgent(
           await device.action(action, frameId, () => runtime?.session.check(), ageCreditMs);
         } catch (error) {
           observed = null;
+          observedClearedBy = "game_action";
           throw error;
         }
         log("action", JSON.stringify(action));
@@ -585,13 +688,15 @@ export function makeAgent(
       name: "build_structure",
       label: "Build a named structure",
       description:
-        "Place 1–4 named buildings at x/y pixels of the latest screenshot (the same coordinates as game_action). It opens the construction menu and selects each building for you; all targets come from that one screenshot. Returns text only, one status per placement: placed (evidence: cost deducted, or the map-wide structure count rose), not_placed (nothing happened: the spot was blocked), rejected (new game error text), possibly_rejected (error text that may be older), not_selected (the menu did not select it; nothing clicked), camera_moved (the view changed; the rest was skipped), unverified (no evidence either way). A blocked target, a farm refused for its ground or a building too close to the signpost is retried at the nearest spots where the game's tile data shows the footprint free (up to 6 per placement and 12 per call; exact: true forbids it); `at` and `offsetTiles` then say where it went, `retries` how many spots were tried, and `retrySkipped: not_enough_resources` with `missing` that you cannot pay. A building with workers needs one whole side of open ground for them: a target that would leave it none, or take a neighbour's last one, is moved the same way without clicking it (`access` says why; with exact: true it is placed as asked and `access` warns). Ends with a right-click to leave placement mode. Also places the setup-phase Granary. Needs the 16:9 game layout.",
+        "Place 1–4 named buildings, each targeted by pixel (x/y, the same coordinates as game_action, in the latest screenshot) or by map tile (tile_x/tile_y, as named by map_overview or find_sites): give exactly one of the two pairs per placement, never both. A pixel target needs the latest screenshot and its camera. A tile target needs neither: the host reads the live camera and projects the tile to a pixel itself when that placement's turn comes, and again after selecting the building if the view moved. It opens the construction menu and selects each building for you. Returns text only, one status per placement: placed (evidence: cost deducted, or the map-wide structure count rose), not_placed (nothing happened: the spot was blocked, or you cannot pay for it — see retrySkipped and missing), rejected (new game error text), possibly_rejected (error text that may be older), not_selected (the menu did not select it; nothing clicked), invalid_target (a pixel target is outside the screenshot or over the bottom HUD, or the coordinate fields given are not exactly one whole pair; `reason` says which; nothing was sent and it does not count toward the 8 actions), not_on_screen (a tile target is not clickable right now — off screen, over the bottom HUD, or no live camera; `camera` gives the live centre tile when known; its terrain was not clicked), camera_moved (a pixel target's view changed since the screenshot; the rest of the pixel targets were skipped, tile targets still ran), unverified (no evidence either way). A blocked target, a farm or a quarry/iron mine/pitch rig refused for its ground, or a building too close to the signpost is retried at the nearest spots where the game's tile data shows the footprint free (up to 6 per placement and 12 per call; exact: true forbids it); `at` (pixel) and `offsetTiles` then say where it went, `retries` how many spots were tried, and `retrySkipped: not_enough_resources` with `missing` that you cannot pay (checked from the reader before the first click too, so an unaffordable target costs no click). A clicked placement also reports the map `tile` it went to, when known. A building with workers needs one whole side of open ground for them: a target that would leave it none, or take a neighbour's last one, is moved the same way without clicking it (`access` says why; with exact: true it is placed as asked and `access` warns). Ends with a right-click to leave placement mode, if any placement was attempted. Also places the setup-phase Granary. Needs the 16:9 game layout.",
       parameters: Type.Object({
         placements: Type.Array(
           Type.Object({
             name: Type.Union(buildableNames.map((name) => Type.Literal(name))),
-            x: Type.Integer({ minimum: 0 }),
-            y: Type.Integer({ minimum: 0 }),
+            x: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with y, not with tile_x/tile_y" })),
+            y: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with x, not with tile_x/tile_y" })),
+            tile_x: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_y, not with x/y" })),
+            tile_y: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_x, not with x/y" })),
             exact: Type.Optional(Type.Boolean({ description: "true: only this spot, no nearby retry (for example a stockpile that must touch the existing one)." })),
           }),
           { minItems: 1, maxItems: 4 },
@@ -600,91 +705,230 @@ export function makeAgent(
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
-        if (!observed) throw new Error("Observe the game first.");
-        const frame = observed;
-        // Validate every target before sending any input.
-        const plans = args.placements.map((p) => ({
-          ...p,
-          clicks: constructionClicks(frame, p.name, { x: p.x, y: p.y }),
-        }));
+        // Each target is validated in the loop below, so one bad target reports its own status
+        // instead of stopping the whole batch before any click.
+        const plans = args.placements;
+        const kinds = plans.map(targetKind);
+        // A pixel target needs the latest screenshot and its camera; a tile
+        // target needs neither, so a batch of tile targets alone never requires one.
+        const pixelBatch = kinds.some((k) => k.status === "pixel");
+        if (pixelBatch && !observed) throw observeFirstError();
+        // A pixel batch's frame is its screenshot. A tile-only batch's supplies only the window's
+        // identity and size: whatever was last captured, captured fresh only if nothing has been yet.
+        const frame = pixelBatch ? observed! : device.latest ?? (await device.capture());
         // Menu clicks are fixed by the harness; each agent-chosen target counts as one action.
         if (runtime && runtime.cycle.actions + plans.length > 8)
           throw new Error("Not enough actions remain in this reply for these placements (at most 8 per reply). End this reply and place them in the next one.");
-        const ageCreditMs = Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs);
+        // The input count as this call starts, before its own clicks (find_sites' map below).
+        const serialAtStart = device.inputSerial;
+        const pixelCreditMs = Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs);
+        // A pixel target's clicks (menu, terrain, retries) are judged against its screenshot's age.
+        // A tile target's pixels are projected from the live camera, so its clicks go with the latest
+        // capture and no age limit, like the host's hotkeys (GameDevice.hotkey): only the window's
+        // identity and size are taken from it. Set per placement before its first click.
+        let pixelClicks = pixelBatch;
         const pause = (seconds: number) =>
           runtime ? runtime.session.wait(seconds) : new Promise((r) => setTimeout(r, seconds * 1000));
         const send = async (action: GameAction) => {
           if (signal?.aborted) throw new Error("Stopped");
           runtime?.session.check();
           runtime?.phase("acting");
-          const ack = await device.action(action, frame.id, () => runtime?.session.check(), ageCreditMs);
+          const ack = pixelClicks
+            ? await device.action(action, frame.id, () => runtime?.session.check(), pixelCreditMs)
+            : await device.action(action, (device.latest ?? frame).id, () => runtime?.session.check(), Number.POSITIVE_INFINITY);
           log("action", JSON.stringify(action));
           return ack as { at?: number } | undefined;
         };
-        const placer = await new Placer(device, { send, pause, frame }).init();
+        // Reuse the construction tray's category left open by an earlier build_structure call, as
+        // long as nothing else has sent the game input since (device.inputSerial unmoved): select()
+        // still verifies the selection through the reader and falls back to the full category click
+        // and wait when it is wrong, so a stale guess costs at most one retry.
+        const openCategory = menuMemory !== undefined && menuMemory.serial === device.inputSerial ? menuMemory.category : undefined;
+        const placer = await new Placer(device, { send, pause, frame }, openCategory).init();
         const readerReadyAtStart = placer.readerReady;
         // Retries of silently blocked targets are harness clicks like the menu clicks, bounded per call.
         let retryBudget = RETRIES_PER_CALL;
-        // The observed view's map, read while paused; without one, read once on the first retry.
-        let tileMap: TileMap | null | undefined = viewTiles?.frame === frame ? (await viewTiles.map) ?? undefined : undefined;
-        const placedAt: { x: number; y: number; size: number; name: string }[] = [];
+        // Tile maps by camera: a map's pixels (access checks, retry spots) are right only for the view
+        // it was read in, so each placement uses the map for the camera its own click is projected
+        // from: the screenshot's for a pixel target, the live one for a tile target. The map for a
+        // view is one already read while paused (the observation's, or find_sites' if no input was
+        // sent between it and this call), else read on the first retry (also when that background
+        // read failed);
+        // a read that fails during the call is not repeated for the call's later placements.
+        const maps = new Map<string, TileMap | null>();
+        const keep = (key: string, map: TileMap | null) => {
+          maps.set(key, map);
+          // A map new to this call has not seen the call's own placements yet.
+          for (const p of placedAt) if (map && p.tile) map.claim(p.name, p.tile, 0, true);
+          return map;
+        };
+        const mapFor = async (camera: TileCamera | null | undefined) => {
+          const key = keyOf(camera);
+          if (!key) return undefined;
+          if (maps.has(key)) return maps.get(key);
+          const known = observed && viewTiles?.frame === observed && key === observedCamera
+            ? await viewTiles.map
+            : siteTiles?.key === key && siteTiles.serial === serialAtStart ? siteTiles.map : null;
+          return known ? keep(key, known) : undefined;
+        };
+        const placedAt: { x: number; y: number; tile?: { x: number; y: number }; size: number; name: string }[] = [];
         const results: Record<string, unknown>[] = [];
         // Stock and structure changes around each click, kept for the logs only (see `cost` below).
         const stockChanges: unknown[] = [];
+        // The last placement actually attempted (selected in the menu), so the exit right-click
+        // lands somewhere real; an all-invalid_target batch never entered placement mode.
+        let lastAttempted: { x: number; y: number } | undefined;
+        // Once a pixel target's camera is found to have moved, every later pixel target is reported
+        // camera_moved without being tried again; tile targets do not depend on it and keep going.
+        let pixelCameraMoved = false;
+        // The map tile a later plan in the batch (or a placement already made) occupies: its own
+        // tile when it has one, else its pixel mapped through the tile map; null when neither is known.
+        const tileOfEntry = (k: TargetKind, map: TileMap) =>
+          k.status === "tile" ? { x: k.x, y: k.y } : k.status === "pixel" ? map.tileAt({ x: k.x, y: k.y }) : null;
         try {
           for (const [index, plan] of plans.entries()) {
-            runtime?.cycle.action();
-            // Compare only valid samples: a transient unavailable sample has no camera, not a different one.
-            const currentCamera = observedCamera ? cameraKey(await placer.sampleAfter(0, () => true, 1)) : null;
-            if (observedCamera && currentCamera && currentCamera !== observedCamera) {
-              // The targets came from an image of another view; clicking them would build elsewhere.
-              for (const skipped of plans.slice(index))
-                results.push({ building: skipped.name, x: skipped.x, y: skipped.y, status: "camera_moved" });
-              observed = null;
-              break;
+            const kind = kinds[index];
+            if (kind.status === "invalid") {
+              results.push({
+                building: plan.name,
+                ...(plan.x !== undefined ? { x: plan.x } : {}), ...(plan.y !== undefined ? { y: plan.y } : {}),
+                ...(plan.tile_x !== undefined ? { tile_x: plan.tile_x } : {}), ...(plan.tile_y !== undefined ? { tile_y: plan.tile_y } : {}),
+                status: "invalid_target", reason: kind.reason,
+              });
+              continue;
+            }
+            if (kind.status === "pixel" && pixelCameraMoved) {
+              results.push({ building: plan.name, x: kind.x, y: kind.y, status: "camera_moved" });
+              continue;
+            }
+            // The world pixel to click, and (for a tile target) the tile it names.
+            let target: { x: number; y: number };
+            let tileOrigin: { x: number; y: number } | undefined;
+            // A tile target's own live camera, read fresh for it; a pixel target has none (it uses
+            // the screenshot's camera, observedCameraSample, throughout).
+            let liveCamera: TileCamera | undefined;
+            if (kind.status === "tile") {
+              tileOrigin = { x: kind.x, y: kind.y };
+              liveCamera = await readLiveCamera();
+              if (!liveCamera) {
+                results.push({ building: plan.name, tile_x: tileOrigin.x, tile_y: tileOrigin.y, status: "not_on_screen", reason: "No live camera available." });
+                continue;
+              }
+              target = tilePixel(liveCamera, frame, tileOrigin);
+              if (!onScreen(frame, target)) {
+                results.push({
+                  building: plan.name, tile_x: tileOrigin.x, tile_y: tileOrigin.y, status: "not_on_screen",
+                  camera: { centre_tile_x: liveCamera.centre_tile_x, centre_tile_y: liveCamera.centre_tile_y },
+                });
+                continue;
+              }
+            } else {
+              target = { x: kind.x, y: kind.y };
+              // Checked per placement so one bad target does not abort the rest of the batch: nothing
+              // is sent and it is not an action, and `reason` names the pixel boundary.
+              try {
+                constructionClicks(frame, plan.name, target);
+              } catch (error) {
+                results.push({ building: plan.name, x: target.x, y: target.y, status: "invalid_target", reason: error instanceof Error ? error.message : String(error) });
+                continue;
+              }
+            }
+            // Only a pixel target clicks where the screenshot showed; a tile target is projected live.
+            runtime?.cycle.action(kind.status === "pixel");
+            lastAttempted = target;
+            pixelClicks = kind.status === "pixel";
+            if (kind.status === "pixel") {
+              // Compare only valid samples: a transient unavailable sample has no camera, not a different one.
+              const currentCamera = observedCamera ? cameraKey(await placer.sampleAfter(0, () => true, 1)) : null;
+              if (observedCamera && currentCamera && currentCamera !== observedCamera) {
+                // This target came from an image of another view; clicking it would build elsewhere.
+                // Later pixel targets in the batch are the same image's, so they are skipped too;
+                // later tile targets do not depend on it and still run their own turn.
+                results.push({ building: plan.name, x: target.x, y: target.y, status: "camera_moved" });
+                pixelCameraMoved = true;
+                observed = null;
+                observedClearedBy = "build_structure";
+                continue;
+              }
             }
             // Text already shown before these clicks; menu rollovers can hide it and make it reappear.
             const carried = visiblePlacementFeedback(device.currentStats().observation);
             const eventStart = device.events.cursor();
             const selection = await placer.select(plan.name);
             if (selection === "failed") {
-              results.push({ building: plan.name, x: plan.x, y: plan.y, status: "not_selected" });
+              results.push({ building: plan.name, x: target.x, y: target.y, ...(tileOrigin ? { tile: tileOrigin } : {}), status: "not_selected" });
               continue;
             }
+            // Selecting takes a moment of game time: project a tile target again from the camera as
+            // it is now, right before its terrain click.
+            if (tileOrigin && liveCamera) {
+              const now = await readLiveCamera();
+              if (now && keyOf(now) !== keyOf(liveCamera)) {
+                liveCamera = now;
+                target = tilePixel(now, frame, tileOrigin);
+                lastAttempted = target;
+                if (!onScreen(frame, target)) {
+                  results.push({
+                    building: plan.name, tile_x: tileOrigin.x, tile_y: tileOrigin.y, status: "not_on_screen",
+                    reason: "The view moved while the building was being selected.",
+                    camera: { centre_tile_x: now.centre_tile_x, centre_tile_y: now.centre_tile_y },
+                  });
+                  continue;
+                }
+              }
+            }
+            // The view this placement's click is projected in: the live one for a tile target, the
+            // screenshot's for a pixel target.
+            const clickCamera = liveCamera ?? observedCameraSample ?? undefined;
+            let tileMap = await mapFor(clickCamera);
             // A building with workers needs one whole side of open ground for them, and must not take a
             // neighbour's last one: a target that fails is moved like a blocked one without clicking it;
             // exact: true places it as asked, with a warning.
-            const access = tileMap ? tileMap.access(plan.name, tileMap.tileAt(plan)) : { ok: true };
+            const access = tileMap ? tileMap.access(plan.name, tileOrigin ?? tileMap.tileAt(target)) : { ok: true };
             const moveForAccess = !access.ok && !plan.exact;
-            let result: Awaited<ReturnType<Placer["click"]>> = moveForAccess
+            // Checked from the latest reader sample before the first click, so a plain rejection
+            // ("Wood needed") costs no click; re-read each time so an earlier placement in this same
+            // batch is accounted for. Without a stock reading this is unknown, so the click goes
+            // ahead as before.
+            const upfrontMissing = !moveForAccess ? shortfall(plan.name, device.currentStats().observation) : null;
+            let result: Awaited<ReturnType<Placer["click"]>> = moveForAccess || upfrontMissing
               ? { outcome: { status: "not_placed" }, feedback: [], visible: [], after: null }
-              : await placer.click(plan.name, plan, carried, eventStart);
-            let at: { x: number; y: number; offsetTiles: [number, number] } | undefined;
+              : await placer.click(plan.name, target, carried, eventStart);
+            let at: { x: number; y: number; offsetTiles: [number, number]; tile?: { x: number; y: number } } | undefined;
             let retries = 0;
             let retryStopped: string | undefined;
             let retryMethod: "tile_map" | "offsets" | undefined;
             let retrySkipped: string | undefined;
             let tileDebug: Record<string, unknown> | undefined;
             let missing: Record<string, number> | undefined;
-            // A farm refused for its ground ("must be placed on an oasis", "not fertile enough") keeps
-            // the building selected like a silent block, so both retry at another spot.
+            // A farm refused for its ground ("must be placed on an oasis", "not fertile enough") or a
+            // quarry/iron mine/pitch rig refused for its resource ("Iron mine must be built on Iron
+            // ore.") keeps the building selected like a silent block, so both retry at another spot.
             const retryable = (r: typeof result) => r.outcome.status === "not_placed" ||
               (r.outcome.status === "rejected" && r.feedback.some((f) => /too close/i.test(f))) ||
-              (r.outcome.status === "rejected" && farmNames.has(plan.name) && r.feedback.some((f) => /oasis|fertile/i.test(f)));
+              (r.outcome.status === "rejected" && farmNames.has(plan.name) && r.feedback.some((f) => /oasis|fertile/i.test(f))) ||
+              (r.outcome.status === "rejected" && resourceGroundNames.has(plan.name) && r.feedback.some((f) => /must be built on/i.test(f)));
             // A silent block usually means a tree, rock or building under part of the footprint; the
             // building stays selected, so each nearby spot costs one click and one settle sample. The
             // tile map gives spots where the whole footprint is free (and fertile enough for farms);
-            // without it, fixed footprint-scaled offsets are tried for silent blocks only.
-            if (retryable(result) && !plan.exact && !observedSpan) retrySkipped = "no_reader_camera";
-            if (retryable(result) && !plan.exact && observedSpan && retryBudget > 0) {
-              if (tileMap === undefined) tileMap = await readTileMap(frame, observedCameraSample);
+            // without it, fixed footprint-scaled offsets are tried for silent blocks only. A tile
+            // target already has its own live camera (valid, or the earlier not_on_screen check
+            // would have caught it); a pixel target uses the screenshot's.
+            const retrySpan = liveCamera ?? observedSpan ?? undefined;
+            if (retryable(result) && !plan.exact && !retrySpan) retrySkipped = "no_reader_camera";
+            if (retryable(result) && !plan.exact && retrySpan && retryBudget > 0) {
+              if (tileMap === undefined) {
+                tileMap = await readTileMap(frame, clickCamera);
+                const key = keyOf(clickCamera);
+                if (key) keep(key, tileMap);
+              }
               const limit = Math.min(RETRIES_PER_PLACEMENT, retryBudget);
               type Candidate = { x: number; y: number; offsetTiles: [number, number]; oasisShare?: number; tile?: { x: number; y: number } };
               const tooClose = (r: typeof result) => r.feedback.some((f) => /too close/i.test(f));
               let next: () => Candidate | undefined;
               if (tileMap) {
                 const map = tileMap;
-                const origin = map.tileAt(plan);
+                const origin = tileOrigin ?? map.tileAt(target);
                 // The tile map shows the whole footprint free, yet nothing was placed. When the reader's
                 // stock cannot pay the manual cost, another spot would fail the same way; otherwise a
                 // rule the map does not model blocked it (e.g. "Too close to signpost"), so try others.
@@ -693,10 +937,13 @@ export function makeAgent(
                   missing = shortfall(plan.name, device.currentStats().observation) ?? undefined;
                   if (missing) retrySkipped = "not_enough_resources";
                 }
-                const avoid = [
-                  ...plans.slice(index + 1).map((p) => ({ ...footprintRect(map.tileAt(p), footprintOf(p.name)), needsOpenSide: needsOpenSide(p.name) })),
-                  ...placedAt.map((p) => ({ ...footprintRect(map.tileAt(p), p.size), needsOpenSide: needsOpenSide(p.name) })),
-                ];
+                const avoid: { x1: number; y1: number; x2: number; y2: number; needsOpenSide?: boolean }[] = [];
+                for (let i = index + 1; i < plans.length; i++) {
+                  const futureTile = tileOfEntry(kinds[i], map);
+                  if (futureTile) avoid.push({ ...footprintRect(futureTile, footprintOf(plans[i].name)), needsOpenSide: needsOpenSide(plans[i].name) });
+                }
+                for (const p of placedAt)
+                  avoid.push({ ...footprintRect(p.tile ?? map.tileAt(p), p.size), needsOpenSide: needsOpenSide(p.name) });
                 // Each refused spot (the target first) is claimed, with a margin after "Too close to …",
                 // and the nearest remaining fit is computed afresh.
                 map.claim(plan.name, origin, tooClose(result) ? TOO_CLOSE_MARGIN : 0);
@@ -710,20 +957,28 @@ export function makeAgent(
                 };
                 retryMethod = "tile_map";
               } else {
-                const avoid = [...plans.slice(index + 1).map((p) => ({ ...p, size: footprintOf(p.name) })), ...placedAt];
+                const avoid: { x: number; y: number; size?: number }[] = [...placedAt];
+                for (let i = index + 1; i < plans.length; i++) {
+                  const k = kinds[i];
+                  const pixel = k.status === "tile" && liveCamera ? tilePixel(liveCamera, frame, { x: k.x, y: k.y }) : k.status === "pixel" ? { x: k.x, y: k.y } : null;
+                  if (pixel) avoid.push({ ...pixel, size: footprintOf(plans[i].name) });
+                }
                 const list: Candidate[] = result.outcome.status === "not_placed"
-                  ? nearbyTargets(frame, plan, observedSpan, avoid, limit, footprintOf(plan.name))
+                  ? nearbyTargets(frame, target, retrySpan, avoid, limit, footprintOf(plan.name))
                   : [];
                 next = () => list.shift();
                 retryMethod = "offsets";
               }
               for (let candidate = next(); candidate && retries < limit; candidate = next()) {
                 // The newest valid sample: the game can move the camera shortly after a failed stockpile.
+                // The candidates' pixels were projected from the click's camera (the screenshot's for a
+                // pixel target, the live one for a tile target), so retries stop once it moves.
                 const current = device.currentStats();
                 const latest = current.status === "ok" && current.observation ? current.observation : result.after;
-                if (cameraKey(latest) !== observedCamera) { retryStopped = "camera_moved"; break; }
+                if (cameraKey(latest) !== keyOf(clickCamera)) { retryStopped = "camera_moved"; break; }
                 if (placementOf(latest)?.action !== 5) { retryStopped = "placement_mode_ended"; break; }
-                if (Date.now() - ageCreditMs - frame.receivedAt > 25000) { retryStopped = "image_too_old"; break; }
+                // Only a pixel target's spots come from the screenshot, so only they age with it.
+                if (!tileOrigin && Date.now() - pixelCreditMs - frame.receivedAt > 25000) { retryStopped = "image_too_old"; break; }
                 retryBudget--;
                 retries++;
                 const carriedNow = [...carried, ...visiblePlacementFeedback(device.currentStats().observation)];
@@ -732,24 +987,32 @@ export function makeAgent(
                 if (!retryable(result)) break;
                 if (candidate.tile) tileMap?.claim(plan.name, candidate.tile, tooClose(result) ? TOO_CLOSE_MARGIN : 0);
               }
-              if (retryStopped === "camera_moved") observed = null;
+              if (retryStopped === "camera_moved") { observed = null; observedClearedBy = "build_structure"; }
             }
             const { outcome, feedback, visible } = result;
+            // The map tile placed or tried: a tile-map retry names its own; an offset retry is the
+            // origin moved by its offset (which is in tiles); without a retry, the target's tile.
+            const originTile = tileOrigin ?? (tileMap ? tileMap.tileAt(target) : undefined);
+            const placedTile = at
+              ? at.tile ?? (originTile && { x: originTile.x + at.offsetTiles[0], y: originTile.y + at.offsetTiles[1] })
+              : originTile;
             if (outcome.status === "placed") {
-              placedAt.push({ ...(at ?? plan), size: footprintOf(plan.name), name: plan.name });
-              tileMap?.claim(plan.name, tileMap.tileAt(at ?? plan), 0, true);
+              placedAt.push({ ...(at ?? target), tile: placedTile, size: footprintOf(plan.name), name: plan.name });
+              if (placedTile) for (const map of maps.values()) map?.claim(plan.name, placedTile, 0, true);
             }
             const price = buildingCost(plan.name);
             const cost = price && [price.wood && `${price.wood} wood`, price.gold && `${price.gold} gold`].filter(Boolean).join(", ");
             stockChanges.push(outcome.change ?? null);
             results.push({
               building: plan.name,
-              x: plan.x,
-              y: plan.y,
+              x: target.x,
+              y: target.y,
               status: outcome.status,
               ...(outcome.evidence ? { evidence: outcome.evidence } : {}),
               // Where the reported status happened when a retry moved off the requested target.
               ...(at && outcome.status !== "not_placed" ? { at: { x: at.x, y: at.y }, offsetTiles: at.offsetTiles } : {}),
+              // The map tile placed or tried, whether it came from the request or a retry.
+              ...(placedTile ? { tile: placedTile } : {}),
               ...(retries ? { retries, retryMethod } : {}),
               ...(access.ok ? {} : { access: access.reason }),
               ...(!retries && retryable(result) && !plan.exact ? { retrySkipped: retrySkipped ?? "no_free_spot_nearby" } : {}),
@@ -764,13 +1027,22 @@ export function makeAgent(
               ...(visible.length && !feedback.length ? { stillVisibleFeedback: visible } : {}),
             });
           }
-          const last = plans.at(-1)!;
-          await send({ type: "click", x: last.x, y: last.y, button: 3 });
+          // Only if a placement was actually attempted: an all-invalid_target batch never
+          // selected anything, so there is no placement mode to leave.
+          if (lastAttempted) await send({ type: "click", x: lastAttempted.x, y: lastAttempted.y, button: 3 });
+          // Remember the tray's open category (if any) for the next build_structure call, together
+          // with the input count as of now so that call can tell whether anything else touched it.
+          menuMemory = { category: placer.category, serial: device.inputSerial };
           if (signal?.aborted) throw new Error("Stopped");
           const feedbackCoverage = readerReadyAtStart && device.currentStats().status === "ok"
             ? "reader_active"
             : "reader_unavailable";
           const anyRejected = results.some((r) => r.status === "rejected" || r.status === "possibly_rejected");
+          // Each placement that did not go through says what to do about it.
+          for (const result of results) {
+            const remedy = placementRemedy(result);
+            if (remedy) result.remedy = remedy;
+          }
           const cameraMoved = results.some((r) => r.status === "camera_moved" || r.retryStopped === "camera_moved");
           // No screenshot: the next turn's observation shows the scene; this result reports what the game said.
           return {
@@ -781,11 +1053,11 @@ export function makeAgent(
                 feedbackCoverage,
                 placementMode: "right_click_sent_to_exit",
                 note: cameraMoved
-                  ? "The camera moved, so the remaining targets were skipped. Observe before choosing new targets."
+                  ? "The camera moved, so the remaining pixel targets were skipped. Observe before choosing new pixel targets."
                   : feedbackCoverage === "reader_unavailable"
                   ? "The reader was unavailable; placement errors may be missing."
                   : anyRejected
-                    ? "The game reported at least one placement error. Choose another target or remedy the requirement; do not repeat it blindly."
+                    ? "The game reported at least one placement error; each placement's remedy says what to do. Do not repeat it unchanged."
                     : "No placement error captured; see each placement's status.",
               }),
             }],
@@ -793,6 +1065,9 @@ export function makeAgent(
           };
         } catch (error) {
           observed = null;
+          observedClearedBy = "build_structure";
+          // The tray's state after a stop or error is uncertain; the next call starts unseeded.
+          menuMemory = undefined;
           throw error;
         }
       },
@@ -809,7 +1084,7 @@ export function makeAgent(
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
-        if (!observed) throw new Error("Observe the game first.");
+        if (!observed) throw observeFirstError();
         const frame = observed;
         const action = minimapClick(frame, args.x, args.y);
         runtime?.cycle.action();
@@ -824,6 +1099,7 @@ export function makeAgent(
           return observe();
         } catch (error) {
           observed = null;
+          observedClearedBy = "navigate_minimap";
           throw error;
         }
       },
@@ -839,7 +1115,10 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
-        const result = await centerOn(anchorContext(signal), args.target);
+        observedClearedBy = "center_on";
+        const centred = await centerOn(anchorContext(signal), args.target);
+        const result = centred.status === "not_found" ? { ...centred, remedy: anchorRemedy(args.target) }
+          : centred.status === "failed" ? { ...centred, remedy: READER_RETRY } : centred;
         const view = await observe();
         return { ...view, content: [{ type: "text" as const, text: JSON.stringify(result) }, ...view.content] };
       },
@@ -866,7 +1145,7 @@ export function makeAgent(
           const flat = await device.capture();
           if (flat.image === before.image) {
             const view = await observe();
-            return { ...view, content: [{ type: "text" as const, text: JSON.stringify({ status: "unchanged", note: "The view did not change; the flattened landscape is unavailable here. The screenshot is the normal view." }) }, ...view.content] };
+            return { ...view, content: [{ type: "text" as const, text: JSON.stringify({ status: "unchanged", note: "The view did not change; the flattened landscape is unavailable here. The screenshot is the normal view.", remedy: "find_sites reads free ground from the game's tile data instead." }) }, ...view.content] };
           }
           let restored = false;
           for (let attempt = 0; attempt < 2 && !restored; attempt++) {
@@ -900,6 +1179,7 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
+        observedClearedBy = "set_tax";
         const result = await setTax(anchorContext(signal), args.level);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
@@ -915,6 +1195,7 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
+        observedClearedBy = "set_rations";
         const result = await setRations(anchorContext(signal), args.rations);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
@@ -934,6 +1215,7 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
+        observedClearedBy = "market_trade";
         const result = await marketTrade(anchorContext(signal), args.good, args.action, args.lots ?? 1);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
@@ -971,6 +1253,7 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
+        observedClearedBy = "go_to_tile";
         mapExtent ??= new MapView(await device.mapSummary()).extent();
         const target = { x: args.x, y: args.y };
         let result: Record<string, unknown> = await goToTile(anchorContext(signal), target, mapExtent);
@@ -981,6 +1264,9 @@ export function makeAgent(
           const pixel = tilePixel(observedCameraSample, observed, target);
           if (onScreen(observed, pixel)) result = { ...result, ...(result.status === "stopped_short" ? { status: "in_view" } : {}), targetPixel: pixel };
         }
+        if (result.status === "no_camera") result = { ...result, remedy: READER_RETRY };
+        else if (result.status === "stopped_short")
+          result = { ...result, remedy: "The camera cannot centre there and the tile is not on screen: go_to_tile a tile a little further from the map edge." };
         return { ...view, content: [{ type: "text" as const, text: JSON.stringify(result) }, ...view.content] };
       },
     }),
@@ -988,7 +1274,7 @@ export function makeAgent(
       name: "find_sites",
       label: "Find free building spots",
       description:
-        "List up to `count` non-overlapping spots in the latest observed view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); a building with workers keeps one whole side of open ground, and no spot takes a neighbour's last one; farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns image pixels to pass to build_structure, nearest to near_x/near_y if given (else the view centre), with each farm's oasis share. Woodcutter spots come closest to trees first, each with the trees within " + WOODCUTTER_REACH + " tiles (in this view): a woodcutter far from trees walks a long way for each log. Takes about 2 s (no game time before any action in your reply) and no screenshot. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
+        "List up to `count` non-overlapping spots in the current view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); a building with workers keeps one whole side of open ground, and no spot takes a neighbour's last one; farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns each site's map tile (tile_x, tile_y, to pass to build_structure's tile target, no screenshot needed) and, while the latest screenshot still shows this view, its pixel in it (x, y), nearest to near_x/near_y (pixels of that screenshot, so only while it shows this view) if given, else the view centre, with each farm's oasis share. Woodcutter spots come closest to trees first, each with the trees within " + WOODCUTTER_REACH + " tiles (in this view): a woodcutter far from trees walks a long way for each log. Takes about 2 s (no game time before any action in your reply); needs no screenshot, only the live camera. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
       parameters: Type.Object({
         building: Type.Union(buildableNames.map((name) => Type.Literal(name))),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
@@ -998,29 +1284,47 @@ export function makeAgent(
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
-        if (!observed) throw new Error("Observe the game first.");
-        const current = cameraKey(device.currentStats().observation);
-        if (current && observedCamera && current !== observedCamera)
-          throw new Error("The camera moved since the last observation; observe before finding sites.");
-        const map = await tilesFor(observed);
         const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: {} });
-        if (!map) return text({ status: "unavailable", error: tileMapError ?? "No reader camera for the observed view." });
-        const near = args.near_x !== undefined && args.near_y !== undefined ? map.tileAt({ x: args.near_x, y: args.near_y }) : undefined;
+        const live = await cameraObservation();
+        // The latest screenshot, while it still shows the live view: its map was read in the
+        // background, and its pixels are reported beside the tiles. Otherwise the live camera alone
+        // gives tiles, no pixels.
+        const screenshot = observed && observedCamera && (!cameraKey(live) || cameraKey(live) === observedCamera) ? observed : null;
+        const camera = screenshot ? observedCameraSample : (live?.camera as TileCamera | undefined);
+        if (!camera) return text({ status: "unavailable", error: "No reader camera available.", remedy: READER_RETRY });
+        let map: TileMap | null;
+        if (screenshot) map = await tilesFor(screenshot);
+        else {
+          const key = keyOf(camera)!;
+          if (siteTiles?.key === key && siteTiles.serial === device.inputSerial) map = siteTiles.map;
+          else {
+            // Only the window's size matters here: whatever was last captured, or a fresh capture
+            // if nothing has been yet.
+            map = await readTileMap(device.latest ?? (await device.capture()), camera);
+            siteTiles = map && { key, map, serial: device.inputSerial };
+          }
+        }
+        if (!map) return text({ status: "unavailable", error: tileMapError ?? "No tile data for this view.", remedy: "Call find_sites again; meanwhile flat_view shows free ground in a screenshot." });
+        // near_x/near_y are pixels of the latest screenshot, so they mean nothing without one of this view.
+        const nearGiven = args.near_x !== undefined && args.near_y !== undefined;
+        const near = nearGiven && screenshot ? map.tileAt({ x: args.near_x!, y: args.near_y! }) : undefined;
         const sites = args.building === "Woodcutter"
           ? map.woodcutterSites(near, args.count ?? 3, 25)
           : map.sitesNear(args.building, near, args.count ?? 3, 25);
         return text({
           building: args.building,
           footprintTiles: footprintOf(args.building),
+          ...(nearGiven && !screenshot ? { nearIgnored: "near_x/near_y are pixels of the latest screenshot, which does not show this view; sites are nearest the view centre." } : {}),
           sites: sites.map((site) => ({
-            x: site.x, y: site.y,
+            tile_x: site.tile.x, tile_y: site.tile.y,
+            ...(screenshot ? { x: site.x, y: site.y } : {}),
             ...(site.oasisShare !== undefined ? { oasisShare: site.oasisShare } : {}),
             ...(site.trees !== undefined ? { trees: site.trees } : {}),
           })),
           note: sites.length && args.building === "Woodcutter" && sites.every((site) => !site.trees)
             ? `No trees within ${WOODCUTTER_REACH} tiles of these spots in this view. map_overview lists tree groves; go_to_tile moves there.`
             : sites.length
-            ? "Pixels in the latest observation. Pass them to build_structure; several sites do not overlap each other."
+            ? `Pass tile_x/tile_y to build_structure (no screenshot needed)${screenshot ? ", or x/y, pixels in the latest screenshot" : "; no x/y, since no screenshot shows this view"}. Several sites do not overlap each other.`
             : args.building === "Quarry" || args.building === "Iron Mine" || args.building === "Pitch Rig"
               ? "Nothing fits in this view: it needs stone, iron ore or oil under its square. map_overview lists the deposits; go_to_tile moves there."
               : farmNames.has(args.building)
@@ -1045,7 +1349,8 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
-        const result = await placeAdjacent(anchorContext(signal), args.building, args.anchor, args.count ?? 1, args.side);
+        observedClearedBy = "place_near";
+        const result = withAdjacentRemedy(await placeAdjacent(anchorContext(signal), args.building, args.anchor, args.count ?? 1, args.side), args.building, args.anchor);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
     }),
@@ -1064,8 +1369,9 @@ export function makeAgent(
         runtime?.session.check();
         runtime?.cycle.action();
         observed = null;
+        observedClearedBy = "expand_storage";
         const building = args.kind === "stockpile" ? "Stockpile" : "Granary";
-        const result = await placeAdjacent(anchorContext(signal), building, args.kind, args.count ?? 1, args.side);
+        const result = withAdjacentRemedy(await placeAdjacent(anchorContext(signal), building, args.kind, args.count ?? 1, args.side), building, args.kind);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
     }),
@@ -1101,9 +1407,10 @@ export function makeAgent(
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
         const slot = views.get(args.name.trim().toLowerCase());
-        if (slot === undefined) throw new Error(`Unknown view. Saved views: ${[...views.keys()].join(", ") || "none"}.`);
+        if (slot === undefined) throw new Error(`Unknown view. Saved views: ${[...views.keys()].join(", ") || "none"}. save_view saves the current view under a name.`);
         runtime?.cycle.action();
         observed = null;
+        observedClearedBy = "go_to_view";
         if (!device.latest) await device.capture();
         const before = cameraKey(device.currentStats().observation);
         await anchorContext(signal).hotkey(`GotoBookmark${slot}` as GameHotkey);
@@ -1133,16 +1440,17 @@ export function makeAgent(
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
-        if (!observed) throw new Error("Observe the game first.");
+        if (!observed) throw observeFirstError();
         const frame = observed;
         if (args.x >= frame.width || args.y >= frame.height * 0.82)
-          throw new Error("Target must be a building in the visible world, not the HUD.");
+          throw new Error("Target must be a building in the visible world, not the HUD: aim above the bottom panel in the latest screenshot.");
         const current = device.currentStats().observation;
         if (observedCamera && cameraKey(current) && cameraKey(current) !== observedCamera) {
           observed = null;
+          observedClearedBy = "inspect_building";
           throw new Error("The camera moved since your last image; observe before inspecting.");
         }
-        runtime?.cycle.action();
+        runtime?.cycle.action(true);
         const ctx = anchorContext(signal);
         const ageCreditMs = Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs);
         const click = (x: number, y: number, button: 1 | 3) =>
@@ -1181,13 +1489,14 @@ export function makeAgent(
         name: "wait_and_observe",
         label: "Wait and observe",
         description:
-          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants.",
+          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants. screenshot: false waits the same way and returns the stats, game events and run_clock as text only, with no image; pixel targets still come from your last screenshot, with its age limit.",
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({
             amount: Type.Union([...tradeGoods, "gold", "population", "food", "idle_peasants"].map((name) => Type.Literal(name))),
             at_least: Type.Integer({ minimum: 0 }),
           })),
+          screenshot: Type.Optional(Type.Boolean({ description: "Default true; false returns text only, no image." })),
         }),
         execute: async (_id, args) => {
           runtime.phase("waiting");
@@ -1203,8 +1512,10 @@ export function makeAgent(
             if (owed > 0) await runtime.session.waitGame(owed);
             met = condition() || (await runtime.session.waitGame(Math.max(0, args.seconds - owed), condition));
           }
-          const view = await observe();
-          const longer = owed > args.seconds ? [turnNote(Math.round((owed - args.seconds) * 10) / 10)] : [];
+          const view = args.screenshot === false ? await observeText() : await observe();
+          const longer = owed > args.seconds
+            ? [turnNote(Math.round((owed - args.seconds) * 10) / 10, args.screenshot !== false)]
+            : [];
           if (!until) return { ...view, content: [...longer, ...view.content] };
           const endTick = device.currentStats().observation?.game_time;
           const waited = typeof startTick === "number" && typeof endTick === "number" ? Math.round((endTick - startTick) / 30) : undefined;
@@ -1255,26 +1566,6 @@ export function makeAgent(
         }),
         execute: async (_id, args) => {
           const value = runtime.memory.writeNotebook(args.revision, args.text);
-          runtime.changed();
-          return reply(value);
-        },
-      }),
-      defineTool({
-        name: "notebook_edit",
-        label: "Edit notebook",
-        description:
-          "Replace exactly one matching passage in this run’s notebook, guarded by its current revision.",
-        parameters: Type.Object({
-          revision: Type.Integer({ minimum: 0 }),
-          before: Type.String({ minLength: 1, maxLength: 8192 }),
-          after: Type.String({ maxLength: 8192 }),
-        }),
-        execute: async (_id, args) => {
-          const value = runtime.memory.editNotebook(
-            args.revision,
-            args.before,
-            args.after,
-          );
           runtime.changed();
           return reply(value);
         },
@@ -1337,6 +1628,9 @@ export function makeAgent(
     );
   }
   return new Agent({
+    // Lets a provider with session affinity (OpenRouter) keep the whole run on one upstream
+    // deployment, so its prompt cache stays warm across requests (modelConfig's compat flag).
+    sessionId: runtime?.runId,
     initialState: {
       model: {
         ...modelConfig(profile),
@@ -1395,7 +1689,7 @@ export function makeAgent(
       runtime?.phase("thinking");
       const started = performance.now();
       runtime?.requestStarted?.();
-      const cost = costTracking(profile, (dollars, source) => runtime?.cost?.("gameplay", dollars, source));
+      const cost = costTracking(profile, (dollars, source, upstream) => runtime?.cost?.("gameplay", dollars, source, upstream));
       const stream = models.streamSimple(m, c, {
         ...o,
         onPayload: payloadHook(profile, c.messages, runtime, o?.onPayload),
@@ -1453,7 +1747,9 @@ export async function prepareModel(
   systemPrompt: string,
   message: import("@earendil-works/pi-ai").UserMessage,
   signal: AbortSignal,
-  onCost?: (dollars: number, source: CostSource) => void,
+  onCost?: (dollars: number, source: CostSource, upstream?: string) => void,
+  /** The run's id, so an OpenRouter profile's session affinity keeps this on the same deployment. */
+  sessionId?: string,
 ): Promise<AssistantMessage> {
   const cost = costTracking(profile, onCost);
   const result = await registry(profile).completeSimple(
@@ -1468,6 +1764,7 @@ export async function prepareModel(
       maxRetries: 0,
       timeoutMs: 90000,
       signal,
+      sessionId,
     },
   );
   cost.settle(result.usage);
@@ -1529,7 +1826,7 @@ export async function interviewReply(
   systemPrompt: string,
   tools: AgentTool<any>[],
   runtime: AgentRuntime,
-  onCost: (dollars: number, source: CostSource) => void,
+  onCost: (dollars: number, source: CostSource, upstream?: string) => void,
   signal: AbortSignal,
 ) {
   const result = await repeatRequest(profile, apiKey, messages, systemPrompt, tools, runtime, {
@@ -1556,7 +1853,7 @@ async function repeatRequest(
   systemPrompt: string,
   tools: AgentTool<any>[],
   runtime: AgentRuntime,
-  { timeoutMs, signal, onCost }: { timeoutMs: number; signal: AbortSignal; onCost: (dollars: number, source: CostSource) => void },
+  { timeoutMs, signal, onCost }: { timeoutMs: number; signal: AbortSignal; onCost: (dollars: number, source: CostSource, upstream?: string) => void },
 ) {
   const cost = costTracking(profile, onCost);
   const result = await registry(profile).completeSimple(
@@ -1571,6 +1868,9 @@ async function repeatRequest(
       timeoutMs,
       signal,
       maxRetryDelayMs: 3000,
+      // Same run id as the gameplay agent, so an OpenRouter profile's session affinity (compat
+      // above) keeps this request on the same cached upstream deployment.
+      sessionId: runtime.runId,
       onPayload: payloadHook(profile, messages, runtime),
       ...cost.options,
     },
@@ -1591,7 +1891,7 @@ async function textReply(
   const result = await repeatRequest(profile, apiKey, providerMessages(messages), systemPrompt, tools, runtime, {
     timeoutMs,
     signal,
-    onCost: (dollars, source) => runtime.cost?.(kind, dollars, source),
+    onCost: (dollars, source, upstream) => runtime.cost?.(kind, dollars, source, upstream),
   });
   runtime.timing(performance.now() - started, result.stopReason, kind);
   if (

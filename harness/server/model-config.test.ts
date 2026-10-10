@@ -5,7 +5,7 @@ import { streamSimple as anthropicStream } from "@earendil-works/pi-ai/api/anthr
 import type { AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { modelConfig, prepareModel, requestOptions } from "./model.js";
-import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints, pruneImages } from "./context.js";
+import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import type { ModelProfile } from "../shared/protocol.js";
 
 /** The request body Pi would send for a profile; the request is stopped before any network use. */
@@ -66,6 +66,43 @@ test("Moonshot requests send no reasoning setting and no provider routing", asyn
   assert.equal(body.max_tokens, 12288);
 });
 
+/**
+ * The request headers Pi would send for a profile, given a run's session id; the request is
+ * stopped (via a throwing fetch) before any network use.
+ */
+async function requestHeaders(profile: ModelProfile, sessionId: string) {
+  let headers: Headers | undefined;
+  const stream = streamSimple(
+    modelConfig(profile) as Model<"openai-completions">,
+    { messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+    {
+      ...requestOptions(profile),
+      apiKey: "test",
+      sessionId,
+      maxRetries: 0,
+      fetch: (_input, init) => {
+        headers = new Headers(init?.headers);
+        throw new Error("captured");
+      },
+    },
+  );
+  await stream.result();
+  assert.ok(headers, "request headers captured");
+  return headers;
+}
+
+test("an OpenRouter request carries the run's session id for upstream cache affinity", async () => {
+  const headers = await requestHeaders(openRouter, "run-123");
+  assert.equal(headers.get("x-session-id"), "run-123");
+});
+
+test("a non-OpenRouter request carries no session-affinity header", async () => {
+  const headers = await requestHeaders({ ...openRouter, baseUrl: "https://api.moonshot.ai/v1" }, "run-123");
+  assert.equal(headers.get("x-session-id"), null);
+  assert.equal(headers.get("session_id"), null);
+  assert.equal(headers.get("x-session-affinity"), null);
+});
+
 const claude: ModelProfile = { ...openRouter, name: "Claude", modelId: "anthropic/claude-sonnet-5.5" };
 const image = (n: number) => ({ type: "image" as const, data: Buffer.from(`shot ${n}`).toString("base64"), mimeType: "image/png" });
 const reply = (text: string, call?: string): AssistantMessage => ({
@@ -101,32 +138,28 @@ const plain = (message: Sent) => {
   return JSON.stringify({ ...message, content: Array.isArray(content) && content.length === 1 && content[0].type === "text" ? content[0].text : content });
 };
 
-test("Claude through OpenRouter marks the system prompt, tools, guide and the conversation up to the oldest kept screenshot", async () => {
-  const pinned = new Set(guide);
-  // As the controller does each turn: append, then keep the newest two unpinned screenshots.
-  const prune = (messages: Message[]) => pruneImages(messages, 2, pinned) as Message[];
-  let history = [...guide];
-  for (let n = 1; n <= 3; n++) history = prune([...history, ...turn(n)]);
+test("Claude through OpenRouter marks the system prompt, tools, where the previous request ended and the end", async () => {
+  // As the controller does: the conversation only grows; screenshots stay in it.
+  let history = [...guide, ...turn(1)];
+  const first = await claudeRequest(history);
+  for (let n = 2; n <= 3; n++) history = [...history, ...turn(n)];
   const now = await claudeRequest(history);
-  history = prune([...history, ...turn(4)]);
+  history = [...history, ...bigTurn(4, 20)];
   const next = await claudeRequest(history);
-  for (const request of [now, next]) {
+  for (const request of [first, now, next]) {
     const markers = JSON.stringify(request).match(/cache_control/g)?.length;
     assert.equal(markers, 4, "Anthropic allows four breakpoints");
     assert.ok(marked(request.messages[0]), "system prompt");
     assert.ok(JSON.stringify(request.tools.at(-1)).includes("cache_control"), "last tool");
-    assert.ok(marked(request.messages[guide.length]), "end of the guide");
-    assert.ok(!marked(request.messages.at(-1)!), "the last message changes next turn");
+    assert.ok(marked(request.messages.at(-1)!), "the end, written for the next request");
   }
-  // Everything up to this turn's conversation breakpoint is sent again unchanged next turn,
-  // where the breakpoint has moved on by one turn.
-  const breakpoint = (request: typeof now) => request.messages.length - 1 - [...request.messages].reverse().findIndex(marked);
-  const at = breakpoint(now);
-  assert.ok(at > guide.length);
-  assert.ok(breakpoint(next) > at);
-  assert.deepEqual(next.messages.slice(0, at + 1).map(plain), now.messages.slice(0, at + 1).map(plain));
-  // The next message holds the screenshot pruned since, so it differs.
-  assert.notEqual(plain(next.messages[at + 1]), plain(now.messages[at + 1]));
+  // The first request after the guide reads the guide's entry.
+  assert.ok(marked(first.messages[guide.length]), "end of the guide");
+  // Each request repeats the previous one unchanged and marks where it ended, so the entry the
+  // previous request wrote is read even after a turn of more than 20 blocks.
+  const end = now.messages.length - 1;
+  assert.ok(marked(next.messages[end]), "where the previous request ended");
+  assert.deepEqual(next.messages.slice(0, end + 1).map(plain), now.messages.map(plain));
 });
 
 test("other models get no cache markers", async () => {
@@ -156,13 +189,15 @@ async function prepareWith(profile: ModelProfile, stream: string) {
   };
   const costs: number[] = [];
   const sources: string[] = [];
+  const upstreams: (string | undefined)[] = [];
   try {
     const reply = await prepareModel(
       profile, "test", "Rules.", { role: "user", content: "Prepare.", timestamp: 0 },
-      AbortSignal.timeout(5000), (dollars, source) => (costs.push(dollars), sources.push(source)),
+      AbortSignal.timeout(5000),
+      (dollars, source, upstream) => (costs.push(dollars), sources.push(source), upstreams.push(upstream)),
     );
     await new Promise((resolve) => setTimeout(resolve, 10));
-    return { sent, reply, costs, sources };
+    return { sent, reply, costs, sources, upstreams };
   } finally {
     globalThis.fetch = original;
   }
@@ -178,6 +213,24 @@ test("OpenRouter is asked for the billed amount, which is read from a copy of th
   // Pi still reads the whole reply and its usage.
   assert.deepEqual(reply.content.filter((part) => part.type === "text").map((part) => part.text), ["Ready.\nBEGIN"]);
   assert.equal(reply.usage.cacheRead, 40);
+});
+
+test("the upstream provider OpenRouter routed the request to is read from the same chunk as the cost", async () => {
+  const chunks = [
+    { id: "gen-1", provider: "DeepInfra", choices: [{ index: 0, delta: { content: "Ready.\nBEGIN" }, finish_reason: null }] },
+    { id: "gen-1", provider: "DeepInfra", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+    { id: "gen-1", provider: "DeepInfra", choices: [], usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.00123 } },
+  ];
+  const stream = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+  const { costs, sources, upstreams } = await prepareWith(openRouter, stream);
+  assert.deepEqual(costs, [0.00123]);
+  assert.deepEqual(sources, ["billed"]);
+  assert.deepEqual(upstreams, ["DeepInfra"]);
+});
+
+test("a cost chunk without a provider field reports no upstream", async () => {
+  const { upstreams } = await prepareAgainst(openRouter, { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.00123 });
+  assert.deepEqual(upstreams, [undefined]);
 });
 
 test("other providers are not sent OpenRouter's usage option; their tokens are priced with the profile's prices", async () => {
@@ -267,32 +320,25 @@ const bigTurn = (n: number, calls: number): Message[] => {
 const blocksBetween = (request: { messages: AnthropicSent[] }, from: number, to: number) =>
   request.messages.slice(from, to + 1).reduce((n, m) => n + (Array.isArray(m.content) ? m.content.length : 1), 0);
 
-test("Claude through Anthropic marks the system prompt, guide, this turn's and the last turn's conversation", async () => {
-  const pinned = new Set(guide);
-  const prune = (messages: Message[]) => pruneImages(messages, 2, pinned) as Message[];
+test("Claude through Anthropic marks the system prompt, guide, where the previous request ended and the end", async () => {
   let history = [...guide];
-  for (let n = 1; n <= 3; n++) history = prune([...history, ...turn(n)]);
+  for (let n = 1; n <= 3; n++) history = [...history, ...turn(n)];
   const now = await anthropicRequest(history);
-  history = prune([...history, ...bigTurn(4, 20)]);
+  history = [...history, ...bigTurn(4, 20)];
   const next = await anthropicRequest(history);
   for (const request of [now, next]) {
     assert.ok(JSON.stringify(request.system).includes("cache_control"), "system prompt");
     assert.ok(!JSON.stringify(request.tools).includes("cache_control"), "the system prompt's breakpoint covers the tools");
     assert.ok(JSON.stringify(request).match(/cache_control/g)!.length <= 4, "Anthropic allows four breakpoints");
     assert.equal(markedAt(request)[0], guide.length - 1, "end of the guide");
-    assert.ok(!markedAt(request).includes(request.messages.length - 1), "the last message changes next turn");
+    assert.ok(markedAt(request).includes(request.messages.length - 1), "the end, written for the next request");
   }
-  // The screenshots sit inside tool results, where the oldest kept one is found.
+  // The screenshots sit inside tool results and stay there.
   assert.ok(JSON.stringify(now.messages).includes('"type":"tool_result"'));
-  const written = markedAt(now).at(-1)!;
-  assert.ok(written > guide.length - 1);
-  // Next turn repeats everything up to this turn's breakpoint and writes further on.
-  assert.deepEqual(next.messages.slice(0, written + 1).map(unmarked), now.messages.slice(0, written + 1).map(unmarked));
-  const latest = markedAt(next).at(-1)!;
-  assert.ok(latest > written);
-  // After a long turn this turn's breakpoint is too far on to find that entry, but the one
-  // before the newest placeholder is within Anthropic's look-back of about 20 blocks.
-  assert.ok(blocksBetween(next, written + 1, latest) > 20);
-  const read = markedAt(next).find((i) => i >= written)!;
-  assert.ok(read < latest && blocksBetween(next, written + 1, read) <= 20, "the previous entry is found");
+  const written = now.messages.length - 1;
+  // Next turn repeats everything this request sent and reads it at its own mark, though the turn
+  // in between has more blocks than Anthropic searches back over from the new end.
+  assert.deepEqual(next.messages.slice(0, written + 1).map(unmarked), now.messages.map(unmarked));
+  assert.ok(markedAt(next).includes(written), "where the previous request ended");
+  assert.ok(blocksBetween(next, written + 1, next.messages.length - 1) > 20);
 });

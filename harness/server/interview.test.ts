@@ -5,12 +5,14 @@ import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { referenceGames } from "./baselines.js";
 import {
   TOOLS_OFF,
+  combinedQuestion,
   conductInterview,
   interviewMarkdown,
   interviewQuestions,
   interviewSections,
   interviewTokens,
   referencePlay,
+  splitReply,
   type InterviewCard,
   type InterviewRecord,
 } from "./interview.js";
@@ -92,18 +94,36 @@ test("a run on another budget or ended by the model says so; a map without a ref
   assert.deepEqual(interviewQuestions(card({ map: "constructor" })), { skipped: "no reference game for constructor" });
 });
 
-test("questions go one at a time after the game, each with the answers before it; tool calls are refused", async () => {
+test("combinedQuestion lists each question under its own heading and asks for the same headings back", () => {
+  const combined = combinedQuestion([{ title: "One", text: "Q1 text." }, { title: "Two", text: "Q2 text." }]);
+  assert.match(combined, /^## One\n\nQ1 text\.\n\n## Two\n\nQ2 text\./);
+  assert.match(combined, /Answer all 2 questions above/);
+  assert.match(combined, /"## One"/);
+});
+
+test("splitReply reads back the headed answers, case- and punctuation-insensitively, or gives up when they do not match", () => {
+  const questions = [{ title: "Your result", text: "" }, { title: "Playing again", text: "" }];
+  assert.deepEqual(
+    splitReply("### Your Result:\nFirst answer.\n\n## playing again\nSecond answer.", questions),
+    ["First answer.", "Second answer."],
+  );
+  assert.equal(splitReply("No headings at all.", questions), undefined, "no headings");
+  assert.equal(splitReply("## Your result\nOnly one heading.", questions), undefined, "too few headings");
+  assert.equal(splitReply("## Wrong title\nA\n\n## Playing again\nB", questions), undefined, "a heading does not match");
+});
+
+test("the four questions are asked in one combined message; tool calls are refused and the reply is split back into four exchanges", async () => {
   const context: Message[] = [{ role: "user", content: "Fresh screenshot.", timestamp: 1 }];
   const sent: Message[][] = [];
+  const questions = [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }];
   const replies = [
-    reply([text("I built too few houses."), toolCall("observe")]),
-    reply([text("That was all.")]),
-    reply([text("I would build bakeries early.")]),
+    reply([text("Thinking out loud."), toolCall("observe")]),
+    reply([text("## One\n\nI built too few houses.\n\n## Two\n\nI would build bakeries early.")]),
   ];
   const answered: string[] = [];
   const exchanges = await conductInterview(
     context,
-    [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }],
+    questions,
     async (messages) => {
       sent.push(structuredClone(messages));
       return replies.shift()!;
@@ -111,43 +131,65 @@ test("questions go one at a time after the game, each with the answers before it
     (exchange) => answered.push(exchange.title),
   );
   assert.deepEqual(answered, ["One", "Two"]);
-  assert.equal(exchanges[0].answer, "I built too few houses.\n\nThat was all.");
+  assert.equal(exchanges.length, 2);
+  assert.equal(exchanges[0].answer, "I built too few houses.");
+  assert.equal(exchanges[1].answer, "I would build bakeries early.");
+  assert.equal(exchanges[0].unsplit, undefined);
+  // The combined request's cost is kept on the first exchange only, so the totals (interviewTokens)
+  // are not inflated by also counting it on the others.
   assert.deepEqual(exchanges[0].refusedTools, ["observe"]);
   assert.equal(exchanges[0].tokens.totalTokens, 2040);
-  assert.equal(exchanges[1].answer, "I would build bakeries early.");
   assert.equal(exchanges[1].refusedTools, undefined);
-  // The first request is the game's conversation and the question; the refusal answers the call.
+  assert.equal(exchanges[1].tokens.totalTokens, 0);
+  assert.equal(interviewTokens(exchanges).totalTokens, 2040);
+  // One combined user message with both questions, after the run's own context.
   assert.deepEqual(sent[0].map((m) => m.role), ["user", "user"]);
+  assert.match(String(sent[0].at(-1)!.content), /## One\n\nQ1\n\n## Two\n\nQ2/);
+  // The refusal answers the tool call; the same combined question is not asked again.
   const refusal = sent[1].at(-1)!;
   assert.equal(refusal.role, "toolResult");
   assert.deepEqual(refusal.role === "toolResult" && refusal.content, [{ type: "text", text: TOOLS_OFF }]);
-  // The second question follows the whole first exchange.
-  assert.deepEqual(sent[2].map((m) => m.role), ["user", "user", "assistant", "toolResult", "assistant", "user"]);
+  assert.deepEqual(sent[1].map((m) => m.role), ["user", "user", "assistant", "toolResult"]);
   assert.equal(context.length, 1, "the run's messages are not changed");
 });
 
-test("a model that keeps calling tools is asked twice more, then the interview moves on", async () => {
+test("a model that keeps calling tools is asked twice more, then the interview moves on with whatever text it gave", async () => {
   let requests = 0;
-  const exchanges = await conductInterview([], [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }], async (messages) => {
+  const replies = [
+    reply([toolCall("status")]),
+    reply([toolCall("status")]),
+    reply([text("## One\n\nFine.\n\n## Two\n\nAlso fine."), toolCall("status")]),
+  ];
+  const exchanges = await conductInterview([], [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }], async () => {
     requests++;
-    return messages.at(-1)?.role === "user" && messages.at(-1)!.content === "Q2" ? reply([text("Fine.")]) : reply([toolCall("status")]);
+    return replies.shift()!;
   });
-  assert.equal(requests, 4);
+  assert.equal(requests, 3);
   assert.deepEqual(exchanges[0].refusedTools, ["status", "status", "status"]);
-  assert.equal(exchanges[0].answer, "");
-  assert.equal(exchanges[1].answer, "Fine.");
+  assert.equal(exchanges[0].answer, "Fine.");
+  assert.equal(exchanges[1].answer, "Also fine.");
 });
 
-test("a failed request ends the interview with the answers before it kept", async () => {
+test("a reply that cannot be split by title is kept whole, under one exchange", async () => {
+  const answered: string[] = [];
+  const exchanges = await conductInterview([], [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }], async () => reply([text("Just one plain answer, no headings.")]), (exchange) => answered.push(exchange.title));
+  assert.equal(exchanges.length, 1);
+  assert.equal(exchanges[0].title, "All questions");
+  assert.equal(exchanges[0].unsplit, true);
+  assert.equal(exchanges[0].answer, "Just one plain answer, no headings.");
+  assert.match(exchanges[0].question, /## One[\s\S]*## Two/);
+  assert.deepEqual(answered, ["All questions"]);
+});
+
+test("a failed request ends the interview with no exchanges recorded", async () => {
   const answered: string[] = [];
   await assert.rejects(
-    conductInterview([], [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }], async (messages) => {
-      if (messages.length > 2) throw new Error("401 Unauthorized");
-      return reply([text("An answer.")]);
+    conductInterview([], [{ title: "One", text: "Q1" }, { title: "Two", text: "Q2" }], async () => {
+      throw new Error("401 Unauthorized");
     }, (exchange) => answered.push(exchange.answer)),
     /401/,
   );
-  assert.deepEqual(answered, ["An answer."]);
+  assert.deepEqual(answered, []);
 });
 
 test("the transcript names the model and run, keeps answers under their questions and says how it ended", () => {
@@ -179,4 +221,23 @@ test("the transcript names the model and run, keeps answers under their question
   assert.match(markdown, /## 1\. Your result\n\n\*\*Interviewer:\*\*\n\nHow do you see it\?\n\n\*\*GLM 5\.3 Flash:\*\*\n\n#### My view\nToo slow\.\n```\n# not a heading\n```/);
   assert.match(markdown, /\*\(no answer\)\*\n\n\*It also called `observe`; the host refused, as the tools were off\.\*/);
   assert.match(markdown, /\*The interview ended early: 502 provider unavailable\.\*\n$/);
+});
+
+test("an unsplit exchange's transcript says the reply was kept whole", () => {
+  const exchanges = [{ title: "All questions", question: "## Your result\n\n...\n\n## Playing again\n\n...", answer: "One plain reply.", unsplit: true as const, stopReason: "stop", tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 }, seconds: 4 }];
+  const record: InterviewRecord = {
+    format: 1,
+    run: { id: "run-1", folder: "f" },
+    model: { name: "GLM 5.3 Flash", modelId: "z-ai/glm-5.3-flash" },
+    benchmark: { name: "Oasis by the Sea construction", version: "1.2.0" },
+    map: "Oasis by the Sea",
+    status: "completed",
+    startedAt: Date.UTC(2026, 9, 10),
+    context: { messages: 40, compactions: 0 },
+    exchanges,
+    tokens: interviewTokens(exchanges),
+    cost: null,
+    costSource: null,
+  };
+  assert.match(interviewMarkdown(record), /## 1\. All questions[\s\S]*One plain reply\.\n\n\*The reply did not come back under the separate question headings asked for, so it is kept here as one\.\*/);
 });

@@ -132,7 +132,7 @@ logs. **Export logs** and **Download full events** download them.
 | `run.json` | Name, model and its settings, instruction, benchmark, run settings, status, timestamps, turns, tokens, cost (see [Context](context.md#tokens-and-caching)), the learning series, episode and attempt (if any), and progress: budget used, which limit ended the run, the error that ended it, plan, notebook, playbook, compactions, timings, memory, recording summary. Also the harness and benchmark versions (see below) |
 | `inputs.json` | Exactly what the agent was given: system prompt, benchmark rules, controls, settings, model |
 | `logs.jsonl` | Readable log of messages, actions and errors, written live |
-| `events.jsonl` | Every model stream event and tool result, including screenshots and the full reader sample behind each observation, plus host events. Can reach hundreds of MB |
+| `events.jsonl` | Every model stream event and tool result, including screenshots and the full reader sample behind each observation, plus host events. Can reach hundreds of MB. A tool's screenshot appears three times (the tool's result, and the start and end of the message that carries it); only the first keeps the image, the other two a small `omitted` reference to it |
 | `memory.json`, `notebook.md`, `playbook.md` | The agent's plan, notebook, playbook (learning series only) and compaction handoffs |
 | `checkpoint.json` | The conversation (without images), memory and progress, rewritten each turn. For inspection; runs cannot resume from it |
 | `notifications.jsonl` | Every reader event: messages seen on screen, gaps in the reader stream |
@@ -154,8 +154,9 @@ under `benchmark`: the version, the fingerprint of the files it covers, and a ha
 private preparation images.
 
 Known API keys and fields named like keys are replaced with `[redacted]` before
-anything is logged. Treat the runs folder as private anyway: it holds full screenshots
-and model output.
+anything is logged; a long base64 string or a `data:image` URL is left alone instead of
+scanned for one, the same 512-character rule the [dataset tools](publishing.md#scrubbing)
+use. Treat the runs folder as private anyway: it holds full screenshots and model output.
 
 ## Run videos
 
@@ -167,8 +168,10 @@ ends.
   1600 × 900: 10 frames per second for 2.5 seconds after each input, 4 otherwise.
   Recording holds while the game is paused for thinking. It runs independently of the
   agent's own screenshots and clicks, and a recorder failure never stops the run.
-  The frames are JPEGs kept in `<run>/recording/`: a 2-game-minute run recorded at
-  the earlier 1440 × 810 took 370 MB, and 1600 × 900 frames are larger.
+  The frames are JPEGs kept in `<run>/recording/frames/`, indexed by
+  `<run>/recording/frames.jsonl`: a 2-game-minute run recorded at the earlier
+  1440 × 810 took 370 MB; at 1600 × 900, measured offline, a 25-game-minute run writes
+  about 7,300–8,600 JPEGs (roughly 400 KB each) for about 3 GB.
 - **The video** (`<run>/video.mp4`, 1920 × 1080 H.264 with no audio track, one chapter
   per turn) plays actions at real speed with a drawn pointer, click rings, building
   names and key badges; fast-forwards idle stretches; cuts paused frames; and shows
@@ -177,8 +180,21 @@ ends.
   calls, below it game time and the main stats. It ends on the result: the final
   overview beside the score. A 2-game-minute run renders to about 1:40 and 11 MB. The
   dataset's copy is scaled to 720p ([Publishing](publishing.md#smaller-than-the-run)).
+- **Compaction.** Once a render succeeds, the host queues
+  `tools/video/compact-recording.py` on the same run, right after it, still serialised
+  (compaction is CPU-heavy): it re-encodes `recording/frames/*.jpg`, in `frames.jsonl`
+  order, into one `recording/frames.mp4` (libx264, CRF 18, one video frame per recorded
+  frame), checks with `ffprobe` that the result holds exactly as many frames at the
+  same size, writes `recording/frames-video.json` recording what it did, and only then
+  deletes the JPEGs. Offline tests measured the video 10–25× smaller than the JPEGs at
+  SSIM ≥ 0.987. A failed render is never compacted; a compaction that fails
+  verification is only logged and leaves the JPEGs in place — nothing is deleted
+  unless the result checks out. `render-video.py` reads `recording/frames.mp4` once
+  the JPEGs are gone, decoding it with one sequential `ffmpeg` pipe (restarted on the
+  rare backward seek); a re-render afterwards, by hand or by `npm run package`, works
+  the same way.
 
-Re-render or change the edit by hand (needs Pillow and ffmpeg with libx264):
+Re-render or change the edit by hand (needs Pillow, ffmpeg with libx264, and ffprobe):
 
 ```bash
 npm run video -- <run folder>                        # writes <run>/video.mp4
@@ -188,6 +204,15 @@ npm run video -- <run> --max-think 0 --outro 0       # no thinking pauses, no re
 
 Other options: `--speed`, `--min-think`, `--think-rate`, `--fps`, `--max-seconds`
 (for previews) and `--encoder`.
+
+Compact a run recorded before this existed, or one the host's automatic compaction
+missed, by hand:
+
+```bash
+npm run compact-recordings -- <run folder> [<run folder> ...]  # named runs
+npm run compact-recordings -- --all                            # every run under harness/runtime/runs,
+                                                                 # skipping ones with no frames/ or already compacted
+```
 
 ## Safety boundaries
 
@@ -252,6 +277,7 @@ npm test                                                  # harness tests
 npm run build                                             # type check and production build
 npm start                                                 # serve the built dashboard
 python3 -m unittest discover -s tools/video               # video timeline and a tiny render (needs ffmpeg)
+python3 -m unittest discover -s tools/runner              # the runner's menu screen probe (needs Pillow)
 python3 -m unittest discover -s tools/ubuntu -p 'test_*.py'  # game-machine helpers (run on Ubuntu)
 ```
 

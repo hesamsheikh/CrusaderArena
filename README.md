@@ -32,7 +32,7 @@ speed and fast-forwards the waiting.*
 
 ## How it works
 
-- **The agent** is a vision-capable language model with 27 tools: look, click, build,
+- **The agent** is a vision-capable language model with 25 tools: look, click, build,
   move the camera, trade, wait, and keep a plan and notes.
 - **The harness** pauses the game whenever the model thinks, unpauses it for the
   model's actions, and counts only game time against the budget, so slow models are

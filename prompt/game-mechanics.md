@@ -61,7 +61,9 @@ sides, it stays empty.
 
 Where to build: workers walk, so woodcutters, quarries, mines, farms and hunters work
 best close to their resource and to the stockpile or granary they deliver to. Hovels
-and the marketplace work the same anywhere; put them out of the way. Oasis grass is the
+and the marketplace work the same anywhere; put them out of the way. The ground close
+to the keep is limited, and it is critical for buildings whose efficiency matters more
+there; do not fill it with buildings that work the same anywhere. Oasis grass is the
 only land farms can use and there is little of it: keep it for farms and build
 everything else on plain ground.
 

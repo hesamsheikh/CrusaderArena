@@ -93,6 +93,29 @@ test("each action and hotkey is announced to input listeners before it is sent",
   ]);
 });
 
+test("pressKey sends the host's own keys from the latest frame without a capture, and inputSerial counts every send", async () => {
+  const device = new GameDevice(() => {}, () => {});
+  const sent: string[] = [];
+  Object.assign(device, {
+    rpc: async (op: string) => {
+      sent.push(op);
+      if (op === "capture")
+        return { image: "", mimeType: "image/jpeg", width: 1920, height: 1080, windowId: 7, pid: 1, capturedAt: Date.now(), scope: "game-window" };
+      return { delivered: true };
+    },
+  });
+  await assert.rejects(device.pressKey("P"), /Capture the game before sending a key/);
+  assert.equal(device.inputSerial, 0, "a rejected send with no latest frame is not an input");
+  await device.capture();
+  await device.pressKey("P");
+  assert.deepEqual(sent, ["capture", "action"], "no extra capture before the key");
+  assert.equal(device.inputSerial, 1);
+  await device.hotkey("HomeKeep");
+  assert.equal(device.inputSerial, 2, "a hotkey counts too");
+  await device.action({ type: "click", x: 1, y: 1, button: 1 }, device.latest!.id);
+  assert.equal(device.inputSerial, 3, "and an ordinary action");
+});
+
 test("a reader diagnostic naming a multiplayer game ends the connection; other refusals do not", () => {
   const failures: string[] = [];
   const device = new GameDevice(() => {}, (message) => failures.push(message));

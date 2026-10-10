@@ -8,7 +8,8 @@ export const FACTOR_UNITS_PER_POINT = 25;
  */
 const foodParts = new Set(["rationing", "food_variety"]);
 
-const points = (units: number) => Math.round((units / FACTOR_UNITS_PER_POINT) * 100) / 100;
+/** Reader popularity-factor units converted to the game's points, rounded to 2 decimals. */
+export const points = (units: number) => Math.round((units / FACTOR_UNITS_PER_POINT) * 100) / 100;
 
 type Settlement = { popularity_factors: Record<string, number>; church_bonus?: number | null };
 

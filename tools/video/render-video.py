@@ -19,6 +19,7 @@ import io
 import json
 import math
 import os
+import signal
 from collections import OrderedDict
 from pathlib import Path
 import shutil
@@ -203,13 +204,72 @@ def read_jsonl(path):
 
 
 class Frame:
-    def __init__(self, time, stats=None, path=None, data=None, source=(1920, 1080)):
-        self.time, self.stats, self.path, self.data, self.source = time, stats, path, data, source
+    def __init__(self, time, stats=None, path=None, data=None, video=None, source=(1920, 1080)):
+        # `video`, when set, is (VideoFrameSource, index): the frame is read from a compacted
+        # recording (frames.mp4) instead of its own JPEG, which tools/video/compact-recording.py
+        # has by then deleted.
+        self.time, self.stats, self.path, self.data, self.video, self.source = time, stats, path, data, video, source
 
     def image(self):
-        raw = self.path.read_bytes() if self.path else base64.b64decode(self.data)
-        im = Image.open(io.BytesIO(raw)).convert('RGB')
+        if self.video is not None:
+            source, index = self.video
+            im = source.get(index)
+        else:
+            raw = self.path.read_bytes() if self.path else base64.b64decode(self.data)
+            im = Image.open(io.BytesIO(raw)).convert('RGB')
         return im if im.size == (GAME_W, GAME_H) else im.resize((GAME_W, GAME_H), Image.BILINEAR)
+
+
+class VideoFrameSource:
+    """Reads frames from a compacted recording (frames.mp4) for Frame.image(): decodes forward
+    through one ffmpeg pipe and keeps the most recently decoded frame, since render-video.py asks
+    for frames almost strictly in increasing order. The rare backward access restarts the pipe."""
+
+    def __init__(self, path, size):
+        self.path, self.size = path, size
+        self.proc = None
+        self.index = -1
+        self.frame = None
+
+    def get(self, index):
+        if self.proc is None or index < self.index:
+            self.close()
+            self._start()
+        while self.index < index:
+            if not self._advance():
+                raise OSError(f'{self.path} ended before frame {index} (it has {self.index + 1}).')
+        return self.frame
+
+    def _start(self):
+        ffmpeg = shutil.which('ffmpeg')
+        if not ffmpeg:
+            raise OSError('ffmpeg not found on PATH (needed to read a compacted recording/frames.mp4).')
+        command = [ffmpeg, '-v', 'error', '-i', str(self.path), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
+        # Stderr is silenced: stopping short of the last frame (the common case) makes ffmpeg log
+        # a broken-pipe error once we stop reading, which is expected here, not a real problem.
+        self.proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     bufsize=self._frame_bytes * 4)
+        self.index = -1
+
+    def _advance(self):
+        data = self.proc.stdout.read(self._frame_bytes)
+        if len(data) < self._frame_bytes:
+            return False
+        self.index += 1
+        self.frame = Image.frombytes('RGB', self.size, data)
+        return True
+
+    @property
+    def _frame_bytes(self):
+        return self.size[0] * self.size[1] * 3
+
+    def close(self):
+        if self.proc:
+            if self.proc.stdout:
+                self.proc.stdout.close()
+            self.proc.terminate()
+            self.proc.wait()
+            self.proc = None
 
 
 HOTKEYS = {'HomeKeep': 'Centre on keep', 'Granary': 'Centre on granary', 'Market': 'Centre on marketplace',
@@ -295,8 +355,22 @@ def load_recording(run_dir):
         return [], []
     # The game host's clock differs: align capture times with the fastest delivery.
     offset = min(r['at'] - r['t'] for r in rows)
-    frames = sorted((Frame(r['t'] + offset, r.get('stats'), folder / 'frames' / r['file'],
-                           source=(r.get('sw') or 1920, r.get('sh') or 1080)) for r in rows), key=lambda f: f.time)
+    video_path = folder / 'frames.mp4'
+    # compact-recording.py deletes frames/ once frames.mp4 is written and verified.
+    if not (folder / 'frames').is_dir() and video_path.is_file():
+        info = json_or_none((folder / 'frames-video.json').read_text(encoding='utf-8')) \
+            if (folder / 'frames-video.json').is_file() else None
+        size = ((info or {}).get('width'), (info or {}).get('height'))
+        if not all(isinstance(v, int) for v in size):
+            size = (rows[0].get('w') or GAME_W, rows[0].get('h') or GAME_H)
+        source = VideoFrameSource(video_path, size)
+        # Index i is the row's position in frames.jsonl order: the order compact-recording.py encoded it in.
+        frames = sorted((Frame(r['t'] + offset, r.get('stats'), video=(source, i),
+                               source=(r.get('sw') or 1920, r.get('sh') or 1080))
+                         for i, r in enumerate(rows)), key=lambda f: f.time)
+    else:
+        frames = sorted((Frame(r['t'] + offset, r.get('stats'), folder / 'frames' / r['file'],
+                               source=(r.get('sw') or 1920, r.get('sh') or 1080)) for r in rows), key=lambda f: f.time)
     inputs = [Input(r) for r in read_jsonl(folder / 'inputs.jsonl') if isinstance(r.get('at'), (int, float))]
     return frames, sorted((i for i in inputs if not i.host_pause), key=lambda i: i.at)
 
@@ -1122,6 +1196,14 @@ class Renderer:
 # ---------------------------------------------------------------- main
 
 
+class Interrupted(Exception):
+    """Raised from the SIGTERM handler below, so a kill -TERM cleans up like a KeyboardInterrupt."""
+
+
+def _raise_interrupted(signum, frame):
+    raise Interrupted()
+
+
 def encoder_args(name):
     if name == 'libx264':
         # Flat panels and mostly still footage: about half the size of veryfast at CRF 22, same VMAF.
@@ -1162,21 +1244,36 @@ def render(run, args, output):
         process = subprocess.Popen(command, stdin=subprocess.PIPE)
         clip_index = 0
         previous_key, previous_bytes = None, None
+        # SIGTERM has no Python-level effect by default; without this, a kill -TERM (or Ctrl-C's
+        # KeyboardInterrupt) during the feed loop below skips the cleanup and leaves the partial file.
+        previous_sigterm = signal.signal(signal.SIGTERM, _raise_interrupted)
         try:
-            for n in range(int(total * args.fps)):
-                t = n / args.fps
-                while clip_index + 1 < len(clips) and t >= clips[clip_index + 1].start:
-                    clip_index += 1
-                clip = clips[clip_index]
-                key, build = renderer.frame(clip, t - clip.start)
-                if key != previous_key:
-                    previous_key, previous_bytes = key, build().tobytes()
-                process.stdin.write(previous_bytes)
-                if not args.quiet and n % (args.fps * 30) == 0:
-                    print(f'  {t / 60:5.1f} / {total / 60:.1f} min', file=sys.stderr, flush=True)
-            process.stdin.close()
-        except BrokenPipeError:
-            pass
+            try:
+                for n in range(int(total * args.fps)):
+                    t = n / args.fps
+                    while clip_index + 1 < len(clips) and t >= clips[clip_index + 1].start:
+                        clip_index += 1
+                    clip = clips[clip_index]
+                    key, build = renderer.frame(clip, t - clip.start)
+                    if key != previous_key:
+                        previous_key, previous_bytes = key, build().tobytes()
+                    process.stdin.write(previous_bytes)
+                    if not args.quiet and n % (args.fps * 30) == 0:
+                        print(f'  {t / 60:5.1f} / {total / 60:.1f} min', file=sys.stderr, flush=True)
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+            except (KeyboardInterrupt, Interrupted):
+                process.kill()
+                try:
+                    process.stdin.close()
+                except OSError:
+                    pass
+                process.wait()
+                partial.unlink(missing_ok=True)
+                raise
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
         if process.wait() != 0:
             partial.unlink(missing_ok=True)
             sys.exit('ffmpeg failed.')
@@ -1217,7 +1314,12 @@ def main(argv=None):
     if not args.quiet:
         print(f'{run_dir.name}: {len(run.turns)} turns, {len(run.segments)} recorded segments, '
               f'{len(frames)} frames, {len(inputs)} inputs', file=sys.stderr)
-    total, clips = render(run, args, output)
+    try:
+        total, clips = render(run, args, output)
+    finally:
+        # A compacted recording holds one ffmpeg decoder, shared by every frame that reads it.
+        for source in {f.video[0] for f in frames if f.video}:
+            source.close()
     real = lambda kind: sum(c.data['end'] - c.data['start'] for c in clips if c.kind == 'play' and c.data['pace'] == kind) / 1000
     recorded = sum(b - a for a, b in run.segments) / 1000
     print(json.dumps({'output': str(output), 'seconds': round(total, 1), 'turns': len(run.turns),
