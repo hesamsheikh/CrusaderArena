@@ -127,9 +127,14 @@ export type Stats = {
       rationing: number;
       food_types_eaten: number;
       food_types_available: number;
+      /** Worker efficiency in percent from the fear factor; 0 before the game's first reckoning. */
       efficiency: number;
       upcoming_popularity: number;
       popularity_factors: Record<string, number>;
+      /** The church and cathedral popularity bonus in points, apart from the blessing in `religion`; null when unreadable. */
+      church_bonus?: number | null;
+      /** The keep panel's tax figure: gold a month at the current tax level, negative for a bribe. */
+      tax_amount?: number;
     } | null;
     /**
      * The local player's stockpile piles (four per stockpile, each holding one good; an empty pile

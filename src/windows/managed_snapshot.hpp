@@ -74,6 +74,8 @@ template<class T> T field(Api& a,Object* object,const char* name) {
         if(kind!=0x02)throw std::runtime_error("expected Boolean field");
     } else if constexpr(std::is_same_v<T,std::uint8_t>) {
         if(kind!=0x05)throw std::runtime_error("expected Byte field");
+    } else if constexpr(std::is_same_v<T,std::int8_t>) {
+        if(kind!=0x04)throw std::runtime_error("expected SByte field");
     } else if constexpr(std::is_same_v<T,float>) {
         if(kind!=0x0c)throw std::runtime_error("expected Single field");
     } else {

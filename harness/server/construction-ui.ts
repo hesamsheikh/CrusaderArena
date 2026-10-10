@@ -1,10 +1,11 @@
 import type { Frame, GameAction } from "../shared/protocol.js";
 import { atlasPages } from "./visual-atlas.js";
 import { buildingInfo } from "./building-info.js";
+import { decorationNames, decorations } from "./decorations.js";
 
 // The tested atlas is a 1920 × 1080 game-window capture. These categories use
-// one building-button click followed by one world click; subpages and walls need
-// separate interaction rules.
+// one building-button click followed by one world click; good and bad things add
+// their Town subpage's button (decorations.ts); walls need separate interaction rules.
 const singleClickPages = ["industry", "farm", "town", "weapons", "food-processing"] as const;
 const categoryNames: Record<(typeof singleClickPages)[number], string> = {
   industry: "Industry Buildings",
@@ -15,11 +16,14 @@ const categoryNames: Record<(typeof singleClickPages)[number], string> = {
 };
 const nonBuildings = new Set(["Fear-factor page", "Good-factor page"]);
 const overview = atlasPages.find((page) => page.id === "construction-overview")!;
-export const buildableNames = singleClickPages.flatMap((id) =>
-  atlasPages.find((page) => page.id === id)!.labels
-    .filter((label) => !nonBuildings.has(label.name))
-    .map((label) => label.name),
-);
+export const buildableNames = [
+  ...singleClickPages.flatMap((id) =>
+    atlasPages.find((page) => page.id === id)!.labels
+      .filter((label) => !nonBuildings.has(label.name))
+      .map((label) => label.name),
+  ),
+  ...decorationNames,
+];
 
 function checkedScale(frame: Pick<Frame, "width" | "height">) {
   const ratio = frame.width / frame.height;
@@ -38,21 +42,25 @@ export function constructionClicks(frame: Frame, name: string, target: { x: numb
   return [...menuClicks(frame, name), { type: "click", ...target, button: 1 }];
 }
 
-/** Category-tab click, then the named building's tray button. */
-export function menuClicks(frame: Pick<Frame, "width" | "height">, name: string): [GameAction, GameAction] {
+/**
+ * Category-tab click, then the named building's tray button; for a good or bad thing, the
+ * category tab, its subpage button, then the item.
+ */
+export function menuClicks(frame: Pick<Frame, "width" | "height">, name: string): GameAction[] {
   const scale = checkedScale(frame);
-  const page = singleClickPages.map((id) => atlasPages.find((entry) => entry.id === id)!)
-    .find((entry) => entry.labels.some((label) => label.name === name));
-  const button = page?.labels.find((label) => label.name === name);
-  const category = overview.labels.find((label) => label.name === categoryNames[page?.id as keyof typeof categoryNames]);
+  const decoration = decorations[name];
+  const pageId = decoration ? "town" : singleClickPages.find((id) =>
+    atlasPages.find((entry) => entry.id === id)!.labels.some((label) => label.name === name));
+  const page = atlasPages.find((entry) => entry.id === pageId);
+  const subpage = decoration?.kind === "bad" ? "Fear-factor page" : "Good-factor page";
+  const button = page?.labels.find((label) => label.name === (decoration ? subpage : name));
+  const category = overview.labels.find((label) => label.name === categoryNames[pageId as keyof typeof categoryNames]);
   if (!button || !category) throw new Error(`Unsupported click-to-place building: ${name}`);
-  const center = (box: readonly [number, number, number, number]): GameAction => ({
-    type: "click",
-    x: Math.round((box[0] + box[2] / 2) * scale.x),
-    y: Math.round((box[1] + box[3] / 2) * scale.y),
-    button: 1,
-  });
-  return [center(category.box), center(button.box)];
+  const point = (x: number, y: number): GameAction => ({ type: "click", x: Math.round(x * scale.x), y: Math.round(y * scale.y), button: 1 });
+  const center = (box: readonly [number, number, number, number]) => point(box[0] + box[2] / 2, box[1] + box[3] / 2);
+  return decoration
+    ? [center(category.box), center(button.box), point(...decoration.at)]
+    : [center(category.box), center(button.box)];
 }
 
 /** Fractional position inside the minimap's tested inner area. */
@@ -118,8 +126,9 @@ type Observation = Record<string, unknown> | null | undefined;
 type Placement = { action: number; sub_action: number };
 export type Snapshot = { wood?: number; gold?: number; structures?: number };
 
-/** Manual default cost; null when unknown or ambiguous. Current game tooltips may differ. */
+/** Manual default cost (a good or bad thing's tooltip price); null when unknown or ambiguous. Current game tooltips may differ. */
 export function buildingCost(name: string): { wood: number; gold: number } | null {
+  if (decorations[name]) return { wood: 0, gold: decorations[name].gold };
   const info = buildingInfo(name) as { found?: boolean; buildCost?: string };
   const text = info.found ? info.buildCost?.trim() : undefined;
   if (!text || text.includes("/")) return null;

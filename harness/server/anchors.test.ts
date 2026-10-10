@@ -64,6 +64,30 @@ test("status report converts popularity factors to UI points and names the date"
   assert.equal(statusReport({ status: "unavailable", observation: null }).status, "unavailable");
 });
 
+test("status lists popularity factors as the game's report does, with efficiency once the game has one", () => {
+  // The reference game on Large Barren Desert at its end (live 2026-10-10): no rations, low taxes,
+  // 21 bad things, eleven inns, a church and a cathedral; the game showed the change as 0.
+  const desert = (efficiency: number) => statusReport(sample({
+    gold: 8525, population: 250, popularity: 100, map_name: "m", wood_planks: 50, resources_by_name: {}, visible_messages: [],
+    settlement: {
+      month: 5, year: 1178, housing_cap: 250, peasants_available: 16, total_food: 91, months_of_food: 0,
+      rationing: 0, food_types_eaten: 0, food_types_available: 1, efficiency, upcoming_popularity: 0,
+      popularity_factors: { food: -200, food_variety: 0, rationing: -200, tax: -50, fear_factor: -25, religion: 0, inn: 200 },
+      church_bonus: 3, tax_amount: 150,
+    },
+  }));
+  const report = desert(110);
+  assert.equal(report.status, "ok");
+  if (report.status !== "ok") return;
+  assert.deepEqual(report.popularity.factors, { food: -8, tax: -2, fear_factor: -1, religion: 3, inn: 8 });
+  const sum = Object.values(report.popularity.factors ?? {}).reduce((a, b) => a + b, 0);
+  assert.equal(sum, report.popularity.upcoming_change, "the factors add up to the game's coming change");
+  assert.deepEqual(report.food.popularity, { rations: -8, variety: 0 });
+  assert.equal(report.worker_efficiency_percent, 110);
+  const early = desert(0);
+  assert.ok(early.status === "ok" && !("worker_efficiency_percent" in early), "no efficiency before the game reckons one");
+});
+
 test("building description separates staffed buildings from storage", () => {
   const base = { hp: 0, max_hp: 0, no_resources: 0, turned_off: 0 };
   assert.deepEqual(describeBuilding({ ...base, id: 15, type: 3, have_stats: 1, workers_have: 1, job_vacancies: 0, workers_needed: 1, working: 1, keep_access: 1 }), {

@@ -91,7 +91,7 @@ in the run's `events.jsonl`.
 | `tax_index` | Tax level, 0 (largest bribe) to 11 | Not a rate or a gold amount |
 | `resources_by_name` | 20 stored goods: wood, hops, stone, iron, pitch, wheat, bread, cheese, meat, apples, ale, flour, bows, crossbows, spears, pikes, maces, swords, leather and metal armour | Each checked against nonzero amounts in the game |
 | `own_troops` | Total and 34 named types from the Army Report | Names follow the game's own spellings |
-| `settlement` | Month and year, housing capacity, idle peasants, total food, rations, food types eaten and available, popularity factors and upcoming change | Popularity factors are 25 per point shown in the game. `months_of_food` does not match the game's panel; do not use it |
+| `settlement` | Month and year, housing capacity, idle peasants, total food, rations, food types eaten and available, worker efficiency, popularity factors and upcoming change, the church and cathedral bonus (`church_bonus`), and the keep panel's tax figure (`tax_amount`) | Popularity factors are 25 per point shown in the game; `food` is `rationing` and `food_variety` added up, and the game's religion line is `religion` plus `church_bonus` (in points). `efficiency` is 0 until the game first reckons it. `months_of_food` does not match the game's panel; do not use it |
 | `selected_building` | Type, workers, vacancies, working, keep access, missing inputs, health; `null` without an open panel | |
 | `storage` | The local player's stockpile piles (tile, good, amount, capacity) and granaries (tile, amount, capacity); `null` when unavailable | Read from the engine's building records (below) |
 | `structures` | Count and limit | **Map-wide**, including other players; use it only as a change signal |

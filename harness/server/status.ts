@@ -1,4 +1,5 @@
 import type { Stats } from "../shared/protocol.js";
+import { FACTOR_UNITS_PER_POINT, foodPopularity, popularityFactors } from "../shared/popularity.js";
 import { buildingTypeNames } from "./anchors.js";
 import { inventoryGroups } from "./inventory.js";
 
@@ -6,8 +7,8 @@ const months = ["January", "February", "March", "April", "May", "June", "July", 
   "September", "October", "November", "December"];
 // Granary ration levels in the game's order; 2 = "Full rations" was checked against the panel.
 const rations = ["none", "half", "full", "extra", "double"];
-/** Reader popularity factors are 25 per UI point (the keep's "No taxes +1" read 25, live 2026-09-28). */
-const points = (value?: number) => (typeof value === "number" ? Math.round((value / 25) * 100) / 100 : undefined);
+const points = (value?: number) =>
+  typeof value === "number" ? Math.round((value / FACTOR_UNITS_PER_POINT) * 100) / 100 : undefined;
 
 type Observation = NonNullable<Stats["observation"]>;
 type Settlement = NonNullable<Observation["settlement"]>;
@@ -24,13 +25,19 @@ const popularityOf = (o: Observation) => {
     ...(s
       ? {
           upcoming_change: points(s.upcoming_popularity),
-          factors: Object.fromEntries(
-            Object.entries(s.popularity_factors).filter(([, v]) => v !== 0).map(([k, v]) => [k, points(v)]),
-          ),
+          factors: popularityFactors(s),
         }
       : {}),
   };
 };
+/** The rations' and food variety's shares of the food factor, when either has one. */
+const foodShareOf = (s: Settlement): { popularity?: ReturnType<typeof foodPopularity> } => {
+  const share = foodPopularity(s);
+  return share.rations || share.variety ? { popularity: share } : {};
+};
+/** Worker efficiency in percent from the fear factor; the game has none (0) before its first reckoning. */
+const efficiencyOf = (s: Settlement | null | undefined) =>
+  s && s.efficiency > 0 ? { worker_efficiency_percent: s.efficiency } : {};
 const placementOf = (o: Observation) =>
   o.placement?.action === 5 ? "placing" : o.placement?.action === 6 ? "demolishing" : "none";
 const cameraOf = (o: Observation) =>
@@ -95,6 +102,7 @@ export function observationStats(stats: Stats, { military = true } = {}) {
     gold: o.gold,
     population: populationOf(o),
     popularity: popularityOf(o),
+    ...efficiencyOf(s),
     ...(typeof o.tax_index === "number" ? { tax_level: o.tax_index } : {}),
     ...(s
       ? {
@@ -103,6 +111,7 @@ export function observationStats(stats: Stats, { military = true } = {}) {
             rationing: rations[s.rationing] ?? s.rationing,
             types_eaten: s.food_types_eaten,
             types_available: s.food_types_available,
+            ...foodShareOf(s),
           },
         }
       : {}),
@@ -146,8 +155,9 @@ export function statusReport(
     gold: o.gold,
     population: populationOf(o),
     popularity: popularityOf(o),
+    ...efficiencyOf(s),
     food: {
-      ...(s ? { total: s.total_food, rationing: rations[s.rationing] ?? s.rationing, types_eaten: s.food_types_eaten } : {}),
+      ...(s ? { total: s.total_food, rationing: rations[s.rationing] ?? s.rationing, types_eaten: s.food_types_eaten, ...foodShareOf(s) } : {}),
       granary: pick(inventoryGroups.granary),
     },
     stockpile: pick(inventoryGroups.stockpile),
@@ -159,7 +169,7 @@ export function statusReport(
     camera: cameraOf(o),
     ...(extra.views ? { saved_views: extra.views } : {}),
     visible_messages: o.visible_messages,
-    notes: "Popularity values are UI points. Structure count includes every player's structures.",
+    notes: "Popularity values are the game's points; the factors are per month and add up to upcoming_change. Structure count includes every player's structures.",
   };
 }
 

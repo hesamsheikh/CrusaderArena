@@ -33,6 +33,24 @@ export const footprintTiles: Record<string, number> = {
   Mill: 3,
   Brewery: 4,
   Inn: 5,
+  // Good and bad things, by the same method (2026-10-10). The Dancing Bear's placement id, 324, is
+  // the one the reader showed live when it was selected.
+  Gallows: 2,
+  Cesspit: 5,
+  Stocks: 3,
+  "Burning Stake": 3,
+  Dungeon: 5,
+  "Stretching Rack": 3,
+  Gibbet: 2,
+  "Chopping Block": 3,
+  "Dunking Stool": 5,
+  Maypole: 3,
+  "Dancing Bear": 5,
+  "Shrub Garden": 2,
+  "Town Garden": 3,
+  "Large Garden": 4,
+  Statue: 2,
+  Shrine: 2,
 };
 
 /** Footprints of the buildings place_near and expand_storage can anchor on. */

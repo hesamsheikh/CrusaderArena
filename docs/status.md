@@ -20,6 +20,16 @@ between September and October 2026.
   piles were full and no pile was empty (wood at 140 with stone in the fourth pile; iron
   refused outright), with no text message from the game; an emptied pile took the next
   good. The model's `storage` summary showed the stockpile full at that point.
+- Popularity readings against the game's panels on 2026-10-10 (a scratch reader build,
+  on the reference games' end saves and agent saves): the keep panel's tax figure
+  (`tax_amount`) at every level for 202 people, 0.2 gold a person per step from Low
+  (121) to Crueler than cruel (404) and the bribes' −121, −161 and −202; the rations
+  factor at all five levels (−8 to +8), with the food factor equal to the rations and
+  food-variety factors added up; worker efficiency (140% with the fear factor at −4,
+  110% at −1). The game's religion line was 3 points above the reader's `religion`
+  factor in both reference games, which have a church and a cathedral: the bonus the
+  reader now reads as `church_bonus`. That field itself, and the factors adding up to
+  the coming change in `status`, have not been read from a release build yet.
 - Placement and resource warning messages are captured and reach the model with
   their age.
 - Sampling every 100 ms has no measurable cost to the game.
@@ -153,6 +163,14 @@ between September and October 2026.
 - Tool changes made before the first 25-game-minute run, not yet used live: woodcutter
   spots ranked by nearby trees, placement checks waiting for a valid reader sample, and
   `cost` in placement results.
+- `set_rations`, and good and bad things in `build_structure` (both 1.2.0), tested with
+  simulated games. The ration plates' positions were clicked live on 2026-10-10 and the
+  reader showed each level; the good- and bad-thing buttons were clicked live on the
+  same day and each showed its own tooltip and price, and the Dancing Bear entered
+  placement with the game's placement id for it. Their footprints are from static
+  analysis of the game files, the same method as the other buildings'. Neither tool has
+  placed or set anything in a live run yet, and whether the build tray goes back to the
+  Town page after a subpage has not been seen.
 - Reading-only replies costing game time from the 12th in a row instead of ending the
   run, and the warning after each reply without a tool call. Not yet run live.
 - Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that

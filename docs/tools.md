@@ -35,7 +35,7 @@ Brewery, Inn. Castle and military buildings are not offered.
 
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
-| `build_structure` | `placements`: 1–4 of `{name, x, y, exact?}` | For each placement: opens the menu, selects the building, clicks the target pixel, then checks with the reader whether it was placed. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement |
+| `build_structure` | `placements`: 1–4 of `{name, x, y, exact?}` | For each placement: opens the menu (for a good or bad thing, the Town page's good-factor or fear-factor subpage), selects the building, clicks the target pixel, then checks with the reader whether it was placed. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement |
 | `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
 | `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map for the current view and lists free spots where the building fits and keeps an open side (see Open sides), as screen pixels. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots as pixels | No |
@@ -70,7 +70,7 @@ spot free but nothing was placed and the stock cannot pay, it stops with
 `not_enough_resources` and lists what is `missing`.
 
 **Open sides.** A building with workers (every building except hovels, the
-marketplace, stockpiles and granaries) needs one whole side of open ground: its workers
+marketplace, stockpiles, granaries and the good and bad things) needs one whole side of open ground: its workers
 go in and out there, and one closed in on all four sides stays empty. In the tile map
 a side is open when every tile along it is buildable ground with nothing on it, or the
 keep's courtyard; trees, bushes, rocks, water, cliffs, farm fields and buildings close
@@ -105,13 +105,14 @@ paused for the model; `find_sites` and `build_structure` use that read, and
 
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
-| `status` | none | Summarises the latest reading: budget, date, gold, population and housing, idle peasants, popularity and its factors, food, stock, troops, placement mode, selected building, camera, saved views, visible messages | Text | No |
+| `status` | none | Summarises the latest reading: budget, date, gold, population and housing, idle peasants, popularity and its factors, worker efficiency, food, stock, troops, placement mode, selected building, camera, saved views, visible messages | Text | No |
 | `get_inventory` | `section`: `all`, `stockpile`, `granary`, `armory` | Stored goods from the reader, with the change since the previous call. `unavailable` if the reading is stale | Text | No |
 | `inspect_building` | `x`, `y` | Clicks a building, reads its panel (workers, vacancies, working, keep access, missing inputs, health) and closes it | Text | Yes |
-| `set_tax` | `level` 0–11 | Opens the keep and steps the tax arrows until the reader shows that level. 0–2 are bribes, 3 is no tax (the start), 4–11 are taxes | From, to, popularity effect | Yes |
+| `set_tax` | `level` 0–11 | Opens the keep and steps the tax arrows until the reader shows that level. 0–2 are bribes, 3 is no tax (the start), 4–11 are taxes | From, to, popularity effect, and the panel's tax figure: gold a month at that level for the current population | Yes |
+| `set_rations` | `rations`: `none`, `half`, `full`, `extra` or `double` | Opens a granary with its hotkey and clicks the ration plate until the reader shows those rations (they apply to every granary) | From, to, the ration factor the panel shows | Yes |
 | `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 | Opens the marketplace and buys or sells one lot per click (5 units, 10 for food) | Units, gold change, net worth change, price; when a purchase stops early, whether gold or storage room ran out | Yes |
 
-After `set_tax`, `market_trade`, `place_near` or `expand_storage`, the model must
+After `set_tax`, `set_rations`, `market_trade`, `place_near` or `expand_storage`, the model must
 observe again before it can click.
 
 ## Look things up

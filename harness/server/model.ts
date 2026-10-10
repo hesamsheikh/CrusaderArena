@@ -54,7 +54,7 @@ import { InventoryTracker } from "./inventory.js";
 import { Placer, type Ack } from "./placement.js";
 import { anchorNames, centerOn, goToTile, placeAdjacent, sides, TOO_CLOSE_MARGIN, type AnchorContext, type MapExtent } from "./anchors.js";
 import { categories, MapView } from "./map-view.js";
-import { marketTrade, setTax, taxLevels, tradeGoods } from "./economy.js";
+import { marketTrade, rationLevels, setRations, setTax, taxLevels, tradeGoods } from "./economy.js";
 import { describeBuilding, observationStats, statusReport } from "./status.js";
 import type { GameHotkey } from "./device.js";
 import type { RunConfig } from "../shared/protocol.js";
@@ -899,7 +899,7 @@ export function makeAgent(
       name: "set_tax",
       label: "Set the tax level",
       description:
-        `Set the keep's tax level with its panel and close it; returns the level reached (checked in the game) as text. Levels: ${taxLevels.map((t, i) => `${i} ${t.label} (popularity ${t.popularity > 0 ? "+" : ""}${t.popularity})`).join(", ")}. The start is 3 (no taxes, no income). Higher taxes bring gold every payday but cost popularity each month; below 50 popularity peasants leave. Bribes (0-2) cost gold and raise popularity.`,
+        `Set the keep's tax level with its panel and close it; returns the level reached (checked in the game) and the panel's tax figure, the gold a month at that level for the current population (negative for a bribe), as text. Levels: ${taxLevels.map((t, i) => `${i} ${t.label} (popularity ${t.popularity > 0 ? "+" : ""}${t.popularity})`).join(", ")}. The start is 3 (no taxes, no income). Higher taxes bring gold every payday but cost popularity each month; below 50 popularity peasants leave. Bribes (0-2) cost gold and raise popularity.`,
       parameters: Type.Object({ level: Type.Integer({ minimum: 0, maximum: 11 }) }),
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
@@ -907,6 +907,21 @@ export function makeAgent(
         runtime?.cycle.action();
         observed = null;
         const result = await setTax(anchorContext(signal), args.level);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
+      },
+    }),
+    defineTool({
+      name: "set_rations",
+      label: "Set the rations",
+      description:
+        "Set the granary's rations with its panel and close it (rations apply to every granary); returns the rations reached (checked in the game) and the ration factor the panel shows, as text. Rations: none, half, full (the start), extra, double. Needs a granary.",
+      parameters: Type.Object({ rations: Type.Union(rationLevels.map((name) => Type.Literal(name))) }),
+      execute: async (_id, args, signal) => {
+        if (signal?.aborted) throw new Error("Stopped");
+        runtime?.session.check();
+        runtime?.cycle.action();
+        observed = null;
+        const result = await setRations(anchorContext(signal), args.rations);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
     }),

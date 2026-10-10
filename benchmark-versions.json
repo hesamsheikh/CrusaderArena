@@ -1,5 +1,5 @@
 {
-  "current": "1.1.4",
+  "current": "1.2.0",
   "history": [
     {
       "version": "1.0.0",
@@ -78,6 +78,12 @@
       "fingerprint": "8eb44a0e90cdd43e1d50eff2fb19a6b7d9551f344a5f264c11470b06299aa984",
       "date": "2026-10-10",
       "note": "Adds npm run episodes -- --human, a reference game played by a person: loaded, paused when the game-time budget is used up, scored, screenshotted and saved. Agent runs play and score the same."
+    },
+    {
+      "version": "1.2.0",
+      "fingerprint": "ad13674a6996132563cce61f22dda199bdceaeb51f4064f1172415ea905f9ce7",
+      "date": "2026-10-10",
+      "note": "The agent is told population and popularity count beside net worth (weighting not given); episodes are independent unless --playbook; status shows worker efficiency, the food factor once and religion with the church bonus; the reader reads the church bonus and the keep's tax figure, which set_tax returns; new set_rations tool; build_structure places good and bad things."
     }
   ]
 }

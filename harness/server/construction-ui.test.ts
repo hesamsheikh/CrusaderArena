@@ -13,6 +13,7 @@ import {
   visiblePlacementFeedback,
 } from "./construction-ui.js";
 import type { Frame } from "../shared/protocol.js";
+import { needsOpenSide } from "./tile-map.js";
 
 const frame = (width: number, height: number) => ({ width, height }) as Frame;
 
@@ -30,6 +31,24 @@ test("named construction scales with a resized 16:9 game window", () => {
     { type: "click", x: 577, y: 652, button: 1 },
     { type: "click", x: 450, y: 300, button: 1 },
   ]);
+});
+
+test("a good or bad thing opens the Town page, then its subpage, then the item", () => {
+  assert.deepEqual(constructionClicks(frame(1920, 1080), "Gallows", { x: 700, y: 440 }), [
+    { type: "click", x: 999, y: 1055, button: 1 },
+    { type: "click", x: 1481, y: 948, button: 1 },
+    { type: "click", x: 900, y: 975, button: 1 },
+    { type: "click", x: 700, y: 440, button: 1 },
+  ]);
+  const garden = constructionClicks(frame(1280, 720), "Town Garden", { x: 450, y: 300 });
+  assert.deepEqual(garden.slice(1, 3), [
+    { type: "click", x: 987, y: 670, button: 1 },
+    { type: "click", x: 770, y: 630, button: 1 },
+  ]);
+  assert.deepEqual(buildingCost("Dancing Bear"), { wood: 0, gold: 20 });
+  assert.deepEqual(buildingCost("Dungeon"), { wood: 0, gold: 40 });
+  assert.equal(needsOpenSide("Statue"), false, "no workers, so no open side");
+  assert.equal(needsOpenSide("Woodcutter"), true);
 });
 
 test("named construction rejects uncalibrated layouts and HUD targets", () => {

@@ -69,7 +69,7 @@ See [Context](context.md) for the full layout and how old images are dropped.
 | Look | `observe`, `wait_and_observe`, `flat_view` | Fresh screenshot now, after letting time pass, or with buildings flattened |
 | Build | `build_structure`, `place_near`, `expand_storage`, `find_sites` | Placing buildings and finding space for them |
 | Move the camera | `center_on`, `map_overview`, `go_to_tile`, `save_view`, `go_to_view`, `navigate_minimap` | Finding places on the map |
-| Run the economy | `status`, `get_inventory`, `inspect_building`, `set_tax`, `market_trade` | Reading the settlement, taxes and trade |
+| Run the economy | `status`, `get_inventory`, `inspect_building`, `set_tax`, `set_rations`, `market_trade` | Reading the settlement, taxes, rations and trade |
 | Look things up | `building_info`, `list_buildings`, `guide_page` | Building costs, roles and menu positions from the game reference |
 | Raw input | `game_action` | Any single click, drag, scroll or key |
 | Memory | `update_plan`, `notebook_read`, `notebook_write`, `notebook_edit`, `notification_history`; in a learning series also `playbook_read`, `playbook_write`, `playbook_edit` | Plans, notes, past game messages and lessons for later episodes |

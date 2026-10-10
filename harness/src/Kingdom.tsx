@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Stats } from "../shared/protocol";
+import { FACTOR_UNITS_PER_POINT, popularityFactors } from "../shared/popularity";
 import { Card, Pill, Sparkline } from "./ui";
 import { label, monthName } from "./format";
 
@@ -91,16 +92,14 @@ export function Kingdom({
 }) {
   const s = stats?.settlement;
   const resources = stats?.resources_by_name ?? {};
-  const factors = Object.entries(s?.popularity_factors ?? {}).filter(
-    ([, v]) => v,
-  );
+  // In points, as the game's Popularity report lists them (food once, religion with the church bonus).
+  const factors = Object.entries(s ? popularityFactors(s) : {});
   const troops = Object.entries(
     (stats?.own_troops as { by_type?: Record<string, number> } | undefined)
       ?.by_type ?? {},
   ).filter(([, v]) => v > 0);
   const paused = stats?.paused || stats?.is_paused;
-  // Settlement factors are in engine units; 25 make one popularity point per month.
-  const monthly = s ? s.upcoming_popularity / 25 : null;
+  const monthly = s ? s.upcoming_popularity / FACTOR_UNITS_PER_POINT : null;
   return (
     <Card
       className="kingdom"
@@ -206,8 +205,7 @@ export function Kingdom({
             <h3>Popularity factors</h3>
             {factors.length ? (
               <ul>
-                {factors.map(([k, v]) => {
-                  const points = v / 25;
+                {factors.map(([k, points]) => {
                   const width = Math.min(50, Math.abs(points) * 10);
                   return (
                     <li key={k}>

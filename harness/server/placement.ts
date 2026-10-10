@@ -88,7 +88,8 @@ export class Placer {
   }
   /** Select the building; with a reader, confirm placement mode switched to it, retrying once. */
   async select(name: string): Promise<"confirmed" | "unchecked" | "failed"> {
-    const [category, button] = menuClicks(this.io.frame, name);
+    const [category, ...rest] = menuClicks(this.io.frame, name);
+    const button = rest.pop()!;
     for (let attempt = 0; attempt < 2; attempt++) {
       const before = this.readerReady ? placementOf(await this.current()) : null;
       await this.io.send(category);
@@ -96,6 +97,13 @@ export class Placer {
       const categoryKey = JSON.stringify(category);
       if (categoryKey !== this.openCategory || attempt > 0) await this.io.pause(0.8);
       this.openCategory = categoryKey;
+      // A good or bad thing sits on a subpage of the Town page, which fades in the same way. The tray
+      // stays on it, so the next selection opens its category page afresh.
+      for (const page of rest) {
+        await this.io.send(page);
+        await this.io.pause(0.8);
+        this.openCategory = undefined;
+      }
       const ack = await this.io.send(button);
       if (!before) return "unchecked";
       const now = await this.sampleAfter(this.ackTime(ack), (o) => {

@@ -1,4 +1,5 @@
 import type { TileRegion } from "./device.js";
+import { decorationNames } from "./decorations.js";
 import { footprintOf } from "./footprints.js";
 
 /**
@@ -64,14 +65,16 @@ const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
  * and got no worker while 19 peasants stood idle; one beside it with an open side was staffed). Two
  * rows back to back, or blocks of four, leave each an outer side.
  */
-const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary"]);
+const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary", ...decorationNames]);
 export const needsOpenSide = (building: string) => !noWorkers.has(building);
 /**
  * Engine types that need no open side. Buildings of other types in the map, including ones the
  * harness cannot name, are kept with an open side too.
  */
 const noOpenSideTypes = new Set<number>([STRUCTURE_TYPES.hovel, STRUCTURE_TYPES.pile, STRUCTURE_TYPES.granary,
-  STRUCTURE_TYPES.market, STRUCTURE_TYPES.keep, STRUCTURE_TYPES.courtyard, SIGNPOST_TYPE]);
+  STRUCTURE_TYPES.market, STRUCTURE_TYPES.keep, STRUCTURE_TYPES.courtyard, SIGNPOST_TYPE,
+  // Good and bad things (the game's eStructs: gallows to garden, cesspit to dunking stool, statue to pond).
+  ...[62, 63, 64, 65, 66, 91, 92, 93, 94, 95, 96, 97, 98, 100, 101, 102, 103, 104]]);
 /** Placement groups the game never runs the signpost check for. */
 const signpostExempt = new Set(["Woodcutter", "Ox Tether", "Stockpile", "Granary", "Armoury", "Quarry", "Iron Mine", "Pitch Rig", ...farmNames]);
 

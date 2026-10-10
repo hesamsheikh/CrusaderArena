@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { atlasPages } from "./visual-atlas.js";
 import { footprintTiles } from "./footprints.js";
+import { decorationNames, decorations } from "./decorations.js";
 
 type ManualBuilding = {
   name: string;
@@ -65,6 +66,8 @@ const aliases: Record<string, string> = {
   "chapel": "Chapel / simple mosque",
   "church": "Church / mosque",
   "cathedral": "Cathedral / grand mosque",
+  // Each good or bad thing is described by the manual's one row for its kind.
+  ...Object.fromEntries(Object.entries(decorations).map(([name, d]) => [name.toLowerCase(), d.kind === "bad" ? "Bad things" : "Good things"])),
 };
 
 const nonBuildingLabels = new Set([
@@ -84,10 +87,16 @@ const exactCosts: Record<string, string> = {
   "Lookout Tower": "10 S", "Perimeter Turret": "10 S", "Defense Turret": "15 S",
   "Square Tower": "35 S", "Round Tower": "40 S",
   "Small Stone Gatehouse": "10 S", "Large Stone Gatehouse": "20 S",
+  ...Object.fromEntries(Object.entries(decorations).map(([name, d]) => [name, `${d.gold} G`])),
 };
+const decorationCategory = (name: string) =>
+  decorations[name].kind === "bad" ? "Town Buildings: fear-factor page" : "Town Buildings: good-factor page";
 
 export function listBuildings(category?: string) {
-  const rows: { name: string; category: string }[] = atlasBuildings.map(({ name, category }) => ({ name, category }));
+  const rows: { name: string; category: string }[] = [
+    ...atlasBuildings.map(({ name, category }) => ({ name, category })),
+    ...decorationNames.map((name) => ({ name, category: decorationCategory(name) })),
+  ];
   for (const row of manualBuildings)
     if (!rows.some((entry) => lookupManual(entry.name)?.name === row.name))
       rows.push({ name: row.name, category: row.section });
@@ -99,6 +108,7 @@ export function buildingInfo(query: string) {
   const alias = aliases[query.toLowerCase()];
   const atlas = atlasBuildings.find((row) => normalize(row.name) === wanted) ||
     atlasBuildings.find((row) => normalize(row.name) === normalize(alias || query));
+  const decoration = decorationNames.find((name) => normalize(name) === wanted);
   const manualEntry = lookupManual(alias || atlas?.name || query);
   if (!atlas && !manualEntry) {
     const suggestions = listBuildings()
@@ -108,13 +118,13 @@ export function buildingInfo(query: string) {
   }
   return {
     found: true as const,
-    name: atlas?.name || (alias ? query : manualEntry!.name),
-    category: atlas?.category || manualEntry!.section,
+    name: atlas?.name || decoration || (alias ? query : manualEntry!.name),
+    category: atlas?.category || (decoration ? decorationCategory(decoration) : manualEntry!.section),
     whatItDoes: manualEntry?.functionAndRequirements || atlas!.atlasDescription,
-    buildCost: exactCosts[atlas?.name || query] || manualEntry?.buildCost || null,
+    buildCost: exactCosts[atlas?.name || decoration || query] || manualEntry?.buildCost || null,
     workers: manualEntry?.workers || null,
     // Square side in tiles, from the game's own placement data.
-    footprintTiles: footprintTiles[atlas?.name ?? ""] ?? null,
+    footprintTiles: footprintTiles[atlas?.name ?? decoration ?? ""] ?? null,
     atlasDescription: atlas?.atlasDescription || null,
     source: manualEntry ? "project manual reference; default values, not live game state" : "tooltip-checked historical atlas; cost and workers unknown",
     note: "Check the current game tooltip for cost, availability and placement. A building needs suitable terrain, workers, inputs, storage and access to operate.",

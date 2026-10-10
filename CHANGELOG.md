@@ -17,7 +17,31 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-10
+
+Not comparable with 1.1.4: the agent is told that population and popularity count, sees
+more of its settlement, has new tools, and no longer carries a playbook between episodes.
+
+### Benchmark
+
+- The agent is told that the settlement is judged at the end on its population and
+  popularity as well as its net worth, but not how the three are weighed (the Oasis by
+  the Sea rules file and objective). Reports rank runs by net worth until the combined
+  score is settled.
+- Episodes are independent games of the same save: the playbook carries over only with
+  `--playbook`.
+- `status` and each observation's stats show worker efficiency (from the fear factor),
+  count the food factor once with what the rations and food variety add to it under
+  `food`, and include the church and cathedral bonus in religion, so the factors add up
+  to the coming change. Before, food appeared twice and the bonus not at all.
+- The reader reads the church and cathedral bonus and the keep panel's tax figure.
+  `set_tax` returns that figure: the gold a month at the new level.
+- New tool `set_rations` sets the granary's rations and returns the ration factor the
+  panel shows.
+- `build_structure` places the good and bad things (gardens, statue, shrine, maypole and
+  dancing bear; gallows, gibbet, stocks, dungeon and the rest) from the Town page's
+  subpages, and `building_info` gives their prices and footprints. They have no workers,
+  so they need no open side.
 
 ### Harness
 
@@ -25,6 +49,7 @@ this file lists every version in `benchmark-versions.json`, with its date.
   loaded and left paused at the benchmark speed, and when the game-time budget is used
   up the game is paused, scored, screenshotted and saved. See
   [Reference games](docs/benchmark.md#scoring-net-worth).
+- The dashboard lists the popularity factors as `status` does.
 
 ## [1.1.4] - 2026-10-10
 

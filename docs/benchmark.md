@@ -161,15 +161,18 @@ The player is not bound by an agent's limits, such as the minimum turn. If the r
 has no valid sample for 2 minutes (the memory guard may have closed the game), the
 scorecard uses the last reading and `human.ended` is `readings_lost`.
 
-Population, popularity, food and buildings are reported beside the score but do not
-count. Buildings matter only through what they produce. Buying at the marketplace
-lowers net worth (the buy price is higher than the sell price); selling leaves it
-unchanged.
+Since 1.2.0 the agent is told that its population and popularity at the end count
+as well as its net worth, but not how they are weighed (the Oasis by the Sea rules file
+and objective). How the three combine into one score is still being decided: until then
+reports rank runs by net worth, and the scorecard records population and popularity
+beside it. Buying at the marketplace lowers net worth (the buy price is higher than the
+sell price); selling leaves it unchanged.
 
 ## Running episodes
 
-`npm run episodes` runs a learning series of episodes (3 by default) without an
-operator. For each episode it:
+`npm run episodes` runs a series of episodes (3 by default) without an operator. The
+episodes are independent games of the same save; `--playbook` makes them a
+[learning series](#learning-series). For each episode it:
 
 1. Starts the game through Steam on the game machine and connects to it.
 2. Waits out the startup screens, opens Load Game, searches for the save by name and
@@ -197,7 +200,7 @@ Each episode ends in one of four ways ([series.ts](../harness/server/series.ts))
 | `valid` | A full-budget score (see [the scorecard](#the-scorecard)) | Goes on with the next episode |
 | `model_failure` | The model ended the run: 4 replies without a tool call, a reply cut off at the output limit three times, or no `BEGIN` after three preparation replies | Keeps it as the episode's result (invalid) and goes on |
 | `stopped` | The operator stopped it: Ctrl-C in the runner, Stop in the dashboard, the control monitor, or a host shutdown | Closes the game and pauses the series at this episode |
-| `infrastructure` | Anything else: the harness, game, reader, network, provider, memory guard, wall limit, an unconfirmed final pause | Runs the episode again at once, from the same playbook; a second failure pauses the series |
+| `infrastructure` | Anything else: the harness, game, reader, network, provider, memory guard, wall limit, an unconfirmed final pause | Runs the episode again at once (from the same playbook in a learning series); a second failure pauses the series |
 
 So no model gets a second attempt after a failure of its own, and a failure that is
 not the model's never costs it an episode. Every attempt stays in `series.json`; an
@@ -211,9 +214,9 @@ more later, quits at once and leaves cleaning up to you). Continue it with:
 npm run episodes -- --resume <series id>
 ```
 
-The series continues at its first episode without a result, from the playbook the
-episode before it left, with the settings it was started with. `--resume` refuses
-setting flags (pass only `--restart`, `--keep-game`, `--unversioned` or `--port`) and refuses
+The series continues at its first episode without a result, with the settings it was
+started with (in a learning series, from the playbook the episode before it left).
+`--resume` refuses setting flags (pass only `--restart`, `--keep-game`, `--unversioned` or `--port`) and refuses
 to continue when the benchmark version, code commit, preparation images or the model
 profile's ID, endpoint, reasoning, output limit or providers have changed. If harness
 or prompt files change while a series runs, the series pauses before the next episode:
@@ -238,7 +241,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
 | `--context-budget` | 120000 | Working context budget in tokens |
 | `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |
-| `--no-playbook` | off | Run the episodes as independent runs, with no playbook (still resumable) |
+| `--playbook` | off | Run the episodes as a [learning series](#learning-series): the playbook carries over |
 | `--record` | off | Record the run and render a video |
 | `--resume` | | Continue a paused series by its ID, with its own settings |
 | `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs; for trials only |
@@ -257,9 +260,9 @@ helper and reader files must match this checkout; the runner checks all of this.
 
 ## Learning series
 
-The episodes of a series play the same save, each from the start. One thing carries
-over: the agent's **playbook**, Markdown notes of up to 8 KB, which measures how much
-the agent learns from playing.
+Only with `--playbook`. The episodes of a series play the same save, each from the
+start. One thing carries over: the agent's **playbook**, Markdown notes of up to 8 KB,
+which measures how much the agent learns from playing.
 
 - **Start.** The preparation message says which episode of how many this is and shows
   the playbook as the previous episode left it (empty in the first).
@@ -375,7 +378,7 @@ afterwards to see the costs in the dashboard, and package a published series aga
   checked twice but are not atomic snapshots.
 - **No control of randomness.** Neither the game's nor the model's randomness is
   fixed, so the change across a series mixes learning with chance. Run several
-  series, or compare with a series run with `--no-playbook`.
+  series, or compare with a series run without `--playbook`.
 - **Harness versions.** Prompt and tool changes affect results. Compare runs with the
   same Harness value in `npm run report`.
 - **The memory guard can end a run early** (see [Status](status.md#known-issues));

@@ -20,7 +20,8 @@ system prompt stays identical for the whole run (prompt caching).
 
 At most 8 actions per reply. Each `build_structure` placement counts as one, as does
 each `game_action`, `place_near`, `expand_storage`, `center_on`, `go_to_tile`,
-`go_to_view`, `navigate_minimap`, `inspect_building`, `set_tax` and `market_trade`.
+`go_to_view`, `navigate_minimap`, `inspect_building`, `set_tax`, `set_rations` and
+`market_trade`.
 Reading tools (`observe`, `status`, `get_inventory`, `find_sites`, `flat_view`,
 `map_overview`, references, plan and notes) do not count.
 
@@ -75,8 +76,8 @@ take targets only from a new screenshot.
 - **Run the economy:** `status` summarises the settlement (housing, idle peasants,
   popularity factors, food, goods). `get_inventory` reads stored goods with the change
   since your last call. `inspect_building` reports a building's workers, inputs and
-  access to the keep. `set_tax` sets taxes; `market_trade` buys and sells at your
-  marketplace.
+  access to the keep. `set_tax` sets taxes and `set_rations` the granary's rations;
+  `market_trade` buys and sells at your marketplace.
 - **Let time pass:** `wait_and_observe(seconds)`, optionally `until` a good, gold,
   population, food or idle peasants reaches an amount.
 - **Look things up:** `building_info(name)` (purpose, default cost, workers,
@@ -129,12 +130,13 @@ Game rules for placement:
   carry its stone to the stockpile, taking whatever is ready at any quarry. Add tethers
   when the quarry is far from the stockpile or stone piles up at it. An iron mine needs
   iron ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
-- A building with workers (everything but hovels, the marketplace, stockpiles and
-  granaries) needs at least one whole side of open ground: its workers go in and out
-  there, and one closed in on all four sides by buildings, trees, rocks, water or cliffs
-  stays empty. Pack them in two rows back to back or in blocks of four, so each keeps an
-  outer side. `find_sites`, `place_near`, `expand_storage` and the retries only use spots
-  that keep this for the new building and its neighbours.
+- A building with workers (everything but hovels, the marketplace, stockpiles,
+  granaries and the good and bad things) needs at least one whole side of open ground:
+  its workers go in and out there, and one closed in on all four sides by buildings,
+  trees, rocks, water or cliffs stays empty. Pack them in two rows back to back or in
+  blocks of four, so each keeps an outer side. `find_sites`, `place_near`,
+  `expand_storage` and the retries only use spots that keep this for the new building
+  and its neighbours.
 - Leave walking routes between buildings and their storage, and room to expand storage.
 
 ## Camera and keys

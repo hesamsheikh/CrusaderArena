@@ -6,11 +6,12 @@ military: false
 **Task.** Grow the economy of the freshly loaded **Oasis by the Sea-1** Free Build save
 as far as you can within the game-time budget.
 
-**Score.** Your net worth when the run ends: gold plus every stored good valued at the
-marketplace sell price per unit (wood 1, stone 7, iron 23; bread, cheese, meat and
-apples 4; ale 10, flour 10). The starting package is worth
-about 1,425. Population, popularity, food and buildings are reported beside the score
-but do not count; buildings count only through what they produce.
+**Score.** The settlement is judged as you leave it when the run ends, on three things:
+its net worth, its population and its popularity. Net worth is gold plus every stored
+good valued at the marketplace sell price per unit (wood 1, stone 7, iron 23; bread,
+cheese, meat and apples 4; ale 10, flour 10); the starting package is worth about 1,425.
+How the three are weighed is not given: do your best on all of them. Buildings count
+only through what they bring.
 
 **Not allowed.** Recruiting soldiers or building walls, towers, gates or other
 defences: they cost resources without growing the economy.

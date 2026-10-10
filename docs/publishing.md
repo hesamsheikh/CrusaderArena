@@ -15,7 +15,7 @@ Nothing is sent anywhere until `npm run upload` runs with `--yes`.
 
 ```bash
 pip install datasets                      # Parquet tables and the Hugging Face client
-npm run episodes -- --record ...          # a learning series, recorded (see The benchmark)
+npm run episodes -- --record ...          # a series of episodes, recorded (see The benchmark)
 npm run package -- <series id> --submitter <hugging face user> [--tier official]
 npm run upload -- harness/runtime/publish/v1.0/<benchmark>/<model>/<series id>        # dry run
 npm run upload -- harness/runtime/publish/v1.0/<benchmark>/<model>/<series id> --yes  # upload

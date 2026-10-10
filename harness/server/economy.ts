@@ -67,17 +67,58 @@ export async function setTax(ctx: AnchorContext, level: number) {
   if (!opened) return { status: "failed" as const, note: "The keep hotkey selected nothing; is the game paused or the granary not yet placed?" };
   const from = tax(opened);
   let current = from;
+  let last: Observation = opened;
   for (let step = 0; step < 12 && current !== null && current !== level; step++) {
     const ack = await click(ctx, current < level ? TAX_UP : TAX_DOWN);
     const seen = await sampleAfter(ctx, ackTime(ack), (o) => tax(o) !== current, 1);
     if (!seen) break;
     current = tax(seen);
+    last = seen;
   }
   await dismiss(ctx, await ctx.capture());
   const info = current !== null ? taxLevels[current] : undefined;
+  // The keep panel's own tax figure, which updates with each step (live 2026-10-10).
+  const gold = (last.settlement as { tax_amount?: unknown } | null | undefined)?.tax_amount;
   return {
     status: current === level ? "set" as const : "not_set" as const,
     from, level: current, label: info?.label, popularityFactor: info?.popularity,
+    ...(typeof gold === "number" ? { goldPerMonth: gold } : {}),
+  };
+}
+
+/** Granary rations in the game's order (the reader's `rationing` index). */
+export const rationLevels = ["none", "half", "full", "extra", "double"] as const;
+export type RationLevel = (typeof rationLevels)[number];
+/** The granary panel's ration plates, none to double, measured and checked through the reader (live 2026-10-10). */
+const RATION_PLATES = [{ x: 1235, y: 1050 }, { x: 1220, y: 978 }, { x: 1298, y: 938 }, { x: 1385, y: 978 }, { x: 1355, y: 1050 }];
+const GRANARY_TYPE = 19;
+
+/** Set the rations on the granary panel (any granary: rations apply to all), checked in the reader. */
+export async function setRations(ctx: AnchorContext, level: RationLevel) {
+  const settlement = (o: Observation | null) =>
+    o?.settlement as { rationing?: number; popularity_factors?: Record<string, number> } | null | undefined;
+  const ration = (o: Observation | null) => settlement(o)?.rationing ?? null;
+  const opened = await select(ctx, "Granary");
+  if (!opened || selected(opened) !== GRANARY_TYPE) {
+    if (opened) await dismiss(ctx, await ctx.capture());
+    return { status: "failed" as const, note: "The granary hotkey selected no granary; is one placed?" };
+  }
+  const target = rationLevels.indexOf(level);
+  const from = ration(opened);
+  let last: Observation = opened;
+  if (from !== target) {
+    const ack = await click(ctx, RATION_PLATES[target]);
+    last = (await sampleAfter(ctx, ackTime(ack), (o) => ration(o) === target, 1)) ?? last;
+  }
+  await dismiss(ctx, await ctx.capture());
+  const reached = ration(last);
+  // The ration factor the panel shows beside the plates; 25 reader units a point.
+  const factor = settlement(last)?.popularity_factors?.rationing;
+  return {
+    status: reached === target ? "set" as const : "not_set" as const,
+    from: from === null ? null : rationLevels[from] ?? from,
+    rations: reached === null ? null : rationLevels[reached] ?? reached,
+    ...(typeof factor === "number" ? { popularityFactor: factor / 25 } : {}),
   };
 }
 

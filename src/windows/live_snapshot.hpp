@@ -130,7 +130,9 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
         return c.str();
     });
     // Settlement context from the same PlayState (calendar, housing, food, popularity
-    // factors). Optional; field meanings beyond the names need UI validation.
+    // factors, the church and cathedral bonus, the keep's tax figure). Optional; field meanings
+    // beyond the names need UI validation. The church bonus is optional on its own (null when
+    // unreadable), so it cannot take the rest of the settlement with it.
     const auto i32=[&](const char* name){return m::field<std::int32_t>(a.api,state.get(),name);};
     const auto i16=[&](const char* name){return m::field<std::int16_t>(a.api,state.get(),name);};
     const auto settlement=optional([&]()->std::string {
@@ -142,6 +144,8 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
          <<",\"rationing\":"<<i32("rationing")<<",\"food_types_eaten\":"<<i32("food_types_eaten")
          <<",\"food_types_available\":"<<i32("food_types_available")
          <<",\"efficiency\":"<<i32("efficiency")<<",\"upcoming_popularity\":"<<i32("upcoming_total_popularity")
+         <<",\"church_bonus\":"<<optional([&]{return std::to_string(m::field<std::int8_t>(a.api,state.get(),"church_adjustment"));})
+         <<",\"tax_amount\":"<<i16("tax_amount")
          <<",\"popularity_factors\":{";
         const char* factors[][2]={{"food","food_popularity"},{"food_variety","foodsEaten_popularity"},
             {"rationing","rationing_popularity"},{"tax","tax_popularity"},{"overcrowding","overcrowding_popularity"},

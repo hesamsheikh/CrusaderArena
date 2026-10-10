@@ -7,9 +7,9 @@
  *     --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
  *     --prompt-file prompt/objectives/oasis-by-the-sea.txt --game-minutes 25
  *
- * The episodes (3 by default) form a learning series: each starts from the playbook the agent
- * left at the end of the one before, and the last episode's score is the series' score.
- * --no-playbook runs them as independent runs instead. An episode counts when it is a full-budget
+ * The episodes (3 by default) are independent runs of the same save. --playbook makes them a
+ * learning series instead: each starts from the playbook the agent left at the end of the one
+ * before, and the last episode's score is the series' score. An episode counts when it is a full-budget
  * score or the model itself ended it (series.ts). One stopped by the operator (Ctrl-C here, the
  * dashboard or the control monitor) pauses the series; one ended by the harness, game or provider is
  * run once more, then pauses it. --resume <series id> continues a paused series from that episode
@@ -60,7 +60,7 @@ const { values: opts } = parseArgs({
     "min-turn-seconds": { type: "string" },
     "context-budget": { type: "string" },
     episodes: { type: "string" },
-    "no-playbook": { type: "boolean" },
+    playbook: { type: "boolean" },
     record: { type: "boolean" },
     // How to run, not what.
     resume: { type: "string" },
@@ -79,7 +79,7 @@ const DEFAULTS = {
 };
 const setting = (name: keyof typeof DEFAULTS) => opts[name] ?? DEFAULTS[name];
 const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-file", "game-minutes", "wall-limit-minutes",
-  "default-wait", "min-turn-seconds", "context-budget", "episodes", "no-playbook", "record"] as const;
+  "default-wait", "min-turn-seconds", "context-budget", "episodes", "playbook", "record"] as const;
 /** What an episode is run with: a series' settings, or the flags for --idle, --human and --dry-run. */
 type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
@@ -806,7 +806,7 @@ async function main() {
         results: [], status: "running",
         settings: {
           save: plan.save, map: plan.map, benchmark: plan.benchmark, prompt, config,
-          learning: !opts["no-playbook"], ...current(state, model.id),
+          learning: !!opts.playbook, ...current(state, model.id),
         },
       }, false);
     }

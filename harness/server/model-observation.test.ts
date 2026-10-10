@@ -363,8 +363,8 @@ function simulatedGame(options: {
   const actions: any[] = [];
   const state: SimState = { action: 0, sub: 52, wood: 100, structures: 18, camera: 1, worldClicks: 0, sel: null, messages: [], flat: false };
   const buttonIds: Record<string, number> = { "866,978": 54, "872,934": 52, "880,992": 57 };
-  for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73]] as const) {
-    const [, button] = trayClicks({ width: 1920, height: 1080 }, name) as { x: number; y: number }[];
+  for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73], ["Dancing Bear", 324]] as const) {
+    const button = (trayClicks({ width: 1920, height: 1080 }, name) as { x: number; y: number }[]).at(-1)!;
     buttonIds[`${button.x},${button.y}`] = id;
   }
   const hotkeys: string[] = [];
@@ -512,6 +512,13 @@ test("build_structure retries a silently blocked target at a nearby spot without
   assert.equal(game.state.structures, 19);
   assert.equal(menuClicks(game.actions).length, 2, "category and building clicked once");
   assert.equal(worldClicks(game.actions).length, 2);
+});
+
+test("build_structure places a good thing through the Town page's good-factor subpage", async () => {
+  const game = simulatedGame({});
+  const report = await game.build([{ name: "Dancing Bear", x: 500, y: 400 }]);
+  assert.equal(report.placements[0].status, "placed");
+  assert.deepEqual(menuClicks(game.actions).map((a) => [a.x, a.y]), [[999, 1055], [1481, 1006], [1005, 985]]);
 });
 
 test("build_structure gives up after one ring of blocked nearby spots", async () => {
