@@ -174,7 +174,7 @@ export function resultsMarkdown(r: Results) {
     ["Taxes", r.taxes ? `${r.taxes.name}${r.taxes.gold_per_month !== null ? `, ${amount(r.taxes.gold_per_month)} gold a month` : ""}` : "unknown"],
     ["Rations", r.food ? `${r.food.rations}; ${r.food.foods_eaten} of ${r.food.foods_available} foods eaten; ${amount(r.food.stored)} food stored` : "unknown"],
     ["Worker efficiency", r.worker_efficiency_percent !== null ? `${r.worker_efficiency_percent}%` : "none yet"],
-    ["Storage", r.storage ? `${r.storage.stockpile_piles} stockpile piles (${r.storage.empty_piles} empty); ${r.storage.granaries} granaries holding ${amount(r.storage.granary_food)} food` : "unknown"],
+    ["Storage", r.storage ? `${r.storage.stockpile_piles} stockpile piles (${r.storage.empty_piles} empty); ${r.storage.granaries} ${r.storage.granaries === 1 ? "granary" : "granaries"} holding ${amount(r.storage.granary_food)} food` : "unknown"],
     ["Troops", amount(r.troops)],
     ["Structures on the map (every player's)", amount(r.structures_map_wide)],
   ];

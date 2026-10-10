@@ -21,7 +21,7 @@ const oasis = (): Observation => ({
   settlement: {
     month: 7, year: 1200, housing_cap: 202, peasants_available: 13, total_food: 100, months_of_food: 0,
     rationing: 2, food_types_eaten: 1, food_types_available: 1, efficiency: 140, upcoming_popularity: 0,
-    church_bonus: 3, tax_amount: 0,
+    church_bonus: 75, tax_amount: 0,
     popularity_factors: { food: 0, food_variety: 0, rationing: 0, tax: 25, fear_factor: -100, religion: 0, inn: 0 },
   },
   storage: {

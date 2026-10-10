@@ -73,7 +73,7 @@ test("status lists popularity factors as the game's report does, with efficiency
       month: 5, year: 1178, housing_cap: 250, peasants_available: 16, total_food: 91, months_of_food: 0,
       rationing: 0, food_types_eaten: 0, food_types_available: 1, efficiency, upcoming_popularity: 0,
       popularity_factors: { food: -200, food_variety: 0, rationing: -200, tax: -50, fear_factor: -25, religion: 0, inn: 200 },
-      church_bonus: 3, tax_amount: 150,
+      church_bonus: 75, tax_amount: 150,
     },
   }));
   const report = desert(110);

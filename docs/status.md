@@ -28,8 +28,15 @@ between September and October 2026.
   food-variety factors added up; worker efficiency (140% with the fear factor at −4,
   110% at −1). The game's religion line was 3 points above the reader's `religion`
   factor in both reference games, which have a church and a cathedral: the bonus the
-  reader now reads as `church_bonus`. That field itself, and the factors adding up to
-  the coming change in `status`, have not been read from a release build yet.
+  reader reads as `church_bonus`. Read from the committed reader on 2026-10-10, it is 75
+  on both end saves (the factors' 25 per point) and 0 on a save with only a chapel; the
+  factors in the model's stats then add up to the game's coming change on all three.
+- The player's buildings by type (`buildings`), from the committed reader on
+  2026-10-10: on both reference games' end saves they match the count made earlier with
+  a test build (57 bakeries, 24 hovels and 54 bad things on Oasis by the Sea; 95
+  bakeries, 11 inns and 21 bad things on Large Barren Desert), a save with only a chapel
+  lists it, and each building placed in the tool checks below appeared under its type
+  at once. The keep panel's tax figure read 150 gold a month at Low taxes for 250 people.
 - Placement and resource warning messages are captured and reach the model with
   their age.
 - Sampling every 100 ms has no measurable cost to the game.
@@ -70,11 +77,35 @@ between September and October 2026.
   a purchase stops.
 - `map_overview`, `go_to_tile`, `set_tax` and `market_trade` have been used in live
   runs; marketplace prices on screen match the price table.
+- Run against the live game through the harness's own tool code, without a model, on
+  2026-10-10 (benchmark 1.2.0). `set_tax` on the Large Barren Desert reference game (250
+  people): Low to Average returned 200 gold a month, to the generous bribe −250, back to
+  Low 150, with the popularity effects −4, +7 and −2, and the keep panel closed each
+  time. `set_rations` from none: half, extra, double, full and none returned the ration
+  factors −4, +4, +8, 0 and −8 as the reader showed them; asking for the current rations
+  clicked nothing; the granary panel closed each time. `build_structure` on "Oasis by the
+  Sea benchmark start" placed a dancing bear, gallows, a hovel straight after the
+  gallows (so the tray left the fear-factor page), a town garden, a dungeon, a shrine and
+  a woodcutter, each confirmed by its cost or the structure count; the town garden's
+  first two spots, offered by `find_sites`, were silently refused and it went 3 tiles
+  over. With three good things and two bad ones in a settlement of 10 people, the fear
+  factor read +1 and worker efficiency 90%: good and bad things offset each other.
+  `inspect_building` opened a panel only with the game running, as it is during play.
 
 **Runs**
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
+- The [results](benchmark.md#the-results) and the [interview](benchmark.md#the-interview),
+  on 2026-10-10: three dry runs of "Oasis by the Sea benchmark start" wrote their
+  scorecards and results in folders of their own, and a 3-game-minute GLM 5.3 Flash
+  episode (an unversioned trial) wrote its results, was saved and closed, and was then
+  interviewed. The model answered all four questions in 1 min 40 s without calling a
+  tool; 96% of the interview's 152,164 tokens were read from the provider's cache, and
+  it cost $0.006, kept in `interview.json`. The run's own cost in `run.json` stayed the
+  sum of its gameplay and preparation requests, and `events.jsonl` has no interview
+  events. The first question said the budgets were not like for like (3 minutes beside
+  the person's 33).
 - Run recording and video rendering, with scripted inputs and in a 2-game-minute
   GLM 5.3 Flash episode on 2026-10-08.
 - On a paused game: minimap clicks and `Z` move and zoom the camera, and the keep
@@ -163,28 +194,17 @@ between September and October 2026.
 - Tool changes made before the first 25-game-minute run, not yet used live: woodcutter
   spots ranked by nearby trees, placement checks waiting for a valid reader sample, and
   `cost` in placement results.
-- `set_rations`, and good and bad things in `build_structure` (both 1.2.0), tested with
-  simulated games. The ration plates' positions were clicked live on 2026-10-10 and the
-  reader showed each level; the good- and bad-thing buttons were clicked live on the
-  same day and each showed its own tooltip and price, and the Dancing Bear entered
-  placement with the game's placement id for it. Their footprints are from static
-  analysis of the game files, the same method as the other buildings'. Neither tool has
-  placed or set anything in a live run yet, and whether the build tray goes back to the
-  Town page after a subpage has not been seen.
+- Good and bad things' footprints are from static analysis of the game files, the same
+  method as the other buildings'; the town garden's refused spots (above) may mean its
+  footprint is larger than recorded.
 - Reading-only replies costing game time from the 12th in a row instead of ending the
   run, and the warning after each reply without a tool call. Not yet run live.
-- The results of every run ([The results](benchmark.md#the-results)): built from reader
-  samples and written for each kind of run by `npm run episodes`, tested with recorded
-  readings (`npm test`); no run has written them yet. The reader's `buildings` counts:
-  the same count, made by a scratch build of the reader, ran live on both reference
-  games' end saves on 2026-10-10; the committed reader has not run with it yet.
-- The interview after an episode ([The interview](benchmark.md#the-interview)): the
-  questions, the result beside the reference game, refused tool calls, the transcript
-  files and the run's record left unchanged, with fake models (`npm test`), and the
-  interview files in published bundles. No model has been interviewed yet, so the host
-  keeping a finished run's conversation, the cached requests, real models' answers and
-  the runner's part are not seen live. The reference games' building counts were read
-  live from the players' end saves on 2026-10-10.
+- Results written for a reference game or a do-nothing baseline by the runner: only dry
+  runs and an agent episode have written them live. The two reference games' results
+  were written afterwards from their recorded readings.
+- The interview's refusal of tool calls, its retries and the 30-minute stop, with fake
+  models (`npm test`): the live trial's model called no tool. The interview files in
+  published bundles are tested in code only.
 - Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that
   enforces it. Resumable series: the episode outcomes, which attempts count, where a
   series resumes and the settings a resume must match. The automatic re-run after an

@@ -15,13 +15,14 @@ type Settlement = { popularity_factors: Record<string, number>; church_bonus?: n
 /**
  * The monthly popularity factors as the game's Popularity report lists them, in points, zeros left
  * out: food once (its parts are in `foodPopularity`), and religion with the church and cathedral
- * bonus, which the reader gives apart from the blessing. They add up to the game's coming change.
+ * bonus, which the reader gives apart from the blessing and in the same units (75 for a church and
+ * a cathedral, which the game showed as +3; live 2026-10-10). They add up to the game's coming change.
  */
 export function popularityFactors(s: Settlement) {
   const factors: Record<string, number> = {};
   for (const [name, units] of Object.entries(s.popularity_factors))
     if (!foodParts.has(name)) factors[name] = points(units);
-  if (s.church_bonus) factors.religion = (factors.religion ?? 0) + s.church_bonus;
+  if (s.church_bonus) factors.religion = (factors.religion ?? 0) + points(s.church_bonus);
   return Object.fromEntries(Object.entries(factors).filter(([, value]) => value !== 0));
 }
 

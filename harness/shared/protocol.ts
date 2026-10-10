@@ -131,7 +131,7 @@ export type Stats = {
       efficiency: number;
       upcoming_popularity: number;
       popularity_factors: Record<string, number>;
-      /** The church and cathedral popularity bonus in points, apart from the blessing in `religion`; null when unreadable. */
+      /** The church and cathedral popularity bonus, apart from the blessing in `religion`, in the factors' units (25 per point); null when unreadable. */
       church_bonus?: number | null;
       /** The keep panel's tax figure: gold a month at the current tax level, negative for a bribe. */
       tax_amount?: number;

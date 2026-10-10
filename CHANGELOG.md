@@ -17,7 +17,17 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.2.1] - 2026-10-10
+
+Comparable with 1.2.0: a fix to what the agent is shown of its popularity.
+
+### Benchmark
+
+- `status` and each observation's stats count the church and cathedral bonus in
+  popularity points. The reader gives it in the factors' own units, 25 per point, so a
+  church and a cathedral showed as religion +75 instead of +3 and the factors did not
+  add up to the coming change. Found on the reference games' end saves with the
+  committed reader.
 
 ### Harness
 
