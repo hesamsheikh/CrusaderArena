@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import { createModels, type AssistantMessage, type Model, type Usage } from "@earendil-works/pi-ai";
+import { createModels, type AssistantMessage, type Message, type Model, type Usage } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
@@ -9,7 +9,7 @@ const defineTool = <T extends TSchema>(tool: AgentTool<T>): AgentTool<any> =>
   tool;
 import type { RunMemory } from "./run-memory.js";
 import type { ObservationCycle, Session } from "./session.js";
-import { requestTimeout } from "./session.js";
+import { minutesSeconds, requestTimeout } from "./session.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
 import { atlasPage, atlasPages, type AtlasPageId } from "./visual-atlas.js";
@@ -61,13 +61,7 @@ import type { RunConfig } from "../shared/protocol.js";
 /** The tool-call ID of the host's own screenshots, which never wait for the minimum turn. */
 export const HOST_OBSERVATION = "host-observation";
 
-/** Whole seconds as minutes and seconds: "23 min 41 s", "25 min", "40 s". */
-export function minutesSeconds(seconds: number) {
-  const total = Math.max(0, Math.round(seconds));
-  const m = Math.floor(total / 60),
-    s = total % 60;
-  return m && s ? `${m} min ${s} s` : m ? `${m} min` : `${s} s`;
-}
+export { minutesSeconds };
 
 /**
  * Game time left, used and budgeted, and real minutes left, for each observation and the end of
@@ -1523,6 +1517,67 @@ export function reflectionReply(
     signal: AbortSignal.timeout(180_000),
   });
 }
+/**
+ * One request of the interview after an episode (interview.ts): the run's conversation and the
+ * interview so far, with the run's system prompt and tools. Its cost goes to `onCost`, apart from
+ * the run's, and nothing is recorded in the run's events.
+ */
+export async function interviewReply(
+  profile: ModelProfile,
+  apiKey: string,
+  messages: Message[],
+  systemPrompt: string,
+  tools: AgentTool<any>[],
+  runtime: AgentRuntime,
+  onCost: (dollars: number, source: CostSource) => void,
+  signal: AbortSignal,
+) {
+  const result = await repeatRequest(profile, apiKey, messages, systemPrompt, tools, runtime, {
+    timeoutMs: 180_000,
+    // Answers run longer than a playbook: a whole reply may take up to 10 minutes.
+    signal: AbortSignal.any([signal, AbortSignal.timeout(600_000)]),
+    onCost,
+  });
+  if (result.stopReason === "error" || result.stopReason === "aborted")
+    throw new Error(result.errorMessage || `The interview request did not complete (${result.stopReason}).`);
+  return result;
+}
+/** The messages a provider is sent: the agent's own kinds of message are left out. */
+export const providerMessages = (messages: AgentMessage[]) =>
+  messages.filter((m): m is Message => m.role === "user" || m.role === "assistant" || m.role === "toolResult");
+/**
+ * A request outside the agent loop that repeats the run's conversation: given the gameplay
+ * request's system prompt and tools, the provider's prompt cache covers what they share.
+ */
+async function repeatRequest(
+  profile: ModelProfile,
+  apiKey: string,
+  messages: Message[],
+  systemPrompt: string,
+  tools: AgentTool<any>[],
+  runtime: AgentRuntime,
+  { timeoutMs, signal, onCost }: { timeoutMs: number; signal: AbortSignal; onCost: (dollars: number, source: CostSource) => void },
+) {
+  const cost = costTracking(profile, onCost);
+  const result = await registry(profile).completeSimple(
+    { ...modelConfig(profile), contextWindow: runtime.config.contextBudget },
+    { systemPrompt, messages, ...(tools.length ? { tools } : {}) },
+    {
+      apiKey,
+      // Reasoning models (Kimi K3) spend part of the limit on reasoning; 2048 cut a handoff short.
+      ...requestOptions(profile),
+      maxTokens: Math.max(8192, modelSettings(profile).maxTokens),
+      maxRetries: 0,
+      timeoutMs,
+      signal,
+      maxRetryDelayMs: 3000,
+      onPayload: payloadHook(profile, messages, runtime),
+      ...cost.options,
+    },
+  );
+  cost.settle(result.usage);
+  return result;
+}
 async function textReply(
   profile: ModelProfile,
   apiKey: string,
@@ -1533,34 +1588,11 @@ async function textReply(
   { kind, timeoutMs, signal }: { kind: "compaction" | "reflection"; timeoutMs: number; signal: AbortSignal },
 ) {
   const started = performance.now();
-  const cost = costTracking(profile, (dollars, source) => runtime.cost?.(kind, dollars, source));
-  const context = {
-    systemPrompt,
-    messages: messages.filter(
-      (m): m is import("@earendil-works/pi-ai").Message =>
-        m.role === "user" ||
-        m.role === "assistant" ||
-        m.role === "toolResult",
-    ),
-    ...(tools.length ? { tools } : {}),
-  };
-  const result = await registry(profile).completeSimple(
-    { ...modelConfig(profile), contextWindow: runtime.config.contextBudget },
-    context,
-    {
-      apiKey,
-      // Reasoning models (Kimi K3) spend part of the limit on reasoning; 2048 cut a handoff short.
-      ...requestOptions(profile),
-      maxTokens: Math.max(8192, modelSettings(profile).maxTokens),
-      maxRetries: 0,
-      timeoutMs,
-      signal,
-      maxRetryDelayMs: 3000,
-      onPayload: payloadHook(profile, context.messages, runtime),
-      ...cost.options,
-    },
-  );
-  cost.settle(result.usage);
+  const result = await repeatRequest(profile, apiKey, providerMessages(messages), systemPrompt, tools, runtime, {
+    timeoutMs,
+    signal,
+    onCost: (dollars, source) => runtime.cost?.(kind, dollars, source),
+  });
   runtime.timing(performance.now() - started, result.stopReason, kind);
   if (
     result.stopReason === "error" ||

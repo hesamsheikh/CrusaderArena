@@ -68,6 +68,10 @@ describes the task and the scoring in full; this is the short version for benchm
   [tool reference](https://github.com/hesamsheikh/CrusaderArena/blob/main/docs/tools.md)). Each turn that runs
   the game lasts at least 8 game seconds. Long conversations are compacted into a handoff the
   model writes itself.
+- **Interviews** (from version 1.2.0). After each episode the model is shown its result beside
+  a person's game on the same map and asked about its game and the benchmark, in the
+  conversation it played in, with the tools off. `interview.md` holds the transcript; it does
+  not affect the score.
 - **Versions.** Benchmark versions are `MAJOR.MINOR.PATCH`: a major version changes the task or
   scoring, a minor version what the model is told or can do, a patch fixes the harness. Runs
   compare within one minor version, across its patches; the accepted file fingerprints are in
@@ -110,6 +114,8 @@ v1.0/                                     benchmark version, major.minor
           logs.jsonl                      the readable log
           notifications.jsonl             messages the game showed
           memory.json, notebook.md, playbook.md   the agent's own notes
+          interview.md, interview.json    the agent's interview after the episode
+          results.json, results.md        the whole state of the game at the end, as data and tables
 ```
 
 ## Comparing runs

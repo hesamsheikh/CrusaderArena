@@ -145,6 +145,12 @@ export type Stats = {
       granaries: { tile: [number, number]; amount: number; capacity: number }[];
       truncated: boolean;
     } | null;
+    /**
+     * The local player's building records counted by engine type number (building-types.ts),
+     * parts kept as their own records included (a stockpile's piles, a quarry's pile, the keep's
+     * doors); null when unavailable, absent from readers before it.
+     */
+    buildings?: Record<string, number> | null;
     /** The building whose panel is open; null when none. */
     selected_building?: {
       id: number;
@@ -421,6 +427,15 @@ export type State = {
   tokens: number;
   turns: number;
   logs: LogEntry[];
+  /** The interview after an episode (npm run episodes): the one in progress, or the last one. */
+  interview?: {
+    runId: string;
+    status: "running" | "completed" | "failed" | "stopped" | "skipped";
+    answered: number;
+    questions: number;
+    /** Why it was skipped or ended early. */
+    error?: string;
+  };
 };
 export function validateFrameAction(
   action: GameAction,

@@ -194,6 +194,14 @@ export class ObservationCycle {
   }
 }
 
+/** Whole seconds as minutes and seconds: "23 min 41 s", "25 min", "40 s". */
+export function minutesSeconds(seconds: number) {
+  const total = Math.max(0, Math.round(seconds));
+  const m = Math.floor(total / 60),
+    s = total % 60;
+  return m && s ? `${m} min ${s} s` : m ? `${m} min` : `${s} s`;
+}
+
 /** SDK timeout values must be positive integers even with a fractional monotonic clock. */
 export function requestTimeout(remainingMs: number) {
   return Math.max(1, Math.floor(Math.min(90000, remainingMs)));

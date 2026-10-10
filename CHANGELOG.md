@@ -17,6 +17,29 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- After each episode that counts, `npm run episodes` has the host interview the agent in
+  the conversation it played in, with the tools off: its result beside the reference game
+  a person played on the same map, then how the person played, then what it thinks of the
+  benchmark, one question at a time. The transcript goes to `interview.md` and
+  `interview.json` in the run's folder and is published with the run; the interview's cost
+  is kept apart from the run's. `--no-interview` leaves it out. See
+  [The interview](docs/benchmark.md#the-interview).
+- The reference games on Oasis by the Sea and Large Barren Desert, and what doing nothing
+  scores on both benchmark start saves in 33⅓ game minutes, are recorded in
+  `harness/server/baselines.ts`.
+- Every run `npm run episodes` makes (agent episodes, reference games, do-nothing
+  baselines and dry runs) records the whole state at its end in `results.json` and as
+  tables in `results.md`: net worth with every stored good, population, popularity and its
+  factors, taxes, food, efficiency, storage and buildings. They are published with each
+  episode. Do-nothing baselines and dry runs now get folders like reference games. See
+  [The results](docs/benchmark.md#the-results).
+- The reader counts the player's buildings by type (`buildings`). The agent is not shown
+  them.
+
 ## [1.2.0] - 2026-10-10
 
 Not comparable with 1.1.4: the agent is told that population and popularity count, sees

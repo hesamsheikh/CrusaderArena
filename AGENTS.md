@@ -35,10 +35,10 @@ git identity or other git configuration.
 
 | Path | Contents | Read |
 | --- | --- | --- |
-| `harness/server/` | Host server (`index.ts`), run loop (`controller.ts`, `session.ts`), agent and tools (`model.ts` plus `placement.ts`, `anchors.ts`, `economy.ts`, `tile-map.ts`, `map-view.ts`), prompt assembly (`preparation.ts`), context and compaction (`context.ts`), what the model sees of game state (`status.ts`, `game-events.ts`), game connection (`device.ts`), storage (`store.ts`, `run-memory.ts`), request costs (`cost.ts`), episodes, series and reports (`episodes.ts`, `series.ts`, `run-report.ts`), benchmark versions (`benchmark-version.ts`), recording (`recorder.ts`, `video.ts`) | [agent](docs/agent.md), [context](docs/context.md), [tools](docs/tools.md), [harness](docs/harness.md) |
+| `harness/server/` | Host server (`index.ts`), run loop (`controller.ts`, `session.ts`), agent and tools (`model.ts` plus `placement.ts`, `anchors.ts`, `economy.ts`, `tile-map.ts`, `map-view.ts`), prompt assembly (`preparation.ts`), context and compaction (`context.ts`), what the model sees of game state (`status.ts`, `game-events.ts`), game connection (`device.ts`), storage (`store.ts`, `run-memory.ts`), request costs (`cost.ts`), episodes, series, the results of every run, the interview after an episode and reports (`episodes.ts`, `series.ts`, `results.ts`, `interview.ts`, `run-report.ts`), benchmark versions (`benchmark-version.ts`), recording (`recorder.ts`, `video.ts`) | [agent](docs/agent.md), [context](docs/context.md), [tools](docs/tools.md), [harness](docs/harness.md) |
 | `harness/shared/protocol.ts` | Types shared by server and dashboard: run settings, model settings, allowed keys | |
 | `harness/src/` | The React dashboard | [harness](docs/harness.md) |
-| `prompt/` | Everything the model reads: controls, game reference, benchmark rules, objectives | [context](docs/context.md), [benchmark](docs/benchmark.md) |
+| `prompt/` | Everything the model reads: controls, game reference, benchmark rules, objectives, the interview and the reference games it shows | [context](docs/context.md), [benchmark](docs/benchmark.md) |
 | `src/windows/` | The C++ reader: launcher, DLL and probe, cross-compiled for Windows and run under Proton | [reader](docs/reader.md) |
 | `tools/ubuntu/` | Game-machine helpers: window bridge, reader stream, memory guard, recorder, control monitor, setup scripts | [setup](docs/setup.md), [harness](docs/harness.md) |
 | `tools/video/` | Run video renderer | [harness](docs/harness.md#run-videos) |

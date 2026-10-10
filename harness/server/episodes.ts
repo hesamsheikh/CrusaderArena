@@ -1,7 +1,8 @@
 /**
  * Unattended benchmark episodes through the running dashboard (npm run dev or start):
  * start the game through Steam on the Ubuntu host, load a save by name, pause,
- * run the agent with a game-time budget, record a scorecard, close the game.
+ * run the agent with a game-time budget, record a scorecard and the results (the whole state
+ * at the end: results.ts), close the game. Every kind of run below records the same results.
  *
  *   npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
  *     --benchmark "Oasis by the Sea construction" --model "Kimi K3" \
@@ -15,6 +16,10 @@
  * run once more, then pauses it. --resume <series id> continues a paused series from that episode
  * with the playbook it started from. A series needs a benchmark version (benchmark-version.ts) and
  * a game machine whose helper and reader files match this checkout, unless --unversioned.
+ *
+ * After each episode that counts, once it is scored and the game saved and closed, the host
+ * interviews the agent about its game in the conversation it played in (interview.ts); the
+ * transcript goes to interview.md in the run's folder. --no-interview leaves it out.
  *
  * --idle measures the do-nothing baseline: no agent, the game runs untouched at the benchmark's
  * speed for the same game time, then the scorecard is read.
@@ -38,6 +43,7 @@ import { parseArgs } from "node:util";
 import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
 import { idleBaseline } from "./baselines.js";
+import { resultsMarkdown, runResults, type RunKind } from "./results.js";
 import { renderVideo, type VideoResult } from "./video.js";
 import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
@@ -70,6 +76,7 @@ const { values: opts } = parseArgs({
     human: { type: "boolean", default: false },
     restart: { type: "boolean", default: false },
     "keep-game": { type: "boolean", default: false },
+    "no-interview": { type: "boolean", default: false },
     port: { type: "string", default: process.env.PORT || "4317" },
   },
 });
@@ -399,9 +406,9 @@ async function episode(
     const baseline = idleBaseline(plan.save, plan.config.gameMinutes);
     let run: Run | undefined;
     let lastGood: State | undefined;
-    let idleSpeed: GameSpeedSetting | undefined;
+    let idleGame: { speed: GameSpeedSetting; playedSeconds: number } | undefined;
     let humanGame: HumanGame | undefined;
-    if (opts.idle) idleSpeed = await idle(plan.config.gameMinutes, plan.config.wallLimitMinutes);
+    if (opts.idle) idleGame = await idle(plan.config.gameMinutes, plan.config.wallLimitMinutes);
     else if (opts.human) {
       humanGame = await human(plan.config.gameMinutes, plan.config.wallLimitMinutes);
       lastGood = humanGame.lastGood;
@@ -433,13 +440,14 @@ async function episode(
       await sleep(500);
       final = await api<State>("state");
     }
-    const card = final.stats?.status === "ok" || !lastGood
-      ? scorecard(final, run, "final", baseline)
-      : scorecard(lastGood, run, "last_observed", baseline);
+    const source = final.stats?.status === "ok" || !lastGood ? "final" : "last_observed";
+    const reading = source === "final" ? final : lastGood!;
+    const card = scorecard(reading, run, source, baseline);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const kind: RunKind = run ? "agent" : humanGame ? "human" : opts.idle ? "idle" : "dry-run";
     const dir = run
       ? path.join("harness/runtime/runs", run.folder)
-      : path.join("harness/runtime/episodes", humanGame ? `human-${stamp}` : "");
+      : path.join("harness/runtime/episodes", `${kind}-${stamp}`);
     mkdirSync(dir, { recursive: true });
     if (humanGame)
       log(`Your game: net worth ${card.net_worth}${card.net_worth_growth !== undefined ? `, ${card.net_worth_growth} above doing nothing` : ""}${card.source === "final" ? "" : " (the last reading before the game was lost)"}`);
@@ -462,16 +470,33 @@ async function episode(
       }, run ? episodeSaveName(run) : humanSaveName(plan.save, new Date()), plan.save, keysFor);
       log(gameSave.error ? `Game save failed: ${gameSave.error}` : `Game saved as "${gameSave.name}" (${gameSave.file})`);
     }
-    const file = path.join(dir, run ? "episode.json" : humanGame ? "scorecard.json" : `${opts.idle ? "idle" : "dry-run"}-${stamp}.json`);
+    const file = path.join(dir, run ? "episode.json" : "scorecard.json");
     writeFileSync(file, JSON.stringify({
       episode: n, save: plan.save, benchmark: plan.benchmark, ...(series ? { series } : {}),
-      ...(opts.idle ? { idle: { gameMinutes: plan.config.gameMinutes, gameSpeed: idleSpeed } } : {}),
+      ...(idleGame ? { idle: { gameMinutes: plan.config.gameMinutes, gameSpeed: idleGame.speed, playedSeconds: idleGame.playedSeconds } } : {}),
       ...(humanGame ? { human: { gameMinutes: plan.config.gameMinutes, gameSpeed: humanGame.speed, playedSeconds: humanGame.playedSeconds, ended: humanGame.ended } } : {}),
       ...card,
       ...(screenshot ? { screenshot } : {}),
       ...(gameSave ? { game_save: gameSave } : {}),
     }, null, 2));
     log(`Scorecard: ${file}`);
+    // The whole state at the end, in one format for every kind of run (results.ts).
+    const observation = reading.stats?.observation;
+    if (observation) {
+      const results = runResults(observation, {
+        kind,
+        player: run ? run.model.name : humanGame ? "A person" : "Nobody",
+        save: plan.save,
+        ...(run ? { benchmark: plan.benchmark, run: { id: run.id, folder: run.folder } } : {}),
+        source,
+        readAt: reading.stats?.captured_unix_ms,
+        playedSeconds: run ? run.progress?.budget?.usedGameSeconds : humanGame ? humanGame.playedSeconds : idleGame ? idleGame.playedSeconds : 0,
+        budgetSeconds: plan.config.gameMinutes * 60,
+      });
+      writeFileSync(path.join(dir, "results.json"), JSON.stringify(results, null, 2) + "\n");
+      writeFileSync(path.join(dir, "results.md"), resultsMarkdown(results));
+      log(`Results: ${path.join(dir, "results.md")}`);
+    } else log("No results: the game was never read.");
     // Renders run one at a time on this Mac, in the background of the next episode.
     if (run?.config?.recordVideo && run.progress?.recording?.frames)
       renders.push(renderVideo(dir, (text) => log(`Episode ${n}: ${text}`)));
@@ -506,8 +531,9 @@ async function idle(gameMinutes: number, wallLimitMinutes: number) {
     tick = (await clockReading())?.tick ?? tick;
   }
   await setPaused(true);
-  log(`Idle baseline: paused after ${Math.round((tick - first) / TICKS_PER_GAME_SECOND)} game seconds`);
-  return speed;
+  const playedSeconds = Math.round((tick - first) / TICKS_PER_GAME_SECOND);
+  log(`Idle baseline: paused after ${playedSeconds} game seconds`);
+  return { speed, playedSeconds };
 }
 
 /** The reader's game clock and when the sample was taken, or null without a valid sample. */
@@ -591,6 +617,52 @@ async function human(gameMinutes: number, wallLimitMinutes: number): Promise<Hum
   const end = (await clockReading())?.tick ?? tick;
   log(`Your game: paused after ${Math.round((end - first) / TICKS_PER_GAME_SECOND)} game seconds`);
   return { speed, playedSeconds: Math.round((end - first) / TICKS_PER_GAME_SECOND), ended: "budget", lastGood };
+}
+
+/** How long the runner waits for an interview before stopping it. */
+const INTERVIEW_MINUTES = 30;
+
+/**
+ * The interview after an episode that counts (interview.ts): the host asks the agent about its
+ * game in the conversation it played in, now that the episode is scored and the game saved and
+ * closed. Its outcome is logged and never changes the episode's result.
+ */
+async function interview(runId: string, series: RunSeries) {
+  try {
+    await api("agent/interview", { runId, series });
+  } catch (error) {
+    log(`No interview: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+  let deadline = Date.now() + INTERVIEW_MINUTES * 60_000;
+  let stopSent = false;
+  let answered = 0;
+  for (;;) {
+    await sleep(2000);
+    const current = (await api<State>("state").catch(() => undefined))?.interview;
+    if (current?.runId === runId) {
+      if (current.status !== "running") {
+        log(current.status === "completed"
+          ? `Interview: ${current.answered} answers in interview.md`
+          : `Interview ${current.status}${current.error ? `: ${current.error}` : ""}${current.answered ? `; ${current.answered} of ${current.questions} answers in interview.md` : ""}`);
+        return;
+      }
+      if (current.answered > answered) {
+        answered = current.answered;
+        log(`Interview: ${answered} of ${current.questions} questions answered`);
+      }
+    }
+    if (Date.now() > deadline) {
+      if (stopSent) {
+        log("The interview did not stop; going on without it.");
+        return;
+      }
+      log(`The interview is still running after ${INTERVIEW_MINUTES} minutes; stopping it.`);
+      await api("agent/stop", {}).catch(() => {});
+      stopSent = true;
+      deadline = Date.now() + 60_000;
+    }
+  }
 }
 
 /**
@@ -725,6 +797,8 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     record.results.push(result);
     writeSeries(record);
     log(`Episode ${n}, attempt ${attempt}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
+    if (counts(result) && result.run && !opts["no-interview"])
+      await interview(result.run, { id: record.id, episode: n, episodes: record.episodes, ...(attempt > 1 ? { attempt } : {}) });
     if (benchmarkSaveChanged) {
       pause(`after episode ${n}: ${benchmarkSaveChanged}; check the benchmark save before continuing`);
       break;

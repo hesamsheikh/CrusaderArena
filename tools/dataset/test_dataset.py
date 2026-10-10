@@ -107,6 +107,10 @@ def make_run(runs: Path, n: int, *, events_extra='', logs_extra='', dirty=False,
         'popularity': 90, 'total_food': 40, 'goods': {'bread': 40, 'stone': 20}, 'structures_map_wide': 20, 'troops': 0}))
     (d / 'inputs.json').write_text(json.dumps({'systemPrompt': 'You play the game.'}))
     (d / 'playbook.md').write_text(f'Notes after episode {n}.\n')
+    (d / 'interview.md').write_text(f'# Interview: Test Model on Oasis by the Sea\n\nI kept my notes in /Users/tester/notes.\n')
+    (d / 'interview.json').write_text(json.dumps({'format': 1, 'status': 'completed', 'exchanges': [{'answer': 'More bakeries.'}]}))
+    (d / 'results.json').write_text(json.dumps({'format': 1, 'kind': 'agent', 'net_worth': 1500 + n, 'buildings': {'Hovel': 3}}))
+    (d / 'results.md').write_text(f'# Results: Test Model on Oasis by the Sea\n\n| Net worth | {1500 + n} |\n')
     goods = {'bread': 40, 'stone': 20, 'wood_planks': 10}
     events = ''.join([
         line(1, {'type': 'preparation_reply', 'reply': {'usage': usage(100)}}),
@@ -222,6 +226,10 @@ class PackageTest(Fixture):
                                                             'episode-1/episode.parquet', 'episode-1/timeline.parquet',
                                                             'episode-1/video.mp4', 'episode-2/events.jsonl'}, True)
         self.assertFalse(any(f['path'].startswith(('episode-1/recording', 'episode-1/checkpoint')) for f in m['files']))
+        # The interview after each episode is published, scrubbed like the agent's other text.
+        self.assertTrue({'episode-1/interview.md', 'episode-2/interview.json', 'episode-1/results.json',
+                         'episode-2/results.md'} <= {f['path'] for f in m['files']})
+        self.assertNotIn('/Users/tester', (result.dest / 'episode-1' / 'interview.md').read_text())
 
         staged = result.dest / 'episode-1'
         events = (staged / 'events.jsonl').read_text()

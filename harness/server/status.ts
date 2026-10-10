@@ -13,7 +13,8 @@ const points = (value?: number) =>
 type Observation = NonNullable<Stats["observation"]>;
 type Settlement = NonNullable<Observation["settlement"]>;
 
-const dateOf = (s: Settlement) => `${months[s.month] ?? `month ${s.month}`} ${s.year}`;
+/** The game's date, as "September 1200" (month 0 is January). */
+export const dateOf = (s: Pick<Settlement, "month" | "year">) => `${months[s.month] ?? `month ${s.month}`} ${s.year}`;
 const populationOf = (o: Observation) => ({
   current: o.population,
   ...(o.settlement ? { housing: o.settlement.housing_cap, idle_peasants: o.settlement.peasants_available } : {}),

@@ -128,7 +128,7 @@ v<major>.<minor>/<benchmark>/<model ID with "/" as "--">/<series id>/
   episode-<n>/
     episode.parquet  timeline.parquet  final-overview.jpg  video.mp4
     run.json  inputs.json  episode.json  events.jsonl  logs.jsonl  notifications.jsonl
-    memory.json  notebook.md  playbook.md
+    memory.json  notebook.md  playbook.md  interview.md  interview.json  results.json  results.md
     images/<hash>.webp
 ```
 

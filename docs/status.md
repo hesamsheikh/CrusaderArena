@@ -173,6 +173,18 @@ between September and October 2026.
   Town page after a subpage has not been seen.
 - Reading-only replies costing game time from the 12th in a row instead of ending the
   run, and the warning after each reply without a tool call. Not yet run live.
+- The results of every run ([The results](benchmark.md#the-results)): built from reader
+  samples and written for each kind of run by `npm run episodes`, tested with recorded
+  readings (`npm test`); no run has written them yet. The reader's `buildings` counts:
+  the same count, made by a scratch build of the reader, ran live on both reference
+  games' end saves on 2026-10-10; the committed reader has not run with it yet.
+- The interview after an episode ([The interview](benchmark.md#the-interview)): the
+  questions, the result beside the reference game, refused tool calls, the transcript
+  files and the run's record left unchanged, with fake models (`npm test`), and the
+  interview files in published bundles. No model has been interviewed yet, so the host
+  keeping a finished run's conversation, the cached requests, real models' answers and
+  the runner's part are not seen live. The reference games' building counts were read
+  live from the players' end saves on 2026-10-10.
 - Benchmark versions: the fingerprint, `benchmark-versions.json` and the test that
   enforces it. Resumable series: the episode outcomes, which attempts count, where a
   series resumes and the settings a resume must match. The automatic re-run after an

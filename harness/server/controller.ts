@@ -1,18 +1,19 @@
 import path from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { layoutNote, visualGuide } from "./visual-guide.js";
 import { atlasIndex, atlasPage, constructionAtlasInstalled } from "./visual-atlas.js";
 import type { Agent, AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type {
   Frame,
   GameSpeedSetting,
   ModelProfile,
   Run,
+  RunSeries,
   RuntimeProgress,
 } from "../shared/protocol.js";
-import { EMPTY_REPLY_LIMIT, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
+import { EMPTY_REPLY_LIMIT, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, isOpenRouter } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
 import { setGameSpeed, type SpeedControl } from "./game-speed.js";
 import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
@@ -28,12 +29,22 @@ import {
   compactHandoff,
   gameControls,
   HOST_OBSERVATION,
+  interviewReply,
   makeAgent,
   prepareModel,
+  providerMessages,
   reflectionReply,
   type AgentRuntime,
   type CostSource,
 } from "./model.js";
+import {
+  conductInterview,
+  interviewMarkdown,
+  interviewQuestions,
+  interviewTokens,
+  type InterviewCard,
+  type InterviewRecord,
+} from "./interview.js";
 import {
   benchmarkMarkdown,
   benchmarkSpec,
@@ -140,6 +151,8 @@ export class RunController {
         system: string,
         tools: AgentTool<any>[],
       ) => Promise<{ text: string; usage: { totalTokens: number }; stopReason?: string }>;
+      /** Replaces the interview's model request. */
+      interview?: (messages: Message[], system: string, tools: AgentTool<any>[]) => Promise<AssistantMessage>;
       spawnRecorder?: (args: string[]) => ChildProcessWithoutNullStreams;
       /** The playbook a learning episode (run.series) starts with: what the previous episode left. */
       playbook?: string;
@@ -963,6 +976,89 @@ export class RunController {
     } catch (error) {
       this.log("error", `Reflection failed (${error instanceof Error ? error.message : String(error)}); the playbook stays as the agent last wrote it.`);
     }
+  }
+  /**
+   * The interview after the episode (interview.ts), once the episode runner has scored it and
+   * written episode.json: the questions go to the model one at a time in the conversation it
+   * played in, with the run's system prompt and tools, so the provider's cache covers the game.
+   * Tool calls are refused. The transcript and its cost go to interview.json and interview.md;
+   * the run's own record stays as the run left it. `answered` hears of each answer.
+   */
+  async interview(
+    signal: AbortSignal,
+    series?: RunSeries,
+    answered: (count: number, questions: number) => void = () => {},
+  ): Promise<InterviewRecord | { skipped: string }> {
+    const folder = this.memory.directory;
+    const scorecard = path.join(folder, "episode.json");
+    if (!this.prepared) return { skipped: "the run ended before timed play" };
+    if (!existsSync(scorecard)) return { skipped: "the run has no scorecard (episode.json)" };
+    const card = JSON.parse(readFileSync(scorecard, "utf8")) as InterviewCard;
+    const plan = interviewQuestions(card, this.progress.endError?.replace(/^Error: /, ""));
+    if ("skipped" in plan) return plan;
+    const record: InterviewRecord = {
+      format: 1,
+      run: { id: this.run.id, folder: this.run.folder, ...((series ?? this.run.series) ? { series: series ?? this.run.series } : {}) },
+      model: { name: this.run.model.name, modelId: this.run.model.modelId },
+      benchmark: { name: this.run.benchmarkType ?? null, version: this.run.benchmark?.version ?? null },
+      map: card.map ?? null,
+      status: "running",
+      startedAt: Date.now(),
+      context: { messages: this.agent.state.messages.length, compactions: this.memory.compactions },
+      exchanges: [],
+      tokens: interviewTokens([]),
+      cost: null,
+      costSource: null,
+    };
+    const save = () => {
+      record.tokens = interviewTokens(record.exchanges);
+      const safe = this.store.redact(record) as InterviewRecord;
+      writeFileSync(path.join(folder, "interview.json"), JSON.stringify(safe, null, 2) + "\n", { mode: 0o600 });
+      writeFileSync(path.join(folder, "interview.md"), interviewMarkdown(safe), { mode: 0o600 });
+    };
+    const system = this.systemPromptText;
+    const tools = this.agent.state.tools;
+    const request = (messages: Message[]) =>
+      this.dependencies.interview
+        ? this.dependencies.interview(messages, system, tools)
+        : interviewReply(this.profile, this.key, messages, system, tools, this.runtime, (dollars, source) => {
+            record.cost = (record.cost ?? 0) + dollars;
+            record.costSource = source === "prices" || record.costSource === "prices" ? "prices" : "billed";
+          }, signal);
+    // Transient provider failures are retried as during play; the game is not involved.
+    const ask = async (messages: Message[]) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await request(messages);
+        } catch (error) {
+          const text = error instanceof Error ? error.message : String(error);
+          if (attempt >= RETRY_DELAYS_MS.length || !isTransientProviderError(text) || signal.aborted) throw error;
+          this.log("error", `An interview request failed (${text}); retrying.`);
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+        }
+      }
+    };
+    save();
+    answered(0, plan.questions.length);
+    this.log("system", `Interview: ${plan.questions.length} questions about the game.`);
+    try {
+      await conductInterview(providerMessages(this.agent.state.messages), plan.questions, ask, (exchange) => {
+        record.exchanges.push(exchange);
+        save();
+        this.log("agent", `${exchange.title}: ${exchange.answer || "(no answer)"}`);
+        answered(record.exchanges.length, plan.questions.length);
+      });
+      record.status = "completed";
+    } catch (error) {
+      record.status = signal.aborted ? "stopped" : "failed";
+      record.error = error instanceof Error ? error.message : String(error);
+      this.log("error", `Interview ${record.status}: ${record.error}`);
+    }
+    // OpenRouter's billed amount arrives at the very end of a reply's stream.
+    if (isOpenRouter(this.profile.baseUrl)) await new Promise((resolve) => setTimeout(resolve, 1000));
+    record.endedAt = Date.now();
+    save();
+    return record;
   }
   private async finalizePause() {
     // Host-only finalization; no agent actions after stopping and no blind P toggle.

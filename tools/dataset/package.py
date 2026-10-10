@@ -49,8 +49,11 @@ UNVERSIONED = 'unversioned'
 SEMVER = re.compile(r'(\d+)\.(\d+)\.(\d+)')
 
 REQUIRED = ['run.json', 'inputs.json', 'episode.json', 'events.jsonl', 'logs.jsonl', 'video.mp4']
-# The final overview is taken only when the final pause was confirmed and the camera is known.
-OPTIONAL = ['final-overview.jpg', 'notifications.jsonl', 'memory.json', 'notebook.md', 'playbook.md']
+# The final overview is taken only when the final pause was confirmed and the camera is known;
+# the interview only after an episode that counts, on a map with a reference game; the results
+# by episodes run since they were added.
+OPTIONAL = ['final-overview.jpg', 'notifications.jsonl', 'memory.json', 'notebook.md', 'playbook.md',
+            'interview.md', 'interview.json', 'results.json', 'results.md']
 # The video is rendered from these; text replaced in them may also be drawn in the video.
 VIDEO_SOURCES = ['run.json', 'episode.json', 'events.jsonl']
 # How a run whose episode.json predates `valid` must end: on its game-time budget.

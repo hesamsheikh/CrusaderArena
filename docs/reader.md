@@ -94,6 +94,7 @@ in the run's `events.jsonl`.
 | `settlement` | Month and year, housing capacity, idle peasants, total food, rations, food types eaten and available, worker efficiency, popularity factors and upcoming change, the church and cathedral bonus (`church_bonus`), and the keep panel's tax figure (`tax_amount`) | Popularity factors are 25 per point shown in the game; `food` is `rationing` and `food_variety` added up, and the game's religion line is `religion` plus `church_bonus` (in points). `efficiency` is 0 until the game first reckons it. `months_of_food` does not match the game's panel; do not use it |
 | `selected_building` | Type, workers, vacancies, working, keep access, missing inputs, health; `null` without an open panel | |
 | `storage` | The local player's stockpile piles (tile, good, amount, capacity) and granaries (tile, amount, capacity); `null` when unavailable | Read from the engine's building records (below) |
+| `buildings` | The local player's building records counted by engine type number; `null` when unavailable | From the same records. Parts with records of their own count too: a stockpile's four piles, a quarry's pile, the keep's doors. `harness/server/building-types.ts` names the types. Not shown to the model; the [results](benchmark.md#the-results) list them |
 | `structures` | Count and limit | **Map-wide**, including other players; use it only as a change signal |
 | `placement` | What is being placed, and in which mode | |
 | `camera` | Centre tile, visible tiles across and down, zoom | |
@@ -112,9 +113,10 @@ capacity 0. All of this was seen live on Oasis by the Sea on 2026-10-09.
 
 The reader takes these from the engine's records of building instances (one per id,
 read in place, with no game function called), filtered by an owner field seen only
-with player 1. `python3 tools/ubuntu/run-proton.py structures --ids FIRST COUNT` dumps
-raw records for mapping more fields; its output is game memory, so keep it out of the
-repository.
+with player 1. `buildings` counts the same records by type: run on both reference
+games' end saves on 2026-10-10, it found the buildings the players had built.
+`python3 tools/ubuntu/run-proton.py structures --ids FIRST COUNT` dumps raw records for
+mapping more fields; its output is game memory, so keep it out of the repository.
 
 ## Messages
 

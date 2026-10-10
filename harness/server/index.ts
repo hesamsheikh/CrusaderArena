@@ -104,6 +104,13 @@ let stopCurrent: ((reason?: "stopped" | "error") => void) | undefined;
 let interruptCurrent: (() => void) | undefined;
 let currentRun: Promise<void> | undefined;
 let agent: Agent | undefined;
+/**
+ * The last run to end, with its conversation, kept for the interview after its episode
+ * (POST /api/agent/interview) until the next run starts.
+ */
+let finished: { runId: string; controller: RunController } | undefined;
+/** Stops the interview in progress. */
+let interviewing: AbortController | undefined;
 // Reader samples arrive up to ~10 per second; the dashboard needs a few. Keep the
 // latest sample and send at most one sample-driven update per 250 ms.
 let statsBroadcast: NodeJS.Timeout | undefined;
@@ -351,7 +358,7 @@ app.post("/api/agent/run", async (req, res) => {
     })
     .strict()
     .parse(req.body);
-  if (state.running || testing)
+  if (state.running || testing || interviewing)
     return void res.status(409).json({ error: "The model is busy." });
   const profile = store.model(modelId);
   const key = store.key(modelId);
@@ -369,8 +376,9 @@ app.post("/api/agent/run", async (req, res) => {
     return void res.status(409).json({
       error: "The game reader has not confirmed a single-player map. Load one and wait for stats to appear; multiplayer is not supported.",
     });
-  if (state.running || testing)
+  if (state.running || testing || interviewing)
     return void res.status(409).json({ error: "The model is busy." });
+  finished = undefined;
   const run = store.create(
     runNameFor(profile.name, benchmarkType),
     modelId,
@@ -466,6 +474,7 @@ app.post("/api/agent/run", async (req, res) => {
       agent = undefined;
       stopCurrent = undefined;
       interruptCurrent = undefined;
+      finished = { runId: run.id, controller };
       try {
         log("system", `Run ${outcome}: ${run.progress?.stopReason || "error"}.`);
         store.update(run.id, { turns: state.turns });
@@ -490,9 +499,68 @@ app.post("/api/agent/run", async (req, res) => {
   currentRun = undefined;
 });
 
+/**
+ * The interview after an episode, asked by npm run episodes once it has scored the episode
+ * (interview.ts). It runs in the background; `state.interview` follows it. `series` names the
+ * episode in the transcript when the run itself does not.
+ */
+app.post("/api/agent/interview", (req, res) => {
+  const { runId, series } = z
+    .object({
+      runId: z.string().uuid(),
+      series: z
+        .object({
+          id: z.string().regex(/^[A-Za-z0-9-]{1,80}$/),
+          episode: z.number().int().min(1),
+          episodes: z.number().int().min(1).max(20),
+          attempt: z.number().int().min(1).max(20).optional(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict()
+    .parse(req.body);
+  if (state.running || testing || interviewing)
+    return void res.status(409).json({ error: "The model is busy." });
+  const controller = finished?.runId === runId ? finished.controller : undefined;
+  if (!controller)
+    return void res.status(409).json({
+      error: "The host no longer holds this run's conversation: it keeps the last run's until the next run starts or the host restarts.",
+    });
+  const abort = new AbortController();
+  interviewing = abort;
+  state.interview = { runId, status: "running", answered: 0, questions: 0 };
+  broadcast();
+  res.json({ ok: true });
+  void (async () => {
+    try {
+      const result = await controller.interview(abort.signal, series, (answered, questions) => {
+        state.interview = { runId, status: "running", answered, questions };
+        broadcast();
+      });
+      const questions = state.interview?.questions ?? 0;
+      if ("skipped" in result) {
+        state.interview = { runId, status: "skipped", answered: 0, questions, error: result.skipped };
+        log("system", `No interview: ${result.skipped}.`);
+      } else {
+        const status = result.status === "running" ? "failed" : result.status;
+        state.interview = { runId, status, answered: result.exchanges.length, questions, ...(result.error ? { error: safeError(result.error) } : {}) };
+        log("system", `Interview ${status}: ${result.exchanges.length} of ${questions} questions answered.`);
+      }
+    } catch (e) {
+      state.interview = { runId, status: "failed", answered: 0, questions: state.interview?.questions ?? 0, error: safeError(e) };
+      log("error", `Interview failed: ${safeError(e)}`);
+    } finally {
+      interviewing = undefined;
+      broadcast();
+    }
+  })();
+});
+
 app.post("/api/agent/stop", (_req, res) => {
   stopCurrent?.();
   agent?.abort();
+  interviewing?.abort();
   device.cancelQueued();
   log("system", "Stop requested. Queued actions cancelled.");
   res.json({ ok: true });
@@ -567,6 +635,7 @@ async function shutdown(code = 0) {
   if (shuttingDown) process.exit(code || 1);
   shuttingDown = true;
   clearInterval(tick);
+  interviewing?.abort();
   if (currentRun) {
     // End the run like a deadline so its final pause runs before the game connection closes.
     log("system", "Host shutting down: ending the run and pausing the game.");

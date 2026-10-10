@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isPreparedReply, runSystemPrompt } from "./preparation.js";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -104,6 +104,7 @@ function fixture(
   let handoffReply = (_call: number): { text: string; stopReason?: string } => ({
     text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
   });
+  const interviews: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
   const actions: unknown[] = [];
   // Faults for the next P presses, in order: "drop" (the game ignores it), "late" (the game
   // pauses or unpauses but the reader sends no new sample), null (works).
@@ -191,6 +192,10 @@ function fixture(
         reflections.push({ messages, system, tools: tools.map((t) => t.name) });
         return { ...reflectionReply(reflections.length), usage: { totalTokens: 11 } };
       },
+      interview: async (messages, system, tools) => {
+        interviews.push({ messages: structuredClone(messages), system, tools: tools.map((t) => t.name) });
+        return message([{ type: "text", text: `Answer ${interviews.length}.` }]);
+      },
       spawnRecorder: recording.spawnRecorder,
       playbook: learning?.playbook,
       gameSpeed,
@@ -257,6 +262,7 @@ function fixture(
     setReflectionReply: (fn: typeof reflectionReply) => {
       reflectionReply = fn;
     },
+    interviews,
     setPrepareHook: (fn: typeof prepareHook) => {
       prepareHook = fn;
     },
@@ -1286,4 +1292,45 @@ test("each request's cost is kept with its source and summed in run.json", () =>
   const events = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8");
   assert.match(events, /"type":"request_cost","kind":"gameplay","dollars":0.012,"source":"billed"/);
   assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003,"source":"prices"/);
+});
+
+test("after a scored episode the agent is interviewed in the conversation it played in, apart from the run's record", async () => {
+  const f = fixture(1);
+  await f.controller.prepare();
+  f.provider(() => [call("observe", {})]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const folder = f.controller.memory.directory;
+  const signal = new AbortController().signal;
+  // Only an episode the runner has scored is interviewed.
+  assert.deepEqual(await f.controller.interview(signal), { skipped: "the run has no scorecard (episode.json)" });
+  writeFileSync(path.join(folder, "episode.json"), JSON.stringify({ map: "Cactus Valley", valid: true, net_worth: 1500 }));
+  assert.deepEqual(await f.controller.interview(signal), { skipped: "no reference game for Cactus Valley" });
+  writeFileSync(path.join(folder, "episode.json"), JSON.stringify({
+    map: "Oasis by the Sea", valid: true, net_worth: 2400, net_worth_baseline: 1220, gold: 2000, goods_value: 400,
+    population: 30, housing: 40, popularity: 70, run: { budget: { gameSeconds: 2000, usedGameSeconds: 2000 } },
+  }));
+  const runJson = readFileSync(f.store.file(f.run.id, "run.json"), "utf8");
+  const events = readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8");
+  const answered: number[] = [];
+  const record = await f.controller.interview(signal, { id: "series-1", episode: 2, episodes: 3 }, (count) => answered.push(count));
+  assert.ok(!("skipped" in record));
+  assert.equal(record.status, "completed");
+  assert.deepEqual(answered, [0, 1, 2, 3, 4]);
+  assert.deepEqual(record.exchanges.map((e) => e.answer), ["Answer 1.", "Answer 2.", "Answer 3.", "Answer 4."]);
+  // Every question goes with the run's system prompt and tools, after the game's own messages.
+  const game = JSON.stringify(f.controller.agent.state.messages);
+  for (const request of f.interviews) {
+    assert.equal(request.system, runSystemPrompt(f.store.get(f.run.id)));
+    assert.deepEqual(request.tools, f.controller.agent.state.tools.map((t) => t.name));
+    assert.equal(JSON.stringify(request.messages.slice(0, f.controller.agent.state.messages.length)), game);
+  }
+  assert.match(JSON.stringify(f.interviews[0].messages.at(-1)), /\| Net worth \| 2,400 \| 19,513 \|/);
+  assert.equal(f.interviews[3].messages.length, f.controller.agent.state.messages.length + 7);
+  // The transcript is in the run's folder; the run's record and events are as the run left them.
+  const saved = JSON.parse(readFileSync(path.join(folder, "interview.json"), "utf8"));
+  assert.equal(saved.status, "completed");
+  assert.deepEqual(saved.run.series, { id: "series-1", episode: 2, episodes: 3 });
+  assert.match(readFileSync(path.join(folder, "interview.md"), "utf8"), /## 4\. Anything else[\s\S]*Answer 4\./);
+  assert.equal(readFileSync(f.store.file(f.run.id, "run.json"), "utf8"), runJson);
+  assert.equal(readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8"), events);
 });

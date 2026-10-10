@@ -84,6 +84,12 @@
       "fingerprint": "ad13674a6996132563cce61f22dda199bdceaeb51f4064f1172415ea905f9ce7",
       "date": "2026-10-10",
       "note": "The agent is told population and popularity count beside net worth (weighting not given); episodes are independent unless --playbook; status shows worker efficiency, the food factor once and religion with the church bonus; the reader reads the church bonus and the keep's tax figure, which set_tax returns; new set_rations tool; build_structure places good and bad things."
+    },
+    {
+      "version": "1.2.0",
+      "fingerprint": "35ee566cfe6fb851b402184bd3f31183f31451d984f3066a0b74de70f94a79ca",
+      "date": "2026-10-10",
+      "note": "Agent runs play and are scored the same. After each episode that counts, npm run episodes interviews the agent in its own conversation with the tools off (--no-interview leaves it out): its result beside the reference game a person played on its map, then four questions. Every run the runner makes (episodes, reference games, do-nothing baselines, dry runs) records the whole state at its end in results.json and results.md; the reader counts the player's buildings by type for them, which the agent is not shown. Records the reference games on Oasis by the Sea and Large Barren Desert and the do-nothing baselines of both benchmark start saves at 33 1/3 game minutes."
     }
   ]
 }

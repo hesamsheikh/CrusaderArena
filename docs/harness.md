@@ -140,6 +140,8 @@ logs. **Export logs** and **Download full events** download them.
 | `final-overview.jpg` | The game after the final reading, centred on the keep with minimap clicks and zoomed all the way out with `Z`, still paused. Near a map edge the keep is in view but off centre. Taken only when the final pause was confirmed and the reader reports the camera; changes nothing but the camera |
 | `recording/`, `video.mp4` | Recorded frames and the rendered video (recorded runs only) |
 | `episode.json` | The scorecard (`npm run episodes` only; see [The benchmark](benchmark.md#the-scorecard)) |
+| `results.json`, `results.md` | The whole state of the game at the end: net worth, stored goods, population, popularity and its factors, taxes, food, efficiency, storage and buildings, as data and as tables (`npm run episodes` only; see [The results](benchmark.md#the-results)) |
+| `interview.md`, `interview.json` | The [interview](benchmark.md#the-interview) after the episode: the transcript, and the same with each answer's reasoning, tokens and the interview's cost (`npm run episodes` only) |
 
 **Harness version.** Every run records which code produced it, in `run.json` under
 `harness`: the git commit the host started from, whether the files the

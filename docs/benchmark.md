@@ -132,12 +132,15 @@ the game code and spot-checked in play. They are in `harness/server/market-price
 
 **Baseline.** `npm run episodes -- --idle` measures what doing nothing scores: it loads
 the save, sets the game speed as an agent run does, lets the game run untouched for
-the same game time an agent gets, and writes the scorecard to
-`harness/runtime/episodes/idle-<time>.json`. On `Oasis by the Sea-1` with 25 game
+the same game time an agent gets, and writes the scorecard and the
+[results](#the-results) to `harness/runtime/episodes/idle-<time>/`. On `Oasis by the Sea-1` with 25 game
 minutes at speed 40 doing nothing scores **1,304**: the starting package of 1,000 gold,
 50 wood, 25 stone and 50 bread (worth 1,425) arrives, the game places the granary by
 itself (5 wood), and the peasants who move in eat 29 of the bread. Runs too short for
-the game to place the granary end lower: 1,225, with all the bread eaten.
+the game to place the granary end lower: 1,225, with all the bread eaten. With 33⅓ game
+minutes (2,000 game seconds) doing nothing scores 1,220 on `Oasis by the Sea benchmark
+start`, where the granary is already placed (all the bread is eaten), and 5,192 on `Large
+Barren Desert benchmark start`, which starts with 5,000 gold.
 
 **Growth** is net worth minus the baseline for the same save and game minutes, so it
 shows what a run achieved beyond leaving the game alone. The measured baselines are in
@@ -155,11 +158,24 @@ by a person at the game machine, scored like an agent's:
    keeps a screenshot of the screen, and saves the game in the Save dialog as `human`,
    the save and the date and time (for example `human oasis by the sea 1010-1432`).
 4. Everything goes to `harness/runtime/episodes/human-<time>/`: `scorecard.json`
-   (with `human.playedSeconds` and `human.ended`), `screenshot.jpg` and the `.sav`.
+   (with `human.playedSeconds` and `human.ended`), the [results](#the-results),
+   `screenshot.jpg` and the `.sav`.
 
 The player is not bound by an agent's limits, such as the minimum turn. If the reader
 has no valid sample for 2 minutes (the memory guard may have closed the game), the
 scorecard uses the last reading and `human.ended` is `readings_lost`.
+
+The reference games agents are compared with are in `referenceGames` in
+[`baselines.ts`](../harness/server/baselines.ts), by map, and how the person played each
+is in its own file in [`prompt/reference-games/`](../prompt/reference-games/). Both were
+played for 25 real minutes at speed 40 (about 2,000 game seconds):
+
+| Map | Net worth | Gold | Goods | Population | Popularity |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Oasis by the Sea | 19,513 | 18,304 | 1,209 | 202 | 100 |
+| Large Barren Desert | 9,984 | 8,574 | 1,410 | 250 | 100 |
+
+The agent sees them only in [the interview](#the-interview) after its episode.
 
 Since 1.2.0 the agent is told that its population and popularity at the end count
 as well as its net worth, but not how they are weighed (the Oasis by the Sea rules file
@@ -179,7 +195,7 @@ episodes are independent games of the same save; `--playbook` makes them a
    loads it (up to 3 attempts), then confirms the map with the reader.
 3. Pauses the game and starts the agent run with the given budget.
 4. When the run ends, takes the final reading and writes the scorecard,
-   `episode.json`, into the run's folder.
+   `episode.json`, and the [results](#the-results) into the run's folder.
 5. If the game is still running and paused, saves it in the game (Game Options → Save)
    as `<model> <version> <series id end> e<episode>[a<attempt>]`, for example
    `glm 5-3 flash 1-1-1 ae6fc4 e3a2` (the game takes 32 characters, so a long model name
@@ -192,6 +208,7 @@ episodes are independent games of the same save; `--playbook` makes them a
    failed save does not affect the score; `game_save` in `episode.json` records the
    name and file, or the error. The `.sav` files are not published.
 6. Disconnects and closes the game. With `--record`, renders the run video.
+7. If the episode counts (see below), [interviews](#the-interview) the agent about it.
 
 Each episode ends in one of four ways ([series.ts](../harness/server/series.ts)):
 
@@ -216,7 +233,7 @@ npm run episodes -- --resume <series id>
 
 The series continues at its first episode without a result, with the settings it was
 started with (in a learning series, from the playbook the episode before it left).
-`--resume` refuses setting flags (pass only `--restart`, `--keep-game`, `--unversioned` or `--port`) and refuses
+`--resume` refuses setting flags (pass only `--restart`, `--keep-game`, `--unversioned`, `--no-interview` or `--port`) and refuses
 to continue when the benchmark version, code commit, preparation images or the model
 profile's ID, endpoint, reasoning, output limit or providers have changed. If harness
 or prompt files change while a series runs, the series pauses before the next episode:
@@ -245,11 +262,12 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--record` | off | Record the run and render a video |
 | `--resume` | | Continue a paused series by its ID, with its own settings |
 | `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs; for trials only |
-| `--dry-run` | off | Everything except the agent run; no model cost |
+| `--dry-run` | off | Everything except the agent run; no model cost. The scorecard and results go to `harness/runtime/episodes/dry-run-<time>/` |
 | `--idle` | off | The do-nothing baseline: no agent; the game runs untouched at the benchmark speed for the game-time budget |
 | `--human` | off | A [reference game](#scoring-net-worth) played by a person; paused, scored, screenshotted and saved when the budget is used up |
 | `--restart` | off | Close a game that is already running instead of stopping |
 | `--keep-game` | off | Leave the game running and paused afterwards |
+| `--no-interview` | off | Do not [interview](#the-interview) the agent after its episodes |
 | `--port` | 4317 | Dashboard port |
 
 Before starting, the dashboard must be running (`npm run dev`, from a terminal; see
@@ -315,6 +333,65 @@ attempt number. Runs started from the dashboard are never part of a series.
   line says which episodes are not.
 
 Runs started from the dashboard do not write `episode.json`.
+
+## The results
+
+Every run the runner makes records the whole state of the game at its end in one
+format, whatever played it: an agent's episode, a [reference game](#scoring-net-worth),
+the do-nothing baseline or a dry run ([`results.ts`](../harness/server/results.ts)).
+`results.json` holds it beside the scorecard and `results.md` shows it as tables:
+
+| Part | What it holds |
+| --- | --- |
+| The run | Its kind, who played (the model's name for an agent), map, save, benchmark and run, whether the reading is `final` or `last_observed`, and when the game was read |
+| `game` | The date in the game, the game clock in ticks, and the game seconds played and budgeted |
+| Net worth | `net_worth`, `gold`, `goods_value`, and `goods`: every good in store with its units and its value at the sell price |
+| People | `population`, `housing`, `idle_peasants` |
+| Popularity | `popularity`, `popularity_change` (the coming month's) and `popularity_factors` in the game's points, as `status` lists them |
+| Economy | `taxes` (level, name and gold a month), `food` (stored, rations, foods eaten and available, what rations and variety add to popularity), `worker_efficiency_percent` |
+| Storage | Stockpile piles and how many are empty, granaries and the food in them |
+| Buildings | `buildings`: the player's buildings by name, a stockpile's four piles counted as one stockpile and parts of other buildings left out; `buildings_by_type`: the reader's counts by engine type, parts included |
+| The rest | `troops`, `structures_map_wide`, and `reading`, the whole reading the results come from |
+
+A value the game was not read for is `null`, never 0: a reader older than the
+building counts leaves `buildings` null. Results are written by runs made since they
+were added.
+
+## The interview
+
+After each episode that counts (`valid` or `model_failure`), once it is scored and the
+game saved and closed, the runner has the host interview the agent about its game. The
+interview is not part of the benchmark: the score is already recorded, and nothing from it
+reaches a later episode (in a learning series it comes after the reflection that writes the
+next playbook).
+
+- **The same conversation.** The host keeps the finished run's conversation until the next
+  run starts and asks in it, so the agent remembers its game as far as its context reaches
+  after any compactions. The requests repeat the run's system prompt and tools, so the
+  provider's cache covers the game. The tools no longer work: a tool call gets a refusal and
+  the question is asked on, twice at most.
+- **Four questions, one at a time** ([`prompt/interview.md`](../prompt/interview.md)), each
+  sent once the agent has answered the one before:
+  1. Its result beside the [reference game](#scoring-net-worth) on its map: the game time
+     each played, net worth, gold, stored goods, population, housing and popularity, and
+     what doing nothing scores. How does it see the difference?
+  2. How the person played and what their settlement held at the end. What would it do
+     differently from the start?
+  3. What does it think of the benchmark: the tools, what it could see, the time limit and
+     the instructions?
+  4. Anything else?
+- **Maps with a reference game only.** A map needs both its entry in `referenceGames` and
+  its file in `prompt/reference-games/`; without them the interview is skipped. When the
+  run's budget differs from the person's game time by more than 2%, the first question
+  says the two are not like for like.
+- **The record.** `interview.md`, the transcript, and `interview.json`, the same with each
+  answer's reasoning where the provider returns it, refused tool calls, tokens and time,
+  and the interview's cost, go into the run's folder, rewritten after each answer, and are
+  published with the run. The run's own files stay as the run ended: the interview's cost
+  is not in the run's cost and its requests are not in `events.jsonl`.
+- **Failures.** A transient provider error is retried as during play. Any other failure, a
+  stop (Ctrl-C) or 30 minutes without an end ends the interview with the answers so far; the
+  episode's result never changes. `--no-interview` leaves interviews out.
 
 ## Comparing runs
 

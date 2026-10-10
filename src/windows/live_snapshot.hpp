@@ -171,14 +171,13 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
          <<",\"no_resources\":"<<int(m::field<std::uint8_t>(a.api,state.get(),"production_no_resources"))<<'}';
         return s.str();
     });
-    // The local player's stockpile piles (type 10: a stockpile is four 2x2 piles, each holding one
-    // good) and granaries (type 19), from the engine's building records: 0x32c bytes per instance
-    // id, the type at the mapped address and, relative to it, the owner (+0x04), top-left tile
-    // (+0x1c, +0x1e), amount (+0xb2), capacity (+0xb6) and, for piles, the good (+0xba). An empty
-    // pile has amount 0 and capacity 0 and keeps its last good. Mapped live on Oasis by the Sea,
+    // The engine's building records: 0x32c bytes per instance id, the type at the mapped address
+    // and, relative to it, the owner (+0x04), top-left tile (+0x1c, +0x1e), amount (+0xb2),
+    // capacity (+0xb6) and, for stockpile piles, the good (+0xba). Mapped live on Oasis by the Sea,
     // 2026-10-09; the owner field was only seen with player 1. Plain reads of the engine's static
-    // records, bounds-checked against its image; no engine function is called. Optional.
-    const auto storage=optional([&]()->std::string {
+    // records, bounds-checked against its image; no engine function is called. Returns the highest
+    // instance id and a reader of one 16-bit field.
+    const auto building_records=[&]() {
         const auto engine=reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(L"CrusaderDE.dll"));
         if(!engine)throw std::runtime_error("engine module missing");
         const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(engine);
@@ -189,7 +188,14 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
         const int limit=i16("structs_limit");
         if(limit<1 || limit>10000 || type_rva+std::uint64_t(limit+1)*stride>nt->OptionalHeader.SizeOfImage)
             throw std::runtime_error("building records outside engine image");
-        const auto at=[&](int id,int offset){std::int16_t v;std::memcpy(&v,engine+type_rva+std::uint64_t(id)*stride+offset,2);return int(v);};
+        const auto at=[engine](int id,int offset){std::int16_t v;std::memcpy(&v,engine+type_rva+std::uint64_t(id)*stride+offset,2);return int(v);};
+        return std::make_pair(limit,at);
+    };
+    // The local player's stockpile piles (type 10: a stockpile is four 2x2 piles, each holding one
+    // good) and granaries (type 19). An empty pile has amount 0 and capacity 0 and keeps its last
+    // good. Optional.
+    const auto storage=optional([&]()->std::string {
+        const auto [limit,at]=building_records();
         std::ostringstream piles,granaries;int pile_count=0,granary_count=0;bool truncated=false;
         for(int id=1;id<=limit;++id) {
             const int type=at(id,0);
@@ -203,6 +209,21 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
             }
         }
         return "{\"piles\":["+piles.str()+"],\"granaries\":["+granaries.str()+"],\"truncated\":"+(truncated?"true":"false")+"}";
+    });
+    // The local player's building records counted by engine type, keyed by the type number. Parts
+    // the engine keeps as records of their own count too: a stockpile's four piles, a quarry's
+    // pile, the keep's doors. Counted live on both reference games' end saves, 2026-10-10. Optional.
+    const auto buildings=optional([&]()->std::string {
+        const auto [limit,at]=building_records();
+        int counts[512]={};
+        for(int id=1;id<=limit;++id) {
+            const int type=at(id,0);
+            if(type>0 && type<512 && at(id,0x04)==player)counts[type]++;
+        }
+        std::ostringstream s;s<<'{';bool first=true;
+        for(int type=1;type<512;++type)if(counts[type]){s<<(first?"":",")<<'"'<<type<<"\":"<<counts[type];first=false;}
+        s<<'}';
+        return s.str();
     });
     const std::string managed_heap=a.gc_heap_size
         ? "{\"heap_bytes\":"+std::to_string(a.gc_heap_size())+",\"used_bytes\":"+std::to_string(a.gc_used_size())+
@@ -224,6 +245,7 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
     out<<"],\"own_troops\":{\"total\":"<<total<<",\"by_type_1_to_34\":["<<counts.str()<<"]}"
        <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"managed_heap\":"<<managed_heap
        <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building<<",\"storage\":"<<storage
+       <<",\"buildings\":"<<buildings
        <<",\"visible_messages\":[";
     bool comma=false;
     for(const char* channel:{"Keep_Message","Message_Bar","Feedback_1"}) {
