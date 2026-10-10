@@ -23,7 +23,9 @@ third-party mod is used.
    lifecycle information.
 
 "Read-only" means it never changes game state or calls game functions that do.
-Loading the DLL does run our code inside the game process.
+Loading the DLL does run our code inside the game process, and when the game's garbage
+collector has stalled, the reader asks the runtime for a collection (see
+[Collector watchdog](#collector-watchdog)).
 
 The tile map and whole-map summary use a second, simpler path: the probe reads the
 engine's tile layers from outside the process (no DLL), in about 2 seconds.
@@ -96,6 +98,7 @@ in the run's `events.jsonl`.
 | `placement` | What is being placed, and in which mode | |
 | `camera` | Centre tile, visible tiles across and down, zoom | |
 | `visible_messages` | On-screen message text, by channel | See below |
+| `managed_heap` | The game's managed heap: size, used bytes, collection count, whether collection is disabled, and the watchdog's forced collections | Memory diagnostics; not shown to the model. See [Collector watchdog](#collector-watchdog) |
 
 ## Storage
 
@@ -123,6 +126,41 @@ event, and it repeats only after the text disappears.
 Polling can miss brief or repeated messages, and spoken lines without text are never
 captured. Placement and resource warnings were checked live. Low-popularity warnings
 and enemy messages have not been, and the skirmish chat area is not read.
+
+## Collector watchdog
+
+Under Proton, the game's garbage collector (Unity's Boehm collector, inside Mono) can stop
+starting collections for good. The heap then grows by what the game allocates, about
+7.5 MiB a second whether paused or running, until the memory guard closes the game (see
+[Status](status.md#known-issues)). The cause is
+[Wine bug 59333](https://bugs.winehq.org/show_bug.cgi?id=59333): Wine can report a bogus
+stack pointer for a thread the collector has suspended, the collector's total of thread
+stack sizes wraps around, and the allocation threshold it keeps until the next collection
+becomes too large ever to reach. Any collection recomputes that threshold.
+
+So on every call the reader also checks the collection count. When the count has not
+moved for 20 seconds while the heap's used bytes grew by 64 MiB, it asks Mono for one full
+collection (`mono_gc_collect`, what `System.GC.Collect` does; the game's finalizers stay
+on the game's own finalizer thread). Just before, it copies four of the collector's
+variables, which tell the causes apart:
+
+| Field | Meaning |
+| --- | --- |
+| `total_stack_bytes` | The thread-stack total from the last collection; a huge value is the Wine bug |
+| `threshold_bytes` | The allocation that starts the next collection (about 23 MiB when healthy) |
+| `dont_gc` | Non-zero when collection is disabled |
+| `automatic_disabled` | Non-zero when automatic collection is off (Unity's manual mode) |
+
+Their addresses were found by disassembly and hold only for the Mono runtime whose
+fingerprint the launcher checks. `managed_heap.watchdog` gives the number of forced
+collections in this game process and the latest one, with these fields, how long the
+count stood still, how much the heap grew, the counts before and after, and how long the
+collection took. The harness logs each one as a `gc_watchdog` event (see
+[The harness](harness.md#safety-boundaries)).
+
+About 150 MiB piles up during a stall before the collection frees it; the heap grows by
+at most that much, and the game reuses it. The watchdog runs only while the reader is
+sampling, as it is whenever the harness is connected.
 
 ## Limits
 

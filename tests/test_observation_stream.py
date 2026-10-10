@@ -57,7 +57,8 @@ class StreamTests(unittest.TestCase):
 
     def test_placement_and_camera_context_pass_through(self):
         context = {'structures': {'count': 12, 'limit': 2000},
-                   'managed_heap': {'heap_bytes': 300000000, 'used_bytes': 120000000},
+                   'managed_heap': {'heap_bytes': 300000000, 'used_bytes': 120000000, 'collections': 40,
+                                    'gc_disabled': False, 'watchdog': {'forced': 0, 'last': None}},
                    'placement': {'action': 5, 'sub_action': 32},
                    'camera': {'centre_tile_x': 200, 'centre_tile_y': 180, 'tiles_wide': 30,
                               'tiles_high': 60, 'pixels_per_unit_scale': 1.0}}

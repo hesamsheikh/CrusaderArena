@@ -93,6 +93,8 @@ function fixture(
   // Reader camera, off by default. With it the window is 16:9, a minimap click moves the camera
   // to the keep at tile (50, 60) and Z zooms out up to 40 tiles wide.
   let camera: Record<string, number> | null = null;
+  // Reader managed-heap reading, off by default.
+  let managedHeap: Record<string, unknown> | null = null;
   let handoffHook = () => {};
   const handoffs: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
   const reflections: { messages: AgentMessage[]; system: string; tools: string[] }[] = [];
@@ -137,7 +139,10 @@ function fixture(
           status: "ok",
           generation,
           valid_until_unix_ms: statsExpiry,
-          observation: { paused, game_time: gameTick, map_name: mapName, ...(camera ? { camera } : {}) },
+          observation: {
+            paused, game_time: gameTick, map_name: mapName,
+            ...(camera ? { camera } : {}), ...(managedHeap ? { managed_heap: managedHeap } : {}),
+          },
           ...(camera ? { captured_unix_ms: Date.now() } : {}),
         },
     action: async (action: unknown, _id: string, guard?: () => void, ageCreditMs = 0) => {
@@ -238,6 +243,7 @@ function fixture(
     setUnavailableSamples: (n: number) => { unavailableSamples = n; },
     faultPauseKeys: (...faults: ("drop" | "late" | null)[]) => { pauseFaults.push(...faults); },
     setCamera: (value: Record<string, number>) => { camera = value; },
+    setManagedHeap: (value: Record<string, unknown>) => { managedHeap = value; },
     logMessages,
     captures: () => captures,
     setHandoffHook: (fn: () => void) => {
@@ -1126,6 +1132,39 @@ test("memory-guard samples are recorded with the game clock and summarised in pr
   // Listening stops with the run.
   f.guard({ kind: "sample", rss_kib: 1, available_kib: 1 });
   assert.equal(f.run.progress?.memory?.samples, 2);
+});
+
+test("memory samples carry the managed heap, and a collection the reader forced is logged once", async () => {
+  const f = fixture(1);
+  const last = {
+    at_unix_ms: 1, stalled_ms: 20400, used_growth_bytes: 160 << 20, collections_before: 1400, collections_after: 1401,
+    collect_ms: 180, total_stack_bytes: 2 ** 63, threshold_bytes: 2 ** 61, dont_gc: 0, automatic_disabled: 0,
+  };
+  const heap = (forced: number) => ({
+    heap_bytes: 600 << 20, used_bytes: 400 << 20, collections: 1400 + forced, finalizers_pending: false,
+    gc_disabled: false, watchdog: { forced, last: forced ? last : null },
+  });
+  f.provider((turn) => {
+    if (turn === 1) {
+      f.setManagedHeap(heap(0));
+      f.guard({ kind: "sample", rss_kib: 4 * 1048576, available_kib: 9 * 1048576 });
+      f.setManagedHeap(heap(1));
+      f.guard({ kind: "sample", rss_kib: 4 * 1048576, available_kib: 9 * 1048576 });
+      f.guard({ kind: "sample", rss_kib: 4 * 1048576, available_kib: 9 * 1048576 });
+    }
+    return [{ type: "text", text: "Observed." }];
+  });
+  assert.equal(await f.controller.runSession(), "completed");
+  const events = readFileSync(path.join(f.controller.memory.directory, "events.jsonl"), "utf8")
+    .trim().split("\n").map((line) => JSON.parse(line).event);
+  const samples = events.filter((e) => e.type === "memory_sample");
+  assert.deepEqual(samples[0].managedHeap, { heapMiB: 600, usedMiB: 400, collections: 1400, gcDisabled: false, forcedCollections: 0 });
+  assert.equal(samples[2].managedHeap.forcedCollections, 1);
+  const forced = events.filter((e) => e.type === "gc_watchdog");
+  assert.equal(forced.length, 1);
+  assert.deepEqual(forced[0], { type: "gc_watchdog", forced: 1, record: last });
+  assert.equal(f.run.progress?.memory?.forcedCollections, 1);
+  assert.ok(f.logMessages.some((m) => /collector stalled for 20 s; the reader forced a collection \(1 in this game/.test(m)), JSON.stringify(f.logMessages));
 });
 
 test("a recorded run captures while tools and waits run and holds while the model thinks", async () => {

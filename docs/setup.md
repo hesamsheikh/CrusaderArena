@@ -143,11 +143,12 @@ For unattended benchmark episodes, see [The benchmark](benchmark.md#running-epis
   [device selection variables](https://docs.mesa3d.org/envvars.html#vulkan-mesa-device-select-layer-environment-variables)
   (`MESA_VK_DEVICE_SELECT=<vendor>:<device>` and
   `MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE=1`) with that laptop's Intel IDs.
-- **Memory growth during long pauses.** The game can start leaking memory at about
-  400 MiB per minute while paused, with or without the reader loaded. The dashboard
-  always runs the memory guard. For manual sessions, run
-  `python3 tools/ubuntu/monitor-memory.py --terminate-on-limit` yourself, and close the
-  game rather than leaving it paused.
+- **Garbage-collector stalls.** The game's garbage collector can stop collecting, and
+  its memory then grows 300–470 MiB a minute, paused or running (see
+  [Status](status.md#known-issues)). The reader's
+  [collector watchdog](reader.md#collector-watchdog) breaks a stall while the reader
+  runs, and the dashboard always runs the memory guard. For manual sessions without the
+  reader, run `python3 tools/ubuntu/monitor-memory.py --terminate-on-limit` yourself.
 - **Restarting the reader.** If a reader call is interrupted, restart the game before
   trying again; the reader leaves a marker and refuses to reattach to that game
   process.

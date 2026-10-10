@@ -215,11 +215,16 @@ against other code running as your user.
 states. Runs cannot start without its confirmation, and if it reports a multiplayer
 game while connected, the host disconnects.
 
-**Memory guard.** The game can leak memory during long pauses (see
-[Status](status.md#known-issues)). Every connection runs a guard that closes the game
-if it uses more than 7 GiB or the machine has less than 2 GiB available. A run cannot
-start without it. If it closes the game, the run ends with that reason and the last
-memory reading.
+**Memory guard.** The game's garbage collector can stall and let memory grow without
+end (see [Status](status.md#known-issues)); the reader's
+[collector watchdog](reader.md#collector-watchdog) breaks a stall, and the guard is the
+backstop. Every connection runs a guard that closes the game if it uses more than 7 GiB
+or the machine has less than 2 GiB available. A run cannot start without it. If it
+closes the game, the run ends with that reason and the last memory reading. During a
+run, `events.jsonl` gets a `memory_sample` every 5 seconds (the game's memory, the
+reader's managed-heap reading, the game clock and pause state) and a `gc_watchdog`
+event for each collection the reader forced; `run.json` counts them under
+`progress.memory.forcedCollections`.
 
 ## Control monitor
 

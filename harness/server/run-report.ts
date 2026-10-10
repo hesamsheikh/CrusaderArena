@@ -146,7 +146,8 @@ export type RunRow = {
   toolErrors: number | null;
   build: BuildSummary | null;
   anchor: AnchorSummary | null;
-  memory: { peakGameRssMiB: number | null; minAvailableMiB: number | null; samples: number | null };
+  /** forcedCollections: collections the reader's watchdog forced in the game process. */
+  memory: { peakGameRssMiB: number | null; minAvailableMiB: number | null; samples: number | null; forcedCollections: number | null };
   /** Set when events.jsonl ended mid-line or run.json was unreadable. */
   incomplete: boolean;
 };
@@ -471,6 +472,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
       peakGameRssMiB: num(memory.maxGameRssMiB) ?? events?.peakGameRssMiB ?? null,
       minAvailableMiB: num(memory.minAvailableMiB),
       samples: num(memory.samples),
+      forcedCollections: num(memory.forcedCollections),
     },
     incomplete: !run || run.status === "running" || (events !== undefined && !events.complete),
   };
@@ -565,6 +567,7 @@ const columns: [string, (row: RunRow) => string][] = [
   ["Retry methods", (r) => counts(r.build?.retryMethods)],
   ["Retry skipped", (r) => counts(r.build?.retrySkipped)],
   ["Peak RSS MiB", (r) => whole(r.memory.peakGameRssMiB)],
+  ["Forced GC", (r) => whole(r.memory.forcedCollections)],
   ["Tool errs", (r) => whole(r.toolErrors)],
   ["Tools", (r) => counts(r.tools ?? undefined)],
 ];

@@ -23,6 +23,23 @@ between September and October 2026.
 - Placement and resource warning messages are captured and reach the model with
   their age.
 - Sampling every 100 ms has no measurable cost to the game.
+- The [collector watchdog](reader.md#collector-watchdog) against a real collector stall,
+  in a 25-game-minute GLM 5.3 Flash episode on 2026-10-10 (benchmark 1.1.4): the
+  collection count stopped at 334, and after 20 seconds the reader forced a collection
+  (25 ms). The count then moved on by itself every few seconds, and the game's memory
+  stayed at 3.1 GiB. The collector's variables confirmed the cause: the thread-stack
+  total had wrapped around (2^64 minus about 2.9 GB, so a thread's stack pointer read
+  about 2.9 GB above the base of its stack), the threshold for the next collection was
+  3.1 × 10^18 bytes, and collection was neither disabled nor in manual mode.
+- The same watchdog against a simulated stall, on a paused Oasis by the Sea on
+  2026-10-10. A test build switched off automatic collection (Unity's manual mode),
+  so the collection count stopped and the heap's used bytes grew 7.5 MiB a second, as
+  in a real stall. After 20 seconds the reader forced a collection, which took 23 ms
+  and brought used bytes back from 499 to 364 MiB, and it did so again every 20 seconds
+  until automatic collection was switched back on; the heap grew from 516 to 548 MiB in
+  all. The collector variables it recorded were sensible: a 23 MiB threshold (the game
+  allocates about 24 MiB between collections), 162 KiB of thread stacks, and manual
+  mode on.
 
 **Control**
 - Clicks, right clicks, drags (selecting units), mouse-wheel list scrolling, keys,
@@ -74,6 +91,11 @@ between September and October 2026.
   brought it to 39.9. Doing nothing then scored 1,304 net worth; the game placed the
   granary by itself.
 
+- Full-length runs: a learning series of three 25-game-minute GLM 5.3 Flash episodes on
+  2026-10-10 at benchmark 1.1.4 (run unversioned, before the change was committed). All
+  three ran their whole budget and were scored valid (net worth 5,032, 3,021 and
+  5,038), with the game's memory at 3.1–3.3 GiB throughout. The third had the collector
+  stall described under Reader, which the watchdog broke.
 - Stopping and resuming a series, in a learning series of two 1-game-minute GLM 5.3
   Flash episodes on 2026-10-08 at benchmark 1.0.0: Ctrl-C during episode 1 stopped the
   dashboard run, closed the game and paused the series within 2 seconds; `--resume`
@@ -168,8 +190,8 @@ between September and October 2026.
 - **Mouse-wheel camera zoom** does not work through the bridge (use `Z` and `X`).
 - **Other setups:** other Linux distributions and desktops, native Wayland, Windows
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
-- **Long runs:** runs longer than 10 game minutes, including the default 25, have not
-  been shown to be stable, because of the memory issue below.
+- **Long runs:** three 25-game-minute episodes have run in full with the collector
+  watchdog (above), too few to call full-length runs reliable.
 - **The current prompt** has been used only in runs of up to 5 game minutes, and no
   model has yet played with the text-only menu guide.
 - **Benchmark:** scoring exists only for Oasis by the Sea; there is no military
@@ -178,10 +200,20 @@ between September and October 2026.
 
 ## Known issues
 
-- **Memory growth while paused.** The game can start leaking memory at about 400 MiB
-  per minute during long pauses, with or without the reader. The cause is unknown.
-  The memory guard closes the game before it exhausts the machine, which ends the run
-  (the scorecard then uses the last valid reading).
+- **Garbage-collector stalls.** Under Proton, the game's garbage collector can stop
+  starting collections, paused or running, with or without the reader: about once per
+  1,300–1,500 collections, or 0.75 times an hour of play, in recorded runs up to
+  2026-10-09. The managed heap then grows 7.5 MiB a second, and the game's memory
+  300–470 MiB a minute, until the memory guard closes the game and ends the run (the
+  scorecard then uses the last valid reading). In all 13 recorded stalls the collection
+  count stopped right after an ordinary collection. The cause is
+  [Wine bug 59333](https://bugs.winehq.org/show_bug.cgi?id=59333) (also
+  [Proton #9430](https://github.com/ValveSoftware/Proton/issues/9430)): found by
+  reading the collector's source and disassembling the game's Mono runtime, and
+  confirmed by the collector's state in a stall on 2026-10-10 (above). The reader's
+  [collector watchdog](reader.md#collector-watchdog) forces a collection after 20
+  seconds of stall, which ended that stall at no cost to the run. The memory guard
+  stays as the backstop.
 - **NVIDIA graphics.** On the test laptop the game stalled at startup on the NVIDIA
   GPU; the Intel GPU with Vulkan works. See [Setup](setup.md#known-issues).
 - **Map-wide structure count.** The reader's structure count includes other players,

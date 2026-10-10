@@ -92,9 +92,9 @@ export class GameDevice {
   private watcher?: ChildProcessWithoutNullStreams;
   private guard?: ChildProcessWithoutNullStreams;
   /**
-   * Memory guard state. The game can leak managed memory during long pauses (see
-   * docs/status.md, Known issues), so every connection runs
-   * monitor-memory.py, which terminates the game before the laptop runs out.
+   * Memory guard state. The game's garbage collector can stop collecting, and the reader's
+   * watchdog may not break every stall (see docs/status.md, Known issues), so every connection
+   * runs monitor-memory.py, which terminates the game before the laptop runs out.
    */
   guardState: "off" | "starting" | "active" | "failed" = "off";
   lastGuardSample: GuardRecord | undefined;
@@ -321,7 +321,7 @@ export class GameDevice {
       const last = this.lastGuardSample;
       const gib = (kib?: number) => (typeof kib === "number" ? `${(kib / 1048576).toFixed(1)} GiB` : "?");
       const reading = last ? `; game ${gib(last.rss_kib)} resident, ${gib(last.swap_kib)} swap, system ${gib(last.available_kib)} available` : "";
-      this.fail(`Memory guard stopped the game (${(record.limits ?? []).join(", ")}${reading}); the game can leak memory while paused. Relaunch before continuing.`);
+      this.fail(`Memory guard stopped the game (${(record.limits ?? []).join(", ")}${reading}); the game's memory kept growing, as when its garbage collector stops collecting. Relaunch before continuing.`);
     }
   }
   /** Hear each game input just before it is sent (the run video marks clicks and keys). */

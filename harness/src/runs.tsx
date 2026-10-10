@@ -126,7 +126,7 @@ export function RunVitals({ run, now }: { run: Run; now: number }) {
           label="Game memory"
           value={compact(p.memory.maxGameRssMiB)}
           unit="MiB"
-          note={`peak · ${compact(p.memory.minAvailableMiB)} MiB min free${p.memory.maxGameSwapMiB ? ` · ${p.memory.maxGameSwapMiB} MiB swap` : ""}`}
+          note={`peak · ${compact(p.memory.minAvailableMiB)} MiB min free${p.memory.maxGameSwapMiB ? ` · ${p.memory.maxGameSwapMiB} MiB swap` : ""}${p.memory.forcedCollections ? ` · ${p.memory.forcedCollections} forced GC` : ""}`}
         />
       )}
     </div>

@@ -14,9 +14,10 @@ two. The project website shows this file, so keep that shape.
   game what is so far only tested in code: the fixed game speed in an agent run, the
   minimum turn length while waiting, and the automatic re-run after an infrastructure
   failure.
-- **Full-length runs.** Make the default 25 game minutes reliable. Runs longer than 10
-  game minutes are not yet stable, because the game can start leaking memory during long
-  pauses.
+- **Full-length runs.** Make the default 25 game minutes reliable. The game's garbage
+  collector can stall under Proton, which ended earlier long runs; with the reader's
+  watchdog against it, three 25-game-minute episodes have run in full, which is too few
+  to call them reliable.
 - **A better harness.** Improve the tools, prompt and context where recorded runs show
   models getting stuck, make the two machines easier to set up, and play with the
   text-only menu guide that a fresh checkout uses, which no model has used yet.

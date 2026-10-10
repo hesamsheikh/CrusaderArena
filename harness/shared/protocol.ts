@@ -106,8 +106,16 @@ export type Stats = {
       tiles_high: number;
       pixels_per_unit_scale: number;
     } | null;
-    /** Mono GC heap totals (memory diagnostics); null when unavailable. */
-    managed_heap?: { heap_bytes: number; used_bytes: number; collections?: number; finalizers_pending?: boolean } | null;
+    /** Mono GC heap totals and the reader's collector watchdog (memory diagnostics); null when unavailable. */
+    managed_heap?: {
+      heap_bytes: number;
+      used_bytes: number;
+      collections?: number;
+      finalizers_pending?: boolean;
+      gc_disabled?: boolean;
+      /** Collections the reader forced after the collector stalled, and the latest one. */
+      watchdog?: { forced: number; last: GcWatchdogRecord | null };
+    } | null;
     /** Calendar (month 0 = January), housing, food and popularity factors (25 per UI point); null when unavailable. */
     settlement?: {
       month: number;
@@ -299,10 +307,26 @@ export type RuntimeProgress = {
     compactionMs: number;
   };
   finalPause?: string;
-  /** Memory-guard extremes on the game host during the run (MiB). */
-  memory?: { samples: number; maxGameRssMiB: number; maxGameSwapMiB: number; minAvailableMiB: number };
+  /** Memory-guard extremes on the game host during the run (MiB), and collections the reader forced. */
+  memory?: { samples: number; maxGameRssMiB: number; maxGameSwapMiB: number; minAvailableMiB: number; forcedCollections?: number };
   /** Frames saved under recording/ when the run config asked for a video. */
   recording?: { frames: number; bytes: number; lastError?: string };
+};
+/**
+ * A collection the reader forced because the game's collector stopped starting them (see
+ * src/windows/gc_watchdog.hpp), with the collector globals read just before it.
+ */
+export type GcWatchdogRecord = {
+  at_unix_ms: number;
+  stalled_ms: number;
+  used_growth_bytes: number;
+  collections_before: number;
+  collections_after: number;
+  collect_ms: number;
+  total_stack_bytes: number | null;
+  threshold_bytes: number | null;
+  dont_gc: number | null;
+  automatic_disabled: number | null;
 };
 /** Enough to tell whether two runs used the same harness, prompt and tools. */
 export type HarnessVersion = {

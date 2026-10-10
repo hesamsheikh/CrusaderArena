@@ -17,6 +17,27 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.1.4] - 2026-10-10
+
+Comparable with 1.1.3: a fix for runs the memory guard ended.
+
+### Benchmark
+
+- The reader breaks stalls of the game's garbage collector, which let the game's memory
+  grow 300–470 MiB a minute until the memory guard closed it and ended the run. When the
+  collection count has not moved for 20 seconds while the managed heap grew by 64 MiB,
+  it asks the game's Mono runtime for one collection, which starts the collector again.
+  Before that it records the collector's state, which in a stall during testing showed
+  the cause: Wine bug 59333. See [Collector watchdog](docs/reader.md#collector-watchdog).
+
+### Harness
+
+- The 5-second memory samples in `events.jsonl` carry the reader's managed-heap reading
+  (heap, used, collection count, whether collection is disabled). Each collection the
+  reader forced is a `gc_watchdog` event and a line in the run log, and the count shows
+  in `run.json`, the dashboard's game-memory figure and `npm run report` (`Forced GC`).
+- The memory guard's message no longer says the game leaks memory while paused.
+
 ## [1.1.3] - 2026-10-09
 
 Comparable with 1.1.2: runs play and score the same.

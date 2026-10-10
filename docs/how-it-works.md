@@ -34,7 +34,7 @@ Host machine (tested: macOS)                Game machine (tested: Ubuntu 26.04, 
 | Agent | Host | The model, its system prompt and its 27 tools, run with the [Pi](https://github.com/earendil-works/pi) agent runtime | `harness/server/model.ts` |
 | Game-window bridge | Game machine | Captures only the game window and sends mouse and keyboard input to it | `tools/ubuntu/game-window.py` |
 | Reader | Game machine, inside the game | Reads game state from memory and streams it as JSON lines | `src/windows/`, `tools/ubuntu/run-proton.py` |
-| Memory guard | Game machine | Closes the game before a known memory leak exhausts the machine | `tools/ubuntu/monitor-memory.py` |
+| Memory guard | Game machine | Closes the game before runaway memory growth exhausts the machine | `tools/ubuntu/monitor-memory.py` |
 | Recorder | Game machine | Captures frames for an edited run video | `tools/ubuntu/record-window.py` |
 | Control monitor | Game machine | Terminal window showing what the harness is doing, with a local stop key | `tools/ubuntu/control-status.py` |
 

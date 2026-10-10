@@ -626,12 +626,22 @@ export class RunController {
         this.stop("error");
       }
     });
-    // Memory-guard samples (every 5 s) go to the run's events with the game clock and pause state,
-    // so a guard stop shows what grew and whether it grew while paused.
+    // Memory-guard samples (every 5 s) go to the run's events with the game clock, pause state and
+    // the reader's managed-heap reading, so a guard stop shows what grew; a collection count that
+    // stops moving is the collector stall the reader's watchdog breaks (docs/status.md).
+    let forcedSeen = 0;
     const unsubscribeGuard = this.device.onGuard?.((record) => {
       if (record.kind === "sample") {
         const mib = (kib: unknown) => (typeof kib === "number" ? Math.round(kib / 1024) : undefined);
         const observation = this.device.currentStats().observation;
+        const heap = observation?.managed_heap;
+        const watchdog = heap?.watchdog;
+        if (watchdog && watchdog.forced > forcedSeen) {
+          forcedSeen = watchdog.forced;
+          this.store.event(this.run.id, { type: "gc_watchdog", forced: watchdog.forced, record: watchdog.last });
+          const last = watchdog.last;
+          this.log("system", `The game's garbage collector stalled${last ? ` for ${Math.round(last.stalled_ms / 1000)} s` : ""}; the reader forced a collection (${watchdog.forced} in this game so far).`);
+        }
         const sample = {
           type: "memory_sample",
           gameRssMiB: mib(record.rss_kib),
@@ -641,6 +651,15 @@ export class RunController {
           resident: record.resident_kib,
           system: record.system_kib,
           graphics: record.graphics,
+          managedHeap: heap
+            ? {
+                heapMiB: Math.round(heap.heap_bytes / 1048576),
+                usedMiB: Math.round(heap.used_bytes / 1048576),
+                collections: heap.collections,
+                gcDisabled: heap.gc_disabled,
+                forcedCollections: watchdog?.forced,
+              }
+            : undefined,
           gameTime: observation?.game_time,
           paused: observation?.paused,
           limits: record.limits,
@@ -652,6 +671,7 @@ export class RunController {
           maxGameRssMiB: Math.max(m.maxGameRssMiB, sample.gameRssMiB ?? 0),
           maxGameSwapMiB: Math.max(m.maxGameSwapMiB, sample.gameSwapMiB ?? 0),
           minAvailableMiB: Math.min(m.minAvailableMiB, sample.availableMiB ?? Infinity),
+          ...(forcedSeen ? { forcedCollections: forcedSeen } : {}),
         };
       } else if (record.kind === "memory_map" || record.kind === "termination_requested") {
         this.store.event(this.run.id, { type: `memory_guard_${record.kind}`, record });

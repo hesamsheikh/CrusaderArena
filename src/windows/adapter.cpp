@@ -44,6 +44,7 @@ void assembly_callback(void* a,void* p) {
         if(c.report->mode==0)line(*c.report,"assembly",name);
     }
 }
+#include "gc_watchdog.hpp"
 #include "live_snapshot.hpp"
 
 void sample(HMODULE runtime,Api& runtime_api,Domain* domain,crusader::InspectReport& report) {
@@ -301,6 +302,8 @@ extern "C" __declspec(dllexport) DWORD WINAPI CrusaderInspect(void* data) {
             if(second.size()>=sizeof(r->text))throw std::runtime_error("observation exceeds transport limit");
             std::memcpy(r->text,second.c_str(),second.size()+1);r->used=static_cast<std::uint32_t>(second.size());
         } catch(const std::exception& e) {line(*r,"error",e.what());r->status=4;}
+        // After both reads, so they report the same watchdog state; also off the map.
+        try { watch_collector(m); } catch(const std::exception&) {}
     }
     if(r->mode==1 || r->mode==2) {
         try { sample(m,api,root,*r); }
