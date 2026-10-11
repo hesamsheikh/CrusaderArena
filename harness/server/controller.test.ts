@@ -351,6 +351,42 @@ test("reading tools before any action leave the game paused; the first action un
   assert.deepEqual(f.actions.map((a) => (a as { key?: string }).key), ["P", "P", "Z", "P"]);
   assert.equal(f.isPaused(), true);
 });
+test("go_to_tile at the start of a reply clicks the minimap paused and unpauses only for its screenshot", async () => {
+  const f = fixture(2);
+  f.setCamera({ centre_tile_x: 10, centre_tile_y: 10, tiles_wide: 20, tiles_high: 20, pixels_per_unit_scale: 1 });
+  const pausedAt: Record<string, boolean> = {};
+  for (const tool of f.controller.agent.state.tools) {
+    const execute = tool.execute;
+    tool.execute = (...args) => {
+      pausedAt[tool.name] = f.isPaused();
+      return execute(...args);
+    };
+  }
+  f.provider((n) => n === 1 ? [call("go_to_tile", { x: 50, y: 60 })] : [{ type: "text", text: "Done." }], true);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.equal(pausedAt.go_to_tile, true);
+  // Pause for reply 1, the minimap click while still paused, unpause for the screenshot, pause for
+  // reply 2 (the final overview's zoom follows).
+  assert.deepEqual(
+    f.actions.slice(0, 4).map((a) => (a as { key?: string }).key ?? `click ${(a as { button?: number }).button}`),
+    ["P", "click 1", "P", "P"],
+  );
+  const result = f.requests[1].messages.find((m) => m.role === "toolResult" && m.toolName === "go_to_tile");
+  assert.ok(result && result.role === "toolResult" && !result.isError, JSON.stringify(result));
+  assert.equal(result.content.filter((c) => c.type === "image").length, 1, "a screenshot of the new view");
+});
+test("go_to_tile after an action in the same reply runs with the game running, with no extra pause toggles", async () => {
+  const f = fixture(2);
+  f.setCamera({ centre_tile_x: 10, centre_tile_y: 10, tiles_wide: 20, tiles_high: 20, pixels_per_unit_scale: 1 });
+  f.provider((n) => n === 1
+    ? [call("game_action", { type: "key", key: "X" }), call("go_to_tile", { x: 50, y: 60 })]
+    : [{ type: "text", text: "Done." }], true);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.deepEqual(
+    f.actions.slice(0, 5).map((a) => (a as { key?: string }).key ?? `click ${(a as { button?: number }).button}`),
+    ["P", "P", "X", "click 1", "P"],
+  );
+});
 test("each run records the code, system prompt and tools it ran with", () => {
   const f = fixture(1);
   const harness = f.run.harness!;

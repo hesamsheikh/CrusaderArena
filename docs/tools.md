@@ -10,7 +10,9 @@ has none. All are defined in `harness/server/model.ts`. Tool calls run one at a 
 `map_overview`, `flat_view`, `building_info` and the memory tools run with the game
 still paused from the model's thinking, so they cost no game time. Any other tool
 unpauses the game, which then runs for the rest of that reply. `observe` unpauses
-too, because a paused game shows a "Game Paused" overlay.
+too, because a paused game shows a "Game Paused" overlay. `go_to_tile` and
+`navigate_minimap` called while the game is still paused make their minimap clicks
+with it paused, which the game allows, and unpause it only for their screenshot.
 
 **Action** marks tools that count toward the limit of 8 actions per reply. **Obs**
 means the result includes an observation: a fresh screenshot plus the JSON reading
@@ -142,6 +144,8 @@ the signpost. `find_sites`, `place_near`, `expand_storage` and `build_structure`
 it. Each observation starts a read for its view in the background while the game is
 paused for the model; `find_sites` and `build_structure` use that read, and
 `build_structure` waits for it before the game is unpaused, so it costs no game time.
+`place_near` and `expand_storage` read the view they centre on, starting the read
+while they select the building so the two overlap.
 Without a screenshot of the live view, `find_sites` reads the map for the live camera in
 the call itself and reports tiles only, ignoring `near_x`/`near_y` (they are pixels of
 a screenshot); the next `build_structure` call reuses that read for tile targets in the

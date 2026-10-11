@@ -463,6 +463,8 @@ function simulatedGame(options: {
   }
   const hotkeys: string[] = [];
   let tileReads = 0;
+  // How many inputs had been sent when each tile read started.
+  const tileReadsAt: number[] = [];
   const bookmarks = new Map<string, number>();
   const feedback = (text: string) => {
     state.messages = [{ channel: "Panel_Feedback", text }];
@@ -525,6 +527,7 @@ function simulatedGame(options: {
     ...(options.tiles ? {
       tiles: async (x0: number, y0: number, w: number, h: number): Promise<TileRegion> => {
         tileReads++;
+        tileReadsAt.push(actions.length);
         const layers = Object.fromEntries(["structure", "organism", "logic", "logic2", "height", "occupancy", "walk", "gfx"]
           .map((n) => [n, Array(w * h).fill(n === "logic" ? 0x8000 : 0)])) as TileRegion["layers"];
         options.tiles!((layer, x, y, v) => {
@@ -567,7 +570,7 @@ function simulatedGame(options: {
     return { json: JSON.parse(text.text), images: result.content.filter((c) => c.type === "image").length };
   };
   return {
-    actions, ageCredits, state, build, hotkeys, run, tool, tileReads: () => tileReads,
+    actions, ageCredits, state, build, hotkeys, run, tool, tileReads: () => tileReads, tileReadsAt: () => tileReadsAt,
     observe: () => tool("observe").execute("observe", {}),
     captures: () => captures,
   };
@@ -701,9 +704,9 @@ test("center_on uses the game's select-then-centre hotkey and closes the panel",
   assert.equal(game.state.camera, 20);
   assert.equal(game.state.sel, null, "panel closed by a right-click");
   assert.equal(images, 1, "a fresh screenshot of the new view");
-  // observe() once, centerOn's own frame once, then observe() again for the returned screenshot:
-  // the right-click dismiss reuses centerOn's frame instead of taking its own.
-  assert.equal(game.captures(), 3);
+  // observe() once, then observe() again for the returned screenshot: centerOn and its right-click
+  // dismiss send with the first one instead of capturing their own.
+  assert.equal(game.captures(), 2);
 });
 
 test("center_on reports a missing building without moving the camera", async () => {
@@ -746,9 +749,9 @@ test("expand_storage locates the stockpile by a rejected click, then probes outw
   assert.equal(json.probes, 2, "tile 4 blocked, tile 5 placed");
   assert.ok(game.hotkeys.includes("SetBookmark0"), "the located stockpile view is bookmarked");
   assert.equal(game.state.action, 0, "placement mode left");
-  // observe() once, then one frame shared by centerOnStockpile's locating clicks and the probes
-  // that follow: no capture just to send another click or dismiss the panel.
-  assert.equal(game.captures(), 2);
+  // observe() once, and its frame serves centerOnStockpile's locating clicks and the probes that
+  // follow: no capture just to send another click or dismiss the panel.
+  assert.equal(game.captures(), 1);
 });
 
 test("inspect_building reads the opened panel and closes it", async () => {
@@ -935,8 +938,13 @@ test("place_near clicks computed flush spots beside the anchor when the tile map
     assert.equal(r.y1, keep.y2 + 1, "flush against the keep's +y side");
     assert.ok(disjoint(r, keep));
   }
-  // observe() once, then one frame shared by centerOn and the probes that follow it.
-  assert.equal(game.captures(), 2);
+  // observe() once, and its frame serves centerOn and the probes that follow it.
+  assert.equal(game.captures(), 1);
+  // place_near's tile read (after the observation's own) started before the building was selected,
+  // so it ran during the menu clicks.
+  assert.equal(game.tileReadsAt().length, 2);
+  assert.equal(menuClicks(game.actions.slice(0, game.tileReadsAt()[1])).length, 0);
+  assert.ok(menuClicks(game.actions).length > 0);
 });
 
 test("a tool that leaves the screenshot unusable is named in the next 'Observe the game first' error", async () => {

@@ -108,6 +108,22 @@ figure, and three little-used tools were removed.
   ground close to the keep is limited and critical for buildings whose efficiency
   matters more there. In 31 of 32 recorded Oasis runs the granary went within 10 tiles
   of the keep's campfire, with hovels and some woodcutters beside it.
+- Tools that act spend less game time on their own steps. Acting tools took 25–38% of
+  the game budget in recorded runs, mostly waits between clicks rather than the clicks
+  themselves. The clicks they send are unchanged:
+  - `go_to_tile` and `navigate_minimap`, called before anything else in a reply has
+    unpaused the game, make their minimap clicks with the game still paused (the
+    game allows it) and unpause it only for the screenshot they return. Each minimap
+    click had cost about 0.8 s of play, and the first `go_to_tile` of a run about 4 s
+    more for reading the map.
+  - `place_near` and `expand_storage` start reading the tile map while they select
+    the building, instead of after. The read takes about 3 s on the game machine and
+    was 19% of acting-tool time in a GLM 5.3 Flash run.
+  - Tools that send input without looking at the screen (`place_near`,
+    `expand_storage`, `center_on`, `go_to_tile`, `market_trade`, `set_tax`,
+    `set_rations`) use the latest capture when it is under 20 s old, instead of taking
+    a new one at the start of each call (about 0.25 s each at the 1280-wide
+    screenshot size).
 
 ### Harness
 

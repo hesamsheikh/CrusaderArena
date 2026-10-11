@@ -188,10 +188,11 @@ export type AnchorContext = {
   /** Fresh game-window capture registered for actions. */
   capture: () => Promise<Frame>;
   /**
-   * A game-window capture for sending input only: the call's own last frame, reused while it is
-   * comfortably younger than the device's 30 s action limit (validateFrameAction,
-   * shared/protocol.ts), else a fresh one. Only the window's size and id matter for a click or a
-   * minimap fraction, not its pixels, so an unseen frame a few seconds old is as good as a new one.
+   * A game-window capture for sending input only: the call's own last frame (to begin with the
+   * device's latest capture), reused while it is comfortably younger than the device's 30 s action
+   * limit (validateFrameAction, shared/protocol.ts), else a fresh one. Only the window's size and
+   * id matter for a click or a minimap fraction, not its pixels, so an unseen frame a few seconds
+   * old is as good as a new one.
    * Do not use this where pixels are inspected or a screenshot is returned to the model.
    */
   frame: () => Promise<Frame>;
@@ -211,10 +212,12 @@ export const FRAME_REUSE_MS = 20_000;
  * Wraps a capture function with a per-call cache: repeated calls return the same frame while it
  * stays under `FRAME_REUSE_MS` old by `now`, otherwise `capture` runs again and its result is kept.
  * Build one fresh per tool call (e.g. inside model.ts's `anchorContext`) so the cache never
- * outlives the call it was made for.
+ * outlives the call it was made for. `seed`, the device's latest capture, serves the same way
+ * while young enough, so a call need not capture at all (a capture took about 0.4 s of play in a
+ * 2026-10-11 run's records).
  */
-export function frameCache(capture: () => Promise<Frame>, now: () => number = Date.now) {
-  let cached: Frame | null = null;
+export function frameCache(capture: () => Promise<Frame>, now: () => number = Date.now, seed: Frame | null = null) {
+  let cached: Frame | null = seed;
   return async () => {
     if (cached && now() - cached.receivedAt < FRAME_REUSE_MS) return cached;
     cached = await capture();
@@ -369,11 +372,14 @@ export async function placeAdjacent(
   let anchorCamera = cameraKey(first);
   if (!span || !anchorCamera) return { status: "failed" as const, anchor, placed, probes: 0, note: "Reader camera unavailable." };
   const placer = await new Placer(ctx.device, { send: (a) => ctx.send(frame, a), pause: ctx.pause, frame }).init();
+  // With the native tile layers the flush spots are computed, not probed: the anchor is the
+  // building nearest the camera centre, and each candidate's whole footprint is free. The read
+  // (about 3 s on the game machine in a 2026-10-11 run's records) runs while the building is
+  // selected, which leaves the camera where it is; a failed read falls back to probing.
+  const reading = ctx.tiles?.(frame).catch(() => null);
   if ((await placer.select(building)) === "failed")
     return { status: "not_selected" as const, anchor, placed, probes: 0 };
-  // With the native tile layers the flush spots are computed, not probed: the anchor is the
-  // building nearest the camera centre, and each candidate's whole footprint is free.
-  const map = await ctx.tiles?.(frame);
+  const map = await reading;
   if (map) {
     const viaMap = await placeFromMap(ctx, map, placer, building, anchor, count, preferred, placed, anchorCamera);
     if (viaMap) {

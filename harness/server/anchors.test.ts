@@ -55,6 +55,23 @@ test("frameCache reuses a capture while it is comfortably younger than the actio
   assert.notEqual(d, c);
 });
 
+test("frameCache starts from the device's latest capture while it is young enough, else captures", async () => {
+  let captures = 0;
+  let clock = 100_000;
+  const capture = async (): Promise<Frame> => {
+    captures++;
+    return { id: `f${captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: clock } as Frame;
+  };
+  const latest = { id: "latest", image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: clock - 5000 } as Frame;
+  assert.equal(await frameCache(capture, () => clock, latest)(), latest);
+  assert.equal(captures, 0, "a 5 s old capture serves for input");
+  const stale = { ...latest, receivedAt: clock - FRAME_REUSE_MS - 1 };
+  assert.equal((await frameCache(capture, () => clock, stale)()).id, "f1");
+  assert.equal(captures, 1, "too old to reuse");
+  assert.equal((await frameCache(capture, () => clock, null)()).id, "f2");
+  assert.equal(captures, 2, "nothing captured yet");
+});
+
 test("camera shift is measured in centre tiles and requires the same span and zoom", () => {
   assert.equal(cameraShift("372,438,30,68,1", "373,437,30,68,1"), 1);
   assert.equal(cameraShift("372,438,30,68,1", "372,438,30,68,1"), 0);

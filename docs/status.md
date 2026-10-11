@@ -110,8 +110,23 @@ between September and October 2026.
   GLM 5.3 Flash episode on 2026-10-08.
 - On a paused game: minimap clicks and `Z` move and zoom the camera, and the keep
   hotkey does nothing. The final overview's camera sequence (minimap to the keep's
-  tile, then `Z` until the view stops widening) was run by script on 2026-10-08; it
-  has not yet run at the end of a real run.
+  tile, then `Z` until the view stops widening) was run by script on 2026-10-08, and
+  at the end of real runs since: five GLM 5.3 Flash runs on Oasis by the
+  Sea (2026-10-10 and 2026-10-11) each recorded the paused minimap move to the keep as
+  `arrived`.
+- Acting tools' own steps taking less game time (see the 1.3.0 changelog), in a
+  15-game-minute GLM 5.3 Flash run on Oasis by the Sea on 2026-10-11 (run 0b08f7e0,
+  unversioned because of uncommitted changes). All five `go_to_tile` calls came first
+  among their reply's acting tools; in each, the minimap clicks came before the unpause
+  (`recording/inputs.jsonl`), none of the five screenshots showed the "Game Paused"
+  overlay, four arrived and one stopped with the tile in view, and no pause toggle was
+  retried. Their time to the first input fell from 1.28 s to 0.40 s on average. The one
+  `expand_storage` call placed both stockpiles. Its tile read overlapped the building
+  selection but took about 4 s, against about 3 s in earlier runs, so the first terrain
+  click still came 2.8 s after the selection (3.15 s before); one call cannot tell
+  whether the overlap slows the read. Reusing the latest capture applied in 4 of 15
+  calls, saving about 0.25 s each: in the rest it was over 20 s old, because text-only
+  observations take no screenshot.
 - The current harness and prompt, in two 5-game-minute GLM 5.3 Flash episodes on
   2026-10-08 that completed: the compact observation summary, reading tools at the
   start of a reply running while the game stays paused, the dashboard fetching a
@@ -166,6 +181,11 @@ between September and October 2026.
 
 ## Tested in code only
 
+- Acting tools' own steps taking less game time (see the 1.3.0 changelog), with fake game
+  devices (`controller.test.ts`, `anchors.test.ts`, `model-observation.test.ts`):
+  `go_to_tile` and `navigate_minimap` click the minimap paused only when nothing in the
+  reply has unpaused the game yet, and add no pause toggle when it is already running.
+  `navigate_minimap` has not been called in a live run since.
 - Compacting a run's raw recording frames into `recording/frames.mp4`
   (`tools/video/compact-recording.py`) and rendering from it instead of the JPEGs: with
   synthetic recordings (`tools/video/test_compact_recording.py`), encoding, `ffprobe`

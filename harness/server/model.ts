@@ -48,6 +48,13 @@ const READING_TOOLS = new Set([
   "update_plan", "notebook_read", "notebook_write", "notification_history",
   "playbook_read", "playbook_write", "playbook_edit",
 ]);
+/**
+ * Camera tools that move the view with minimap clicks, which work on a paused game (the final
+ * overview's goToTile reached the keep paused in five runs on 2026-10-10 and 2026-10-11). Called
+ * while the game is still paused, they click with it paused and unpause only for the screenshot
+ * they return.
+ */
+const MINIMAP_TOOLS = new Set(["go_to_tile", "navigate_minimap"]);
 import { buildingInfo } from "./building-info.js";
 import { InventoryTracker } from "./inventory.js";
 import { Placer, type Ack } from "./placement.js";
@@ -435,7 +442,7 @@ export function makeAgent(
       capture: captureAndRefresh,
       // A frame reused across this call's own input-only sends (clicks, minimap fractions):
       // window size and id do not change between them, so one capture does for all of them.
-      frame: frameCache(captureAndRefresh),
+      frame: frameCache(captureAndRefresh, Date.now, device.latest),
       send: async (frame, action) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
@@ -471,6 +478,20 @@ export function makeAgent(
     type: "text" as const,
     text: `Minimum turn (${runtime?.config.minTurnSeconds} game seconds): the host let ${seconds} more game seconds pass before this ${screenshot ? "screenshot" : "observation"}.`,
   });
+  /**
+   * For a minimap tool (MINIMAP_TOOLS), before its screenshot: what beforeToolCall does for every
+   * other tool that is not reading, unpausing the game if it is still paused. A pause the reader
+   * does not confirm ends the run, as it does there.
+   */
+  const resumeGame = async () => {
+    if (!runtime) return;
+    try {
+      await runtime.beforeToolCall?.();
+    } catch (error) {
+      runtime.session.stop("error");
+      throw error;
+    }
+  };
   /**
    * Game events buffered since the previous observation (screenshot or text), consumed once: it
    * advances the delivery cursor, so only one of `observe`/`observeText` may call this per look.
@@ -1097,6 +1118,7 @@ export function makeAgent(
           if (runtime) await runtime.session.wait(0.2);
           else await new Promise((resolve) => setTimeout(resolve, 200));
           if (signal?.aborted) throw new Error("Stopped");
+          await resumeGame();
           return observe();
         } catch (error) {
           observed = null;
@@ -1258,6 +1280,7 @@ export function makeAgent(
         mapExtent ??= new MapView(await device.mapSummary()).extent();
         const target = { x: args.x, y: args.y };
         let result: Record<string, unknown> = await goToTile(anchorContext(signal), target, mapExtent);
+        await resumeGame();
         const view = await observe();
         // Near the map edge the camera cannot centre on the tile, but the tile is often on
         // screen (runs 10-13: every stop was 4-7 tiles short of an edge target).
@@ -1737,7 +1760,7 @@ export function makeAgent(
         runtime.session.check();
         // build_structure checks its targets against the view's tile map: finish reading it while paused.
         if (toolCall.name === "build_structure" && observed && viewTiles?.frame === observed) await viewTiles.map;
-        if (!READING_TOOLS.has(toolCall.name)) await runtime.beforeToolCall?.();
+        if (!READING_TOOLS.has(toolCall.name) && !MINIMAP_TOOLS.has(toolCall.name)) await runtime.beforeToolCall?.();
         runtime.cycle.tools++;
         return;
       } catch {
