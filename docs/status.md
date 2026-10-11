@@ -127,6 +127,26 @@ between September and October 2026.
   whether the overlap slows the read. Reusing the latest capture applied in 4 of 15
   calls, saving about 0.25 s each: in the rest it was over 20 s old, because text-only
   observations take no screenshot.
+- Benchmark 1.4.0 beside the published 1.1.0 run, on 2026-10-11: one 25-game-minute GLM
+  5.3 Flash episode (series 20261011T114226-a46cbd06, run cdecaf85) with the settings
+  of episode 1 of the published series 20261009T122236-3aae6fc4 (run 171a1a71): the
+  same save, objective text, game speed 40, budgets and model profile, but no playbook
+  (the published series had one, still empty in its episode 1). Both were valid and used
+  the whole budget. Against the published episode: cost $0.129 against $0.207, with
+  109k tokens of uncached input against 714k (97% of the input read from the cache);
+  the agent's 25 game minutes took 34 min 53 s of real time against 41 min 06 s, and
+  the agent started 41 s after the series did against 2 min 59 s; the median wait
+  for a reply's first token was 8.6 s against 10.7 s, and inference 871 s against
+  1,126 s over 80 turns against 84; acting tools took 204 s against 428 s for about the
+  same number of clicks (about 230), the game machine's tile reads 9 s against 70 s;
+  one compaction against two; the host sent 6 screenshots and 47 text observations
+  against 57 screenshots. The first gameplay request read 19,712 tokens from the cache
+  and 1,732 uncached, after a preparation request of 19,718 that called no tool. Net
+  worth was 6,231 against 4,748 (popularity 79 against 64); one episode each, and
+  single GLM episodes vary widely, so the score difference is not established. The
+  stockpile ended with 3 of 12 piles empty. With 5 game minutes left the agent saw wood
+  room 111 (two empty piles counted in it) and sold wood anyway to keep piles free for
+  iron and stone; it took all 225 (see Known issues).
 - The current harness and prompt, in two 5-game-minute GLM 5.3 Flash episodes on
   2026-10-08 that completed: the compact observation summary, reading tools at the
   start of a reply running while the game stays paused, the dashboard fetching a
@@ -186,11 +206,12 @@ between September and October 2026.
   (`controller.test.ts`, `model-config.test.ts`), a preparation reply that calls a tool
   is asked again, and the observation stats leave out goods with none stored
   (`model-observation.test.ts`). The enums' validation was checked against pi-ai's
-  validator by script. That a provider then reads the first gameplay request from its
-  cache has not been seen in a run yet.
+  validator by script. The cache read it brings was seen live (see Runs above); the
+  retry of a preparation reply that calls a tool has not been needed in a run.
 - A good's `room` in `storage` counting the empty piles, and an empty granary adding 250
   to the granary room (`anchors.test.ts`), from pile and granary readings shaped like
-  those seen live on 2026-10-09 and 2026-10-11. No run has played with it yet.
+  those seen live on 2026-10-09 and 2026-10-11. One live run has played with it (see
+  Runs above); an empty granary's 250 has not come up live.
 - Acting tools' own steps taking less game time (see the 1.3.0 changelog), with fake game
   devices (`controller.test.ts`, `anchors.test.ts`, `model-observation.test.ts`):
   `go_to_tile` and `navigate_minimap` click the minimap paused only when nothing in the
@@ -321,7 +342,7 @@ between September and October 2026.
   PNG: file choice tested with temporary files (`visual-atlas.test.ts`). The JPEG at
   quality 90 was checked by eye on 2026-10-10 (labels readable), and runs on 1.3.0 used
   it. The 80% guide of 1.4.0 (1530 × 2270) was checked by eye on 2026-10-11: titles,
-  button numbers and the 13-point notes are readable. No run has used it yet.
+  button numbers and the 13-point notes are readable; run cdecaf85 used it.
 - Good and bad things' footprints are from static analysis of the game files, the same
   method as the other buildings'; the town garden's refused spots (above) may mean its
   footprint is larger than recorded.
@@ -418,6 +439,12 @@ between September and October 2026.
   GPU; the Intel GPU with Vulkan works. See [Setup](setup.md#known-issues).
 - **Map-wide structure count.** The reader's structure count includes other players,
   so it cannot attribute a change to the agent on maps with opponents.
+- **`market_trade` sales of wood can remove more than the lots asked.** In two GLM 5.3
+  Flash runs on 2026-10-11, selling 10 lots of wood took 105 wood (run 494a5f78), and
+  20 lots took all 225 in stock, reported as 19 lots (run cdecaf85); a lot is 5 units,
+  and other sales and purchases moved about their lots' worth, give or take what was
+  produced or eaten meanwhile. The cause is not yet known. Net worth barely changes
+  (wood sells at its counted value), but the agent loses wood it did not mean to sell.
 - **Reads are not atomic.** Each sample is read twice and checked, but it is not a
   guaranteed consistent snapshot.
 - **Guide images are private.** A fresh checkout runs with a text-only menu guide.
