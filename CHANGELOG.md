@@ -124,6 +124,11 @@ figure, and three little-used tools were removed.
     `set_rations`) use the latest capture when it is under 20 s old, instead of taking
     a new one at the start of each call (about 0.25 s each at the 1280-wide
     screenshot size).
+- A good's `room` in `storage` counts the empty piles, which take any good, at what one
+  of its piles holds, and an empty granary adds its 250 to the granary room. The room
+  was that of the good's own piles only, so it read as full while empty piles stood
+  ready: a GLM 5.3 Flash run sold 40 wood at "room 1" with 13 empty piles, wood it
+  had bought earlier and was waiting for. The prompt says what the room counts.
 
 ### Harness
 

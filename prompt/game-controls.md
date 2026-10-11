@@ -57,8 +57,9 @@ return the game only once it has passed, so act first and look last.
   `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population
   (with housing and idle peasants), popularity (with its upcoming change and factors, in
   the game's popularity points), `tax_level`, food, stored `goods` by name, `storage`
-  (stockpile piles, empty piles and the room left for each good; granary food against
-  its capacity, with a `full` note when something can no longer be delivered), the
+  (stockpile piles, empty piles and, for each stored good, how much more of it can be
+  delivered, counting the empty piles that any good can take; granary food and room,
+  with a `full` note when something can no longer be delivered), the
   placement mode and the camera's centre tile. `status: "unavailable"` or a missing
   value means unknown, not zero.
 - **`game_events`:** game messages that appeared since your previous screenshot, each

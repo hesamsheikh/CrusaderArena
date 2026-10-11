@@ -34,14 +34,15 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
 - **Storage:** Stockpiles hold raw materials and intermediate goods; granaries
   hold food; armories hold weapons and armor. A stockpile is four piles (a 2×2 grid)
   and each pile holds one good. How much a pile holds depends on the good (48 for
-  wood, stone and iron); `storage` shows the room left. Each good takes piles of its
-  own, a few units of a new good take a whole pile, and a good can spread over several
-  piles. Once no pile is empty, a good with no room left in its piles and any
-  good not stored yet cannot be delivered: their workers stand waiting and production
-  stops, with no message from the game. Each granary holds 250 food in total. Make room
-  before storage fills: sell surplus at the marketplace or add stockpiles or granaries
-  with `expand_storage` (new ones must touch the existing ones). Keep stockpile space
-  contiguous and leave room beside it to expand.
+  wood, stone and iron). `storage` shows each good's room: what its own piles and
+  the empty piles can still take (all goods share the empty piles). Each good takes
+  piles of its own, a few units of a new good take a whole pile, and a good can
+  spread over several piles. Once no pile is empty, a good with no room left in its
+  piles and any good not stored yet cannot be delivered: their workers stand waiting
+  and production stops, with no message from the game. Each granary holds 250 food in
+  total. Make room before storage fills: sell surplus at the marketplace or add
+  stockpiles or granaries with `expand_storage` (new ones must touch the existing
+  ones). Keep stockpile space contiguous and leave room beside it to expand.
 - **Trade:** A marketplace buys and sells goods for gold, including equipment.
   Auto-buy replenishes below a threshold; auto-sell sells above one. Avoid selling
   resources reserved for construction/recruitment or setting unaffordable imports.

@@ -156,13 +156,19 @@ test("storage counts room per good and empty piles, and says when the stockpile 
   assert.equal(full.stockpile.empty_piles, 0);
   assert.match(full.stockpile.full!, /wood_planks and any good not stored yet cannot be delivered/);
   assert.deepEqual(full.granary, { granaries: 1, empty_granaries: 0, food: 28, room: 222 });
-  // An empty pile takes any good: nothing is full. A full granary is full only without an empty
-  // one beside it (empty ones read capacity 0, live 2026-10-09).
+  // An empty pile takes any good: nothing is full, and every good's room counts it at what one of
+  // its piles holds (a GLM run on 2026-10-11 sold its wood at "room 1" with 13 empty piles). A
+  // full granary is full only without an empty one beside it (empty ones read capacity 0, live
+  // 2026-10-09); an empty one adds its 250 to the room.
   const room = storageOf(observation([pile("wood_planks", 48), pile("wood_planks", 48), pile("stone", 25), pile(null, 0)], [granary(250)]))!;
   assert.equal(room.stockpile.empty_piles, 1);
+  assert.deepEqual(room.stockpile.goods, { wood_planks: { stored: 96, room: 48 }, stone: { stored: 25, room: 71 } });
   assert.equal(room.stockpile.full, undefined);
   assert.match(room.granary.full!, /Granaries full/);
+  const nearlyFull = storageOf(observation([pile("wood_planks", 47), ...Array.from({ length: 13 }, () => pile(null, 0))]))!;
+  assert.deepEqual(nearlyFull.stockpile.goods, { wood_planks: { stored: 47, room: 1 + 13 * 48 } });
   const spare = storageOf(observation([], [granary(250), granary(0)]))!;
-  assert.deepEqual(spare.granary, { granaries: 2, empty_granaries: 1, food: 250, room: 0 });
+  assert.deepEqual(spare.granary, { granaries: 2, empty_granaries: 1, food: 250, room: 250 });
+  assert.equal(spare.granary.full, undefined);
   assert.equal(storageOf({ ...observation([]), storage: null }), undefined, "no reading: absent, not empty");
 });

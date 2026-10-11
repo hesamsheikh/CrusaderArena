@@ -181,6 +181,9 @@ between September and October 2026.
 
 ## Tested in code only
 
+- A good's `room` in `storage` counting the empty piles, and an empty granary adding 250
+  to the granary room (`anchors.test.ts`), from pile and granary readings shaped like
+  those seen live on 2026-10-09 and 2026-10-11. No run has played with it yet.
 - Acting tools' own steps taking less game time (see the 1.3.0 changelog), with fake game
   devices (`controller.test.ts`, `anchors.test.ts`, `model-observation.test.ts`):
   `go_to_tile` and `navigate_minimap` click the minimap paused only when nothing in the

@@ -46,28 +46,36 @@ const cameraOf = (o: Observation) =>
     ? { centre_tile: [o.camera.centre_tile_x, o.camera.centre_tile_y], zoom: o.camera.pixels_per_unit_scale }
     : null;
 
+/** What a granary holds, of all foods together (live 2026-10-09); an empty one reads capacity 0. */
+const GRANARY_CAPACITY = 250;
+
 /**
  * Stockpile and granary room. Each stockpile has four piles and each pile holds one good, so a
  * good can be delivered only while one of its piles has room or a pile is empty; otherwise its
- * producers stop (live 2026-10-09). Absent when the reader has no storage reading.
+ * producers stop (live 2026-10-09). A good's room counts the empty piles too, at what one of its
+ * piles holds: a lone figure for its own piles read as full while empty piles stood ready (a GLM
+ * run on 2026-10-11 sold its wood at "room 1" with 13 empty piles). Empty piles are shared, so
+ * the goods' rooms overlap. Absent when the reader has no storage reading.
  */
 export function storageOf(o: Observation) {
   const st = o.storage;
   if (!st) return undefined;
-  const goods: Record<string, { stored: number; room: number }> = {};
+  const own: Record<string, { stored: number; room: number; pile: number }> = {};
   let empty = 0;
   for (const pile of st.piles) {
     if (!pile.good || pile.amount <= 0) { empty++; continue; }
-    const g = (goods[pile.good] ??= { stored: 0, room: 0 });
+    const g = (own[pile.good] ??= { stored: 0, room: 0, pile: 0 });
     g.stored += pile.amount;
     g.room += Math.max(0, pile.capacity - pile.amount);
+    g.pile = Math.max(g.pile, pile.capacity);
   }
-  const blocked = empty ? [] : Object.entries(goods).filter(([, g]) => g.room === 0).map(([name]) => name);
+  const goods = Object.fromEntries(Object.entries(own).map(([name, g]) => [name, { stored: g.stored, room: g.room + empty * g.pile }]));
+  const blocked = empty ? [] : Object.entries(own).filter(([, g]) => g.room === 0).map(([name]) => name);
   // Granaries hold all foods together; like a pile, an empty one reads capacity 0 until food arrives.
   const stocked = st.granaries.filter((g) => g.amount > 0);
   const food = stocked.reduce((n, g) => n + g.amount, 0);
-  const room = stocked.reduce((n, g) => n + Math.max(0, g.capacity - g.amount), 0);
   const emptyGranaries = st.granaries.length - stocked.length;
+  const room = stocked.reduce((n, g) => n + Math.max(0, g.capacity - g.amount), 0) + emptyGranaries * GRANARY_CAPACITY;
   return {
     stockpile: {
       piles: st.piles.length,
