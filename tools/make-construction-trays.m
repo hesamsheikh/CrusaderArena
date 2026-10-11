@@ -79,9 +79,25 @@ int main(int argc, const char *argv[]) {
         drawText(@"Reference only. Use the live screenshot and tooltip for availability, position and price.", margin, canvasHeight - footerHeight + 8, width - margin * 2, 25, 17, NO, [NSColor colorWithWhite:0.82 alpha:1]);
         [context flushGraphics];
         [NSGraphicsContext restoreGraphicsState];
+        // Laid out at full size, then written at 80%: the model pays for the guide's pixels in every
+        // request of a run (cached, but still counted), and at 80% its smallest text, the 13-point
+        // button notes, stays readable. 1912 x 2838 becomes 1530 x 2270, 64% of the pixels.
+        CGFloat outputScale = 0.8;
+        NSInteger outputWidth = lround(width * outputScale), outputHeight = lround(canvasHeight * outputScale);
+        NSBitmapImageRep *scaled = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:outputWidth pixelsHigh:outputHeight bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+        if (!scaled) return 2;
+        NSImage *full = [[NSImage alloc] initWithSize:NSMakeSize(width, canvasHeight)];
+        [full addRepresentation:bitmap];
+        NSGraphicsContext *scaledContext = [NSGraphicsContext graphicsContextWithBitmapImageRep:scaled];
+        scaledContext.imageInterpolation = NSImageInterpolationHigh;
+        [NSGraphicsContext saveGraphicsState];
+        [NSGraphicsContext setCurrentContext:scaledContext];
+        [full drawInRect:NSMakeRect(0, 0, outputWidth, outputHeight) fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1];
+        [scaledContext flushGraphics];
+        [NSGraphicsContext restoreGraphicsState];
         // JPEG at quality 90: about a third of a PNG's bytes at the same image size and model token
-        // cost (it is resent in every request body). The per-page crops stay PNG.
-        NSData *jpeg = [bitmap representationUsingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor: @0.9}];
+        // cost. The per-page crops stay PNG.
+        NSData *jpeg = [scaled representationUsingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor: @0.9}];
         if (![jpeg writeToFile:output atomically:YES]) return 2;
         return 0;
     }

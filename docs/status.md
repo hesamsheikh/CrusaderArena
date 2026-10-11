@@ -319,8 +319,9 @@ between September and October 2026.
   `model-observation.test.ts`. Not yet used live.
 - The construction guide sent as `construction-trays.jpg` when installed, else the
   PNG: file choice tested with temporary files (`visual-atlas.test.ts`). The JPEG at
-  quality 90 was checked by eye on 2026-10-10 (labels readable); no run has used it
-  yet.
+  quality 90 was checked by eye on 2026-10-10 (labels readable), and runs on 1.3.0 used
+  it. The 80% guide of 1.4.0 (1530 × 2270) was checked by eye on 2026-10-11: titles,
+  button numbers and the 13-point notes are readable. No run has used it yet.
 - Good and bad things' footprints are from static analysis of the game files, the same
   method as the other buildings'; the town garden's refused spots (above) may mean its
   footprint is larger than recorded.

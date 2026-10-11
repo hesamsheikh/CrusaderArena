@@ -37,6 +37,11 @@ and the tool definitions and the preparation request are sent in fewer tokens.
   spelled out each name as its own object: the 21 game tools' definitions went from
   about 24,500 to 18,500 characters, which every request repeats. The names and
   descriptions are unchanged.
+- The construction guide image is made at 80% of its former size, 1530 × 2270 pixels
+  instead of 1912 × 2838 (64% of the pixels; `tools/make-construction-trays.m`), with
+  its smallest text still readable. A 1280 × 720 screenshot cost GLM 5.3 Flash about
+  1,400 tokens, which puts the guide near 8,000 tokens before and 5,300 after, in every
+  request of a run. The guide is private, so runs record its hash beside the version.
 
 ## [1.3.0] - 2026-10-10
 

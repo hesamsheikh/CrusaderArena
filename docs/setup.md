@@ -133,8 +133,9 @@ node --import tsx tools/make-construction-trays.mjs
 
 It crops the menu tray (the bottom 230 pixels from x 795 to 1575) from each source
 into `trays/` (PNG), and lays out all ten crops with their labels into
-`construction-trays.jpg` (JPEG, quality 90). Only the tray is used, so the boxes must
-lie inside it.
+`construction-trays.jpg` (JPEG, quality 90), written at 80% of the layout's size
+(1530 × 2270): the model pays for its pixels in every request, and at 80% its smallest
+text stays readable. Only the tray is used, so the boxes must lie inside it.
 
 ## 4. First run
 
