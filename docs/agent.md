@@ -3,7 +3,7 @@
 [← Documentation](README.md)
 
 The agent is a language model with image input and tool calling, plus the system
-prompt and the 25 tools the harness gives it (28 in a learning series's episodes).
+prompt and the 26 tools the harness gives it (29 in a learning series's episodes).
 It runs on the
 [Pi](https://github.com/earendil-works/pi) agent runtime inside the host server
 (`harness/server/model.ts`). This page explains how it plays. [Context](context.md)
@@ -56,7 +56,7 @@ A turn is one model reply plus the tool calls in it.
 
 Each reply can take **at most 8 actions**. An action is anything that sends input to
 the game: a click or key (`game_action`), each building placed by `build_structure`,
-or a camera, panel, tax or trade tool. Looking, waiting, reading stats, looking things
+a demolition, or a camera, panel, tax or trade tool. Looking, waiting, reading stats, looking things
 up and taking notes are free. The [tool reference](tools.md) marks which tools count.
 
 ## What the model sees

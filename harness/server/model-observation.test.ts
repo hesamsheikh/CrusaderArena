@@ -449,6 +449,9 @@ function simulatedGame(options: {
   runtime?: AgentRuntime;
   /** Runs on every construction-menu button click (e.g. to move the camera while selecting). */
   onButton?: (state: SimState) => void;
+  /** Whether a click in demolish mode hits one of the player's buildings; the demolish button works unless `demolishIgnored`. */
+  demolishable?: (x: number, y: number) => boolean;
+  demolishIgnored?: boolean;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -507,6 +510,8 @@ function simulatedGame(options: {
       ageCredits.push(ageCreditMs);
       const id = buttonIds[`${action.x},${action.y}`];
       if (action.button === 3) { state.action = 0; state.sel = null; }
+      else if (action.x === 1537 && action.y === 1016) { if (!options.demolishIgnored) state.action = 6; }
+      else if (state.action === 6 && action.y < 900) { if (options.demolishable?.(action.x, action.y)) state.structures--; }
       else if (id && !options.ignoreButtons) { state.action = 5; state.sub = id; options.onButton?.(state); }
       else if (action.y < 900 && state.action === 5) {
         state.worldClicks++;
@@ -1298,4 +1303,28 @@ test("a blocked hovel is retried off oasis grass, which the harness keeps for fa
   const p = json.placements[0];
   assert.equal(p.status, "placed", JSON.stringify(p));
   assert.ok(footprintRect(p.tile, 4).x1 >= 106, `retried onto ${JSON.stringify(p.tile)}`);
+});
+
+test("demolish_building selects the demolish tool, clicks a tile's building and checks the count fell", async () => {
+  const target = tileView().pixel({ x: 102, y: 101 });
+  const game = simulatedGame({ tiles: () => {}, demolishable: (x, y) => x === target.x && y === target.y });
+  const before = game.state.structures;
+  const { json } = await game.run("demolish_building", { tile_x: 102, tile_y: 101 });
+  assert.equal(json.status, "demolished", JSON.stringify(json));
+  assert.equal(game.state.structures, before - 1);
+  assert.equal(game.state.action, 0, "demolish mode left with a right-click");
+  assert.deepEqual(game.actions.map((a) => [a.x, a.y, a.button]), [[1537, 1016, 1], [target.x, target.y, 1], [target.x, target.y, 3]]);
+});
+
+test("demolish_building reports nothing demolished, a tool that did not start, and an off-screen tile, each with a remedy", async () => {
+  const nothing = await simulatedGame({ tiles: () => {} }).run("demolish_building", { tile_x: 102, tile_y: 101 });
+  assert.equal(nothing.json.status, "not_demolished");
+  assert.match(nothing.json.remedy, /keep cannot be demolished/);
+  const game = simulatedGame({ tiles: () => {}, demolishIgnored: true });
+  const stuck = await game.run("demolish_building", { tile_x: 102, tile_y: 101 });
+  assert.equal(stuck.json.status, "not_selected");
+  assert.ok(game.actions.every((a) => a.y >= 900), "the map was never clicked");
+  const far = await simulatedGame({ tiles: () => {} }).run("demolish_building", { tile_x: 1, tile_y: 1 });
+  assert.equal(far.json.status, "not_on_screen");
+  assert.match(far.json.remedy, /go_to_tile \(x 1, y 1\)/);
 });

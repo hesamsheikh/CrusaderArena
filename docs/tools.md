@@ -2,7 +2,7 @@
 
 [← Documentation](README.md)
 
-These are the 25 tools the model can call during timed play (28 in a learning
+These are the 26 tools the model can call during timed play (29 in a learning
 series's episodes, with the three playbook tools below). During preparation it
 has none. All are defined in `harness/server/model.ts`. Tool calls run one at a time.
 
@@ -52,6 +52,7 @@ Brewery, Inn. Castle and military buildings are not offered.
 | `build_structure` | `placements`: 1–4 of `{name, x?, y?, tile_x?, tile_y?, exact?}`, exactly one of the pixel pair or the tile pair | For each placement: opens the menu (for a good or bad thing, the Town page's good-factor or fear-factor subpage), selects the building, clicks the target pixel, then checks with the reader whether it was placed. A pixel target (`x`, `y`) needs the latest screenshot; a tile target (`tile_x`, `tile_y`, as named by `map_overview` or `find_sites`) needs none — right before its click the host reads the live camera and projects the tile to a pixel itself. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement (a pixel target reported `invalid_target`, or a tile target reported `not_on_screen`, does not count) |
 | `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
+| `demolish_building` | one target: `x`, `y` (pixels of the latest screenshot) or `tile_x`, `tile_y` (a tile of the building's footprint) | Selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. A tile target is projected from the live camera, as for `build_structure` | `demolished`, `not_demolished`, `not_selected`, `unverified`, `invalid_target`, `camera_moved` or `not_on_screen`, with a remedy when it did not go through | Yes, one |
 | `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map and the live camera for the current view (no observation needed) and lists free spots where the building fits and keeps an open side (see Open sides), grouped by the ground under them (see Special ground), each as a map tile and, while the latest screenshot shows the live view, its pixel too. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots by ground, as tiles (and pixels) | No |
 
 A stockpile is not one building in the tile map but four 2×2 piles at the corners of a

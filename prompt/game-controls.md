@@ -32,9 +32,9 @@ That observation is always a screenshot.
 <!-- /always -->
 
 At most 8 actions per reply. Each `build_structure` placement counts as one, as does
-each `game_action`, `place_near`, `expand_storage`, `center_on`, `go_to_tile`,
-`go_to_view`, `navigate_minimap`, `inspect_building`, `set_tax`, `set_rations` and
-`market_trade`.
+each `game_action`, `place_near`, `expand_storage`, `demolish_building`, `center_on`,
+`go_to_tile`, `go_to_view`, `navigate_minimap`, `inspect_building`, `set_tax`,
+`set_rations` and `market_trade`.
 Reading tools (`observe`, `status`, `get_inventory`, `find_sites`, `flat_view`,
 `map_overview`, references, plan and notes) do not count.
 
@@ -89,6 +89,7 @@ read the live camera themselves and need no screenshot.
   grouped by the ground under them (plain, oasis grass, stone, iron ore, oil), each with
   its map tile (and its pixel while the latest screenshot shows that view); for a
   woodcutter, those closest to trees first. `flat_view` shows free and occupied ground.
+  `demolish_building` removes one of your buildings, given by map tile or pixel.
 - **Find your way:** `center_on` jumps to your keep, granary, stockpile, market and
   other key buildings. `map_overview` shows the whole map with its stone, iron, oil,
   farmland and trees; `go_to_tile` moves the camera to a tile it names.

@@ -267,6 +267,13 @@ between September and October 2026.
   (`menu-screen.test.ts`) and the sampler with synthetic images (`tools/runner`). Not
   yet used in a live launch; the seconds it saves, and whether the dialog is ready to
   type into a second after it is recognised, need one.
+- `demolish_building`: the demolish button (the X on the red strip beside the
+  construction tray at 1537, 1016 in the 1920 × 1080 layout) putting the game in
+  demolish mode (reader placement action 6), a click on a woodcutter's hut removing it
+  at once with no confirmation (the map's structure count 68 to 67 within 1.5 s) and a
+  right-click leaving the mode, checked live on 2026-10-11 through the host's input
+  API. The tool's own statuses and remedies are tested with fake game devices
+  (`model-observation.test.ts`); no agent has used it yet.
 - `find_sites` grouping its spots by ground, and harness-chosen spots keeping off other
   buildings' ground (oasis grass, stone, iron ore, oil): `tile-map.test.ts`,
   `model-observation.test.ts`. Not yet used live.

@@ -94,6 +94,10 @@ figure, and three little-used tools were removed.
   (placement retries, `place_near`, `expand_storage`) keep off the ground of other
   buildings: oasis grass for farms, stone, iron ore and oil for quarries, iron mines and
   pitch rigs. A target the agent gives itself is still clicked as given.
+- New tool `demolish_building`: removes one of the agent's buildings, given by map tile
+  or pixel, with the game's own demolish tool, checked through the reader (the
+  structure count falls). It counts as one action. Before, only raw `game_action`
+  clicks could demolish, and nothing told the agent how.
 - The prompt no longer tells the agent to place the granary near the keep, and says the
   ground close to the keep is limited and critical for buildings whose efficiency
   matters more there. In 31 of 32 recorded Oasis runs the granary went within 10 tiles

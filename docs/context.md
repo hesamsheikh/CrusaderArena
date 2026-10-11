@@ -13,7 +13,7 @@ keeps that within a working budget. The code is in `harness/server/preparation.t
 Each request to the model contains three things:
 
 1. **The system prompt**, the same for the whole run.
-2. **The tool definitions**: names, descriptions and parameters of the 25 tools (28 in
+2. **The tool definitions**: names, descriptions and parameters of the 26 tools (29 in
    a learning series's episodes).
 3. **The conversation so far**, starting with the preparation message and the model's
    `BEGIN` reply, then turns of model replies, tool results and host messages.

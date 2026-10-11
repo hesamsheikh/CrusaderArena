@@ -51,7 +51,7 @@ const READING_TOOLS = new Set([
 import { buildingInfo } from "./building-info.js";
 import { InventoryTracker } from "./inventory.js";
 import { Placer, type Ack } from "./placement.js";
-import { anchorNames, centerOn, frameCache, goToTile, placeAdjacent, sides, TOO_CLOSE_MARGIN, type AnchorContext, type MapExtent } from "./anchors.js";
+import { anchorNames, centerOn, frameCache, goToTile, placeAdjacent, sampleAfter, sides, TOO_CLOSE_MARGIN, type AnchorContext, type MapExtent } from "./anchors.js";
 import { categories, MapView } from "./map-view.js";
 import { marketTrade, rationLevels, setRations, setTax, taxLevels, tradeGoods } from "./economy.js";
 import { describeBuilding, observationStats, statusReport } from "./status.js";
@@ -118,6 +118,7 @@ export interface AgentRuntime {
 
 import { footprintOf } from "./footprints.js";
 import { adjacentRemedy, anchorRemedy, placementRemedy, READER_RETRY } from "./remedies.js";
+import { DEMOLISH_BUTTON, DEMOLISHING, demolishOutcome } from "./demolish.js";
 
 /** place_near's and expand_storage's result with what to do when it placed fewer than asked. */
 function withAdjacentRemedy<T extends { status: string; note?: string; stopped?: string; missing?: Record<string, number> }>(result: T, building: string, anchor: string) {
@@ -1429,6 +1430,97 @@ export function makeAgent(
         const budget = runtime ? runClock(runtime.session) : undefined;
         const report = statusReport(device.currentStats(), { budget, views: [...views.keys()] });
         return { content: [{ type: "text" as const, text: JSON.stringify(report) }], details: { readOnly: true } };
+      },
+    }),
+    defineTool({
+      name: "demolish_building",
+      label: "Demolish a building",
+      description:
+        "Demolish one of your buildings, targeted by map tile (tile_x/tile_y: any tile of its footprint, such as the `tile` build_structure reported) or by pixel (x/y in the latest screenshot, aimed at the building's body); give one pair. The harness selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. Statuses: demolished, not_demolished (nothing of yours there, or the game refused it; the keep cannot be demolished), not_selected (demolish mode did not start; the map was not clicked), unverified (no reader evidence either way), invalid_target and not_on_screen as for build_structure. Text only; one action.",
+      parameters: Type.Object({
+        x: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with y" })),
+        y: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with x" })),
+        tile_x: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_y" })),
+        tile_y: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_x" })),
+      }),
+      execute: async (_id, args, signal) => {
+        if (signal?.aborted) throw new Error("Stopped");
+        runtime?.session.check();
+        const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: {} });
+        const kind = targetKind({ name: "", ...args });
+        if (kind.status === "invalid")
+          return text({ status: "invalid_target", reason: kind.reason, remedy: "Give x and y from the latest screenshot, or tile_x and tile_y, not both." });
+        // A pixel target works from the screenshot, as build_structure's does; a tile target is
+        // projected from the live camera and needs none.
+        if (kind.status === "pixel" && !observed) throw observeFirstError();
+        const frame = kind.status === "pixel" ? observed! : device.latest ?? (await device.capture());
+        let target: { x: number; y: number };
+        if (kind.status === "tile") {
+          const camera = await readLiveCamera();
+          if (!camera) return text({ status: "not_on_screen", tile_x: kind.x, tile_y: kind.y, reason: "No live camera available.", remedy: READER_RETRY });
+          target = tilePixel(camera, frame, { x: kind.x, y: kind.y });
+          if (!onScreen(frame, target))
+            return text({
+              status: "not_on_screen", tile_x: kind.x, tile_y: kind.y,
+              camera: { centre_tile_x: camera.centre_tile_x, centre_tile_y: camera.centre_tile_y },
+              remedy: `go_to_tile (x ${kind.x}, y ${kind.y}) brings the tile into view; then demolish it again.`,
+            });
+        } else {
+          target = { x: kind.x, y: kind.y };
+          if (target.x >= frame.width || target.y >= frame.height * 0.82)
+            return text({ status: "invalid_target", x: target.x, y: target.y, reason: "Over the bottom HUD or outside the screenshot.", remedy: "Aim at the building's body above the bottom panel in the latest screenshot, or give tile_x/tile_y." });
+          const current = device.currentStats().observation;
+          if (observedCamera && cameraKey(current) && cameraKey(current) !== observedCamera) {
+            observed = null;
+            observedClearedBy = "demolish_building";
+            return text({ status: "camera_moved", remedy: "Observe, then target it by pixel from the new screenshot, or by tile_x/tile_y." });
+          }
+        }
+        runtime?.cycle.action(kind.status === "pixel");
+        const ctx = anchorContext(signal);
+        const credit = kind.status === "pixel"
+          ? Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs)
+          : Number.POSITIVE_INFINITY;
+        const click = async (x: number, y: number, button: 1 | 3) => {
+          if (signal?.aborted) throw new Error("Stopped");
+          runtime?.phase("acting");
+          const sendFrame = kind.status === "pixel" ? frame : device.latest ?? frame;
+          const ack = await device.action({ type: "click", x, y, button }, sendFrame.id, () => runtime?.session.check(), credit);
+          log("action", JSON.stringify({ type: "click", x, y, button }));
+          return ack as { at?: number } | undefined;
+        };
+        const at = (ack: { at?: number } | undefined) => (typeof ack?.at === "number" ? ack.at : Date.now());
+        const structures = (o: Record<string, unknown> | null | undefined) =>
+          (o?.structures as { count?: number } | undefined)?.count;
+        // Leave any placement or demolish mode first, so the button click starts from none.
+        if ([5, DEMOLISHING].includes(placementOf(device.currentStats().observation)?.action ?? 0)) await click(target.x, target.y, 3);
+        const button = { x: Math.round((DEMOLISH_BUTTON.x * frame.width) / 1920), y: Math.round((DEMOLISH_BUTTON.y * frame.height) / 1080) };
+        let mode = null;
+        for (let attempt = 0; attempt < 2 && !mode; attempt++) {
+          const ack = await click(button.x, button.y, 1);
+          mode = await sampleAfter(ctx, at(ack), (o) => placementOf(o)?.action === DEMOLISHING, 1.5);
+        }
+        if (!mode)
+          return text({
+            status: "not_selected", ...(kind.status === "tile" ? { tile_x: kind.x, tile_y: kind.y } : { x: target.x, y: target.y }),
+            remedy: "The demolish tool did not start: right-click open ground with game_action to close any open panel, observe, then try again.",
+          });
+        const before = structures(mode);
+        const ack = await click(target.x, target.y, 1);
+        const after = await sampleAfter(ctx, at(ack), (o) => (structures(o) ?? Infinity) < (before ?? -Infinity), 2);
+        const latest = after ?? device.currentStats().observation;
+        const outcome = demolishOutcome(before, structures(latest));
+        // Leave demolish mode.
+        await click(target.x, target.y, 3);
+        menuMemory = undefined;
+        return text({
+          status: outcome,
+          ...(kind.status === "tile" ? { tile_x: kind.x, tile_y: kind.y } : {}),
+          x: target.x, y: target.y,
+          ...(outcome === "not_demolished"
+            ? { remedy: "Nothing of yours was demolished there: aim at the building's body (a tile of its footprint), observe to check it still stands; the keep cannot be demolished." }
+            : outcome === "unverified" ? { remedy: "Check the next observation or status to see whether it is gone." } : {}),
+        });
       },
     }),
     defineTool({
