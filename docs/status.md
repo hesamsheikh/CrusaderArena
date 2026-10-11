@@ -267,6 +267,9 @@ between September and October 2026.
   (`menu-screen.test.ts`) and the sampler with synthetic images (`tools/runner`). Not
   yet used in a live launch; the seconds it saves, and whether the dialog is ready to
   type into a second after it is recognised, need one.
+- `find_sites` grouping its spots by ground, and harness-chosen spots keeping off other
+  buildings' ground (oasis grass, stone, iron ore, oil): `tile-map.test.ts`,
+  `model-observation.test.ts`. Not yet used live.
 - The construction guide sent as `construction-trays.jpg` when installed, else the
   PNG: file choice tested with temporary files (`visual-atlas.test.ts`). The JPEG at
   quality 90 was checked by eye on 2026-10-10 (labels readable); no run has used it

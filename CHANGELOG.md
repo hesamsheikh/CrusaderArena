@@ -87,6 +87,13 @@ figure, and three little-used tools were removed.
   with `build_structure`, and a placement that cannot be paid names the
   `wait_and_observe` `until` covering its cost. Thrown errors end with the fix the same
   way. See [Failures](docs/tools.md#tools).
+- `find_sites` groups its spots by the ground under them (plain, oasis grass, stone,
+  iron ore, oil), so the agent sees which spots would take farmland or a deposit and
+  chooses; it had offered woodcutters and hovels spots on the oasis grass, and the
+  agent took them (a 1.3.0 run on 2026-10-11). Spots the harness picks by itself
+  (placement retries, `place_near`, `expand_storage`) keep off the ground of other
+  buildings: oasis grass for farms, stone, iron ore and oil for quarries, iron mines and
+  pitch rigs. A target the agent gives itself is still clicked as given.
 - The prompt no longer tells the agent to place the granary near the keep, and says the
   ground close to the keep is limited and critical for buildings whose efficiency
   matters more there. In 31 of 32 recorded Oasis runs the granary went within 10 tiles

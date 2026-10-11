@@ -808,6 +808,9 @@ test("flat_view presses once and reports when the view does not change", async (
   assert.deepEqual(game.hotkeys, ["FlattenLandscape"]);
 });
 
+/** find_sites' sites, which come grouped by the ground under them, as one list. */
+const allSites = (json: { sites?: Record<string, unknown[]> }): any[] => Object.values(json.sites ?? {}).flat();
+
 // Pixel/tile mapping for the tile-enabled simulator (camera centre tile 99 + camera, 100).
 const tileView = (camera = 1) => new TileMap(
   { x0: 0, y0: 0, w: 0, h: 0, stable: true, layers: {} as TileRegion["layers"] },
@@ -901,10 +904,10 @@ test("find_sites lists non-overlapping fitting spots with the farm's oasis share
   await game.observe();
   const { json, images } = await game.run("find_sites", { building: "Dairy Farm", count: 2 });
   assert.equal(images, 0);
-  assert.equal(json.sites.length, 2, JSON.stringify(json));
-  assert.ok(json.sites.every((s: any) => s.oasisShare === 1));
+  assert.equal(allSites(json).length, 2, JSON.stringify(json));
+  assert.ok(allSites(json).every((s: any) => s.oasisShare === 1));
   const view = tileView();
-  const [a, b] = json.sites.map((s: any) => footprintRect(view.tileAt(s), 10));
+  const [a, b] = allSites(json).map((s: any) => footprintRect(view.tileAt(s), 10));
   assert.ok(disjoint(a, b));
 });
 
@@ -1009,11 +1012,11 @@ test("find_sites works without any observation, from the live camera alone", asy
   });
   const { json, images } = await game.run("find_sites", { building: "Dairy Farm", count: 2 });
   assert.equal(images, 0);
-  assert.equal(json.sites.length, 2, JSON.stringify(json));
+  assert.equal(allSites(json).length, 2, JSON.stringify(json));
   // Tiles only: no screenshot shows this view, so there are no pixels to give.
-  assert.ok(json.sites.every((s: any) => typeof s.tile_x === "number" && typeof s.tile_y === "number" && s.x === undefined && s.y === undefined));
+  assert.ok(allSites(json).every((s: any) => typeof s.tile_x === "number" && typeof s.tile_y === "number" && s.x === undefined && s.y === undefined));
   assert.match(json.note, /no x\/y/);
-  const [a, b] = json.sites.map((s: any) => footprintRect({ x: s.tile_x, y: s.tile_y }, 10));
+  const [a, b] = allSites(json).map((s: any) => footprintRect({ x: s.tile_x, y: s.tile_y }, 10));
   assert.ok(disjoint(a, b));
   assert.equal(game.captures(), 1, "one bookkeeping capture for the window size; no screenshot was ever taken");
 });
@@ -1024,13 +1027,13 @@ test("find_sites gives pixels too while the latest screenshot shows the live vie
   });
   await game.observe();
   const seen = await game.run("find_sites", { building: "Dairy Farm", count: 1 });
-  const site = seen.json.sites[0];
+  const site = allSites(seen.json)[0];
   // The pixel matches the tile through the screenshot's camera.
   assert.deepEqual(tileView().pixel({ x: site.tile_x, y: site.tile_y }), { x: site.x, y: site.y });
   game.state.camera = 2; // the view moves after the screenshot
   const moved = await game.run("find_sites", { building: "Dairy Farm", count: 1 });
-  assert.equal(moved.json.sites.length, 1, JSON.stringify(moved.json));
-  assert.equal(moved.json.sites[0].x, undefined, "no pixels: the screenshot shows another view");
+  assert.equal(allSites(moved.json).length, 1, JSON.stringify(moved.json));
+  assert.equal(allSites(moved.json)[0].x, undefined, "no pixels: the screenshot shows another view");
   assert.equal(game.captures(), 1, "the screenshot's capture only");
 });
 
@@ -1160,7 +1163,7 @@ test("build_structure reuses the map find_sites read for the live view, also for
     blocked: (x, y) => x === blocked?.x && y === blocked?.y,
   });
   const { json: found } = await game.run("find_sites", { building: "Hovel", count: 1 });
-  const site = found.sites[0];
+  const site = allSites(found)[0];
   blocked = tileView().pixel({ x: site.tile_x, y: site.tile_y });
   const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: site.tile_x, tile_y: site.tile_y }] });
   const p = json.placements[0];
@@ -1242,7 +1245,7 @@ test("a tile target waits for a valid camera sample instead of reporting not_on_
 test("find_sites waits for a valid camera sample", async () => {
   const game = simulatedGame({ tiles: () => {}, unavailableReads: [1] });
   const { json } = await game.run("find_sites", { building: "Hovel", count: 1 });
-  assert.equal(json.sites?.length, 1, JSON.stringify(json));
+  assert.equal(allSites(json).length, 1, JSON.stringify(json));
 });
 
 test("a tile target is projected again when the view moves while the building is selected", async () => {
@@ -1270,5 +1273,29 @@ test("find_sites ignores near_x/near_y when no screenshot shows the live view", 
   const game = simulatedGame({ tiles: () => {} });
   const { json } = await game.run("find_sites", { building: "Hovel", count: 1, near_x: 100, near_y: 100 });
   assert.match(json.nearIgnored, /no(t| screenshot)|does not show/);
-  assert.equal(json.sites.length, 1);
+  assert.equal(allSites(json).length, 1);
+});
+
+test("find_sites groups spots by the ground under them, so the agent decides which to take", async () => {
+  // Oasis grass west of x 100; plain ground from x 100 on.
+  const game = simulatedGame({ tiles: (set) => { for (let x = 80; x <= 99; x++) for (let y = 80; y <= 120; y++) set("logic2", x, y, -128); } });
+  const { json } = await game.run("find_sites", { building: "Hovel", count: 2 });
+  assert.deepEqual(Object.keys(json.sites), ["plain", "oasis_grass"], "plain ground first for a hovel, the farmland offered apart");
+  for (const site of json.sites.plain) assert.ok(footprintRect({ x: site.tile_x, y: site.tile_y }, 4).x1 >= 100);
+  for (const site of json.sites.oasis_grass) assert.ok(footprintRect({ x: site.tile_x, y: site.tile_y }, 4).x1 <= 99);
+  const farm = await game.run("find_sites", { building: "Apple Orchard", count: 1 });
+  assert.deepEqual(Object.keys(farm.json.sites), ["oasis_grass"]);
+});
+
+test("a blocked hovel is retried off oasis grass, which the harness keeps for farms", async () => {
+  const target = tileView().pixel({ x: 100, y: 100 });
+  const game = simulatedGame({
+    // Oasis grass everywhere except a plain strip from x 106 on.
+    tiles: (set) => { for (let x = 80; x <= 105; x++) for (let y = 80; y <= 120; y++) set("logic2", x, y, -128); },
+    blocked: (x, y) => x === target.x && y === target.y,
+  });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.ok(footprintRect(p.tile, 4).x1 >= 106, `retried onto ${JSON.stringify(p.tile)}`);
 });

@@ -86,8 +86,9 @@ read the live camera themselves and need no screenshot.
   the name `Granary`). `place_near` puts 1–3 buildings flush against an anchor such as
   the keep or granary. `expand_storage` adds 1–3 stockpiles or granaries touching the
   existing ones. `find_sites` lists spots in the current view where a building fits,
-  each with its map tile (and its pixel while the latest screenshot shows that view);
-  for a woodcutter, those closest to trees first. `flat_view` shows free and occupied ground.
+  grouped by the ground under them (plain, oasis grass, stone, iron ore, oil), each with
+  its map tile (and its pixel while the latest screenshot shows that view); for a
+  woodcutter, those closest to trees first. `flat_view` shows free and occupied ground.
 - **Find your way:** `center_on` jumps to your keep, granary, stockpile, market and
   other key buildings. `map_overview` shows the whole map with its stone, iron, oil,
   farmland and trees; `go_to_tile` moves the camera to a tile it names.
@@ -114,8 +115,10 @@ placed or tried (whether given by tile or worked out from the pixel):
 
 - `placed`: the cost was deducted or a new structure appeared (`evidence` says which).
 - `not_placed`: nothing happened. The harness then retries at the nearest spots where
-  the game's tile data shows the whole footprint free, up to 6 per placement and 12 per
-  call, never onto your other targets in the call. It does the same when a farm is
+  the game's tile data shows the whole footprint free (off oasis grass, stone, iron ore
+  and oil unless it is the building's own ground), up to 6 per placement and 12 per
+  call, never onto your other targets in the
+  call. It does the same when a farm is
   refused for its ground or a building is "too close" to the signpost. `at` and
   `offsetTiles` say where it was placed instead; `not_placed` with `retries` means no
   nearby spot worked, so choose other ground. Pass `exact: true` to forbid retries.

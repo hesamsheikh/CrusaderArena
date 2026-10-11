@@ -23,11 +23,14 @@ import { footprintOf } from "./footprints.js";
  * on both axes. Farms need oasis or scrub on every tile ("Farms must be placed on an
  * oasis.") and at least 50 oasis tiles ("This land is not fertile enough."): 62% of a 9×9,
  * 50% of a 10×10. A quarry needs 8 stone tiles, an iron mine 4 ore tiles, a pitch rig 1 oil
- * tile in its footprint. Other buildings are refused ("Too close to signpost to build.") when
- * the footprint's top-left tile lies within signpost_radius + 5 tiles, straight-line, of a
- * signpost tile. The static reading was an 8-connected flood of radius + 4 steps; live on
- * Oasis by the Sea (radius 7) spots 9-11.2 tiles away were refused and 12.6-15 placed,
- * including a diagonal 10 steps away, which fits a circle of 12 and not the flood.
+ * tile in its footprint. Each of these grounds is the only one its building can use, so the
+ * spots chosen here keep every building off the others' ground (oasis grass, stone, ore,
+ * oil), though the game allows most buildings there. Other buildings are refused ("Too close
+ * to signpost to build.") when the footprint's top-left tile lies within signpost_radius + 5
+ * tiles, straight-line, of a signpost tile. The static reading was an 8-connected flood of
+ * radius + 4 steps; live on Oasis by the Sea (radius 7) spots 9-11.2 tiles away were refused
+ * and 12.6-15 placed, including a diagonal 10 steps away, which fits a circle of 12 and not
+ * the flood.
  */
 const LAND = 0x8000;
 const TREE_RING = 0x2000;
@@ -38,6 +41,8 @@ const ORE = 0x80000;
 const OIL = 0x80000000;
 const GROUND = LAND | STONE | ORE | OIL;
 const BUILDABLE = GROUND | TREE_RING;
+/** Deposit ground: stone, iron ore and oil, each the only ground of one building. */
+const DEPOSITS = STONE | ORE | OIL;
 const OASIS = new Set([16, -128]);
 const FARM_GROUND = new Set([16, -128, 1]);
 const FARM_MIN_OASIS_TILES = 50;
@@ -88,7 +93,13 @@ export type Tile = { x: number; y: number };
 export type Rect = { x1: number; y1: number; x2: number; y2: number };
 /** A building's footprint, and whether its workers need an open side (see needsOpenSide). */
 export type Footprint = Rect & { needsOpenSide?: boolean };
-export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number };
+export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number; ground?: string };
+/**
+ * How a spot is chosen. `reserve` (the default): keep off every other building's ground, for
+ * spots the harness picks itself. Without it, as find_sites offers spots for the model to choose
+ * among, anything the game allows, and `ground` keeps only spots on that ground (groundOf).
+ */
+export type SiteOptions = { reserve?: boolean; ground?: string };
 /** Tiles around a woodcutter site in which find_sites counts trees. */
 export const WOODCUTTER_REACH = 12;
 
@@ -310,7 +321,7 @@ export class TileMap {
     return this.signpostTiles().some((t) => Math.hypot(t.x - r.x1, t.y - r.y1) <= radius + 5);
   }
   /** Whether `building` fits with its footprint centred (by the game's rule) on `centre`. */
-  fits(building: string, centre: Tile): { ok: boolean; oasisShare?: number; reason?: string } {
+  fits(building: string, centre: Tile, reserve = true): { ok: boolean; oasisShare?: number; reason?: string } {
     const rect = footprintRect(centre, footprintOf(building));
     const farm = farmNames.has(building);
     const resource = resourceGround[building];
@@ -320,9 +331,18 @@ export class TileMap {
         const t = { x, y };
         if (!this.free(t)) return { ok: false, reason: "blocked" };
         total++;
-        if (resource && (this.value("logic", t)! >>> 0) & resource.bit) ground++;
-        if (!farm) continue;
+        const logic = this.value("logic", t)! >>> 0;
+        if (resource && logic & resource.bit) ground++;
+        // Each kind of special ground is the only one some building can use: oasis grass for
+        // farms, stone for quarries, ore for iron mines, oil for pitch rigs. A spot the harness
+        // chooses keeps off every kind but the building's own (the agent's own targets are
+        // clicked as given).
+        if (reserve && logic & DEPOSITS & ~(resource?.bit ?? 0)) return { ok: false, reason: "deposit" };
         const kind = this.value("logic2", t)!;
+        if (!farm) {
+          if (reserve && OASIS.has(kind)) return { ok: false, reason: "farmland" };
+          continue;
+        }
         if (!FARM_GROUND.has(kind)) return { ok: false, reason: "not_oasis" };
         if (OASIS.has(kind)) oasis++;
       }
@@ -345,19 +365,60 @@ export class TileMap {
       ...(placed ? { needsOpenSide: needsOpenSide(building) } : {}),
     });
   }
-  private site(building: string, t: Tile, planned: readonly Footprint[] = []): Site | null {
+  /**
+   * The special ground under a footprint: "oasis_grass", "stone", "iron_ore" or "oil" (joined
+   * with "+" when it covers several), or "plain" for none of them. Each is the only ground of
+   * some building: farms, quarries, iron mines and pitch rigs.
+   */
+  groundOf(building: string, centre: Tile) {
+    const rect = footprintRect(centre, footprintOf(building));
+    const kinds = new Set<string>();
+    for (let x = rect.x1; x <= rect.x2; x++)
+      for (let y = rect.y1; y <= rect.y2; y++) {
+        const logic = (this.value("logic", { x, y }) ?? 0) >>> 0;
+        if (OASIS.has(this.value("logic2", { x, y }) ?? 0)) kinds.add("oasis_grass");
+        if (logic & STONE) kinds.add("stone");
+        if (logic & ORE) kinds.add("iron_ore");
+        if (logic & OIL) kinds.add("oil");
+      }
+    return kinds.size ? [...kinds].sort().join("+") : "plain";
+  }
+  private site(building: string, t: Tile, planned: readonly Footprint[] = [], options: SiteOptions = {}): Site | null {
     if (!this.clickable(t)) return null;
-    const fit = this.fits(building, t);
+    const fit = this.fits(building, t, options.reserve ?? true);
     if (!fit.ok || !this.access(building, t, planned).ok) return null;
+    if (options.ground !== undefined && this.groundOf(building, t) !== options.ground) return null;
     return { tile: t, ...this.pixel(t), ...(fit.oasisShare !== undefined ? { oasisShare: fit.oasisShare } : {}) };
+  }
+  /**
+   * For find_sites: up to `count` spots per kind of ground under them (groundOf), each kind's
+   * chosen as sitesNear or woodcutterSites would, without keeping off other buildings' ground,
+   * so the model sees which spots would take farmland or a deposit and decides itself. The
+   * building's own ground comes first, then plain ground, then the rest. Spots of different
+   * kinds may overlap each other.
+   */
+  sitesByGround(building: string, near?: Tile, count = 3, radius = 20): Record<string, Site[]> {
+    const own = farmNames.has(building) ? "oasis_grass"
+      : building === "Quarry" ? "stone" : building === "Iron Mine" ? "iron_ore" : building === "Pitch Rig" ? "oil" : "plain";
+    const kinds = new Set(this.candidates(building, near, radius, [], { reserve: false }).map((s) => this.groundOf(building, s.tile)));
+    const order = [...kinds].sort((a, b) => Number(b === own) - Number(a === own) || Number(b === "plain") - Number(a === "plain") || a.localeCompare(b));
+    const groups: Record<string, Site[]> = {};
+    for (const ground of order) {
+      const options = { reserve: false, ground };
+      const sites = building === "Woodcutter"
+        ? this.woodcutterSites(near, count, radius, options)
+        : this.sitesNear(building, near, count, radius, [], options);
+      if (sites.length) groups[ground] = sites;
+    }
+    return groups;
   }
   /**
    * Valid sites nearest `near` (default: the camera centre), within `radius` tiles, mutually
    * non-overlapping, each leaving the others an open side. Farms prefer the most fertile squares
    * among close ones. `avoid`: footprints about to be placed.
    */
-  sitesNear(building: string, near?: Tile, count = 3, radius = 20, avoid: Footprint[] = []): Site[] {
-    const found = this.candidates(building, near, radius, avoid);
+  sitesNear(building: string, near?: Tile, count = 3, radius = 20, avoid: Footprint[] = [], options: SiteOptions = {}): Site[] {
+    const found = this.candidates(building, near, radius, avoid, options);
     // Farms: nearest first but by 2-tile distance bands, most fertile within a band.
     found.sort((a, b) => farmNames.has(building)
       ? Math.floor(a.d / 2) - Math.floor(b.d / 2) || (b.oasisShare ?? 0) - (a.oasisShare ?? 0)
@@ -370,9 +431,9 @@ export class TileMap {
    * distance alone, find_sites put woodcutters on bare ground and their wood stayed flat for 1.5 to
    * 2.5 game minutes (three GLM runs, 2026-10-08).
    */
-  woodcutterSites(near?: Tile, count = 3, radius = 20): Site[] {
+  woodcutterSites(near?: Tile, count = 3, radius = 20, options: SiteOptions = {}): Site[] {
     const trees = this.treeTiles();
-    const found = this.candidates("Woodcutter", near, radius).map((s) => {
+    const found = this.candidates("Woodcutter", near, radius, [], options).map((s) => {
       let nearest = Infinity, within = 0;
       for (const t of trees) {
         const d = Math.max(Math.abs(t.x - s.tile.x), Math.abs(t.y - s.tile.y));
@@ -385,7 +446,7 @@ export class TileMap {
     return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count);
   }
   /** Every site within `radius` tiles of `near` (default: the camera centre), with its distance. */
-  private candidates(building: string, near?: Tile, radius = 20, avoid: Footprint[] = []) {
+  private candidates(building: string, near?: Tile, radius = 20, avoid: Footprint[] = [], options: SiteOptions = {}) {
     const c = near ?? { x: this.camera.centre_tile_x, y: this.camera.centre_tile_y };
     const size = footprintOf(building);
     const found: (Site & { d: number })[] = [];
@@ -393,7 +454,7 @@ export class TileMap {
       for (let dy = -radius; dy <= radius; dy++) {
         const t = { x: c.x + dx, y: c.y + dy };
         if (avoid.some((r) => overlaps(r, footprintRect(t, size)))) continue;
-        const s = this.site(building, t, avoid);
+        const s = this.site(building, t, avoid, options);
         if (s) found.push({ ...s, d: Math.max(Math.abs(dx), Math.abs(dy)) });
       }
     return found;

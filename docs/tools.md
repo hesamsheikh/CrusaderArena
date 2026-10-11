@@ -52,7 +52,7 @@ Brewery, Inn. Castle and military buildings are not offered.
 | `build_structure` | `placements`: 1–4 of `{name, x?, y?, tile_x?, tile_y?, exact?}`, exactly one of the pixel pair or the tile pair | For each placement: opens the menu (for a good or bad thing, the Town page's good-factor or fear-factor subpage), selects the building, clicks the target pixel, then checks with the reader whether it was placed. A pixel target (`x`, `y`) needs the latest screenshot; a tile target (`tile_x`, `tile_y`, as named by `map_overview` or `find_sites`) needs none — right before its click the host reads the live camera and projects the tile to a pixel itself. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement (a pixel target reported `invalid_target`, or a tile target reported `not_on_screen`, does not count) |
 | `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
-| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map and the live camera for the current view (no observation needed) and lists free spots where the building fits and keeps an open side (see Open sides), each as a map tile and, when there is a current screenshot, its pixel too. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots as tiles (and pixels) | No |
+| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map and the live camera for the current view (no observation needed) and lists free spots where the building fits and keeps an open side (see Open sides), grouped by the ground under them (see Special ground), each as a map tile and, while the latest screenshot shows the live view, its pixel too. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles | Spots by ground, as tiles (and pixels) | No |
 
 A stockpile is not one building in the tile map but four 2×2 piles at the corners of a
 5×5 square; the tile map joins each four into its square. `place_near` and
@@ -99,7 +99,8 @@ host's own hotkeys do: only the window's identity and size are taken from it, so
 
 **Retries.** A `not_placed` target is retried at nearby spots: up to 6 per building and
 12 per call. With the tile map, the host picks the nearest spots where the building
-fits (a farm on oasis grass, a quarry, iron mine or pitch rig on its ground); otherwise
+fits (a farm on oasis grass, a quarry, iron mine or pitch rig on its ground, anything
+else off every other building's ground); otherwise
 it steps a short distance along each axis. The spots are projected from the camera the
 placement's own click came from: the screenshot's for a pixel target, the live one for
 a tile target (with a tile map read for that view). Retries stop when that camera
@@ -110,6 +111,15 @@ same call is accounted for; an unaffordable target is reported with
 `retrySkipped: not_enough_resources` and `missing` without being clicked. Without a
 stock reading the click goes ahead and, if the spot turns out free but nothing was
 placed, the same check during the retry reports it instead.
+
+**Special ground.** Oasis grass is the only ground farms can use, and stone, iron ore
+and oil the only ground of quarries, iron mines and pitch rigs. `find_sites` lists its
+spots grouped by the ground under them (`plain`, `oasis_grass`, `stone`, `iron_ore`,
+`oil`, or several joined by `+`), up to `count` per group with the building's own ground
+first, so the model sees what each spot would take and chooses. Every spot the harness
+chooses by itself (retries, `place_near`, `expand_storage`) keeps its whole footprint
+off the ground of other buildings; scrub counts as plain. A target the model gives
+itself is clicked as given.
 
 **Open sides.** A building with workers (every building except hovels, the
 marketplace, stockpiles, granaries and the good and bad things) needs one whole side of open ground: its workers

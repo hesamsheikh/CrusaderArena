@@ -66,7 +66,33 @@ test("farms need oasis or scrub everywhere and at least 50 oasis tiles (game cod
   // 10×10 with exactly 50 oasis tiles: accepted; a 9×9 there has 45 and is refused.
   assert.deepEqual(map.fits("Dairy Farm", { x: 95, y: 105 }), { ok: true, oasisShare: 0.5 });
   assert.equal(map.fits("Wheat Farm", { x: 95, y: 105 }).reason, "not_fertile");
-  assert.deepEqual(map.fits("Hovel", { x: 95, y: 105 }), { ok: true });
+  // Oasis grass is kept for farms: other buildings' spots stay off it; scrub is fine for them.
+  assert.deepEqual(map.fits("Hovel", { x: 95, y: 105 }), { ok: false, reason: "farmland" });
+  assert.deepEqual(map.fits("Hovel", { x: 92, y: 105 }), { ok: true });
+});
+
+test("spots found for buildings other than farms keep off oasis grass", () => {
+  // Oasis grass all around the view centre, plain ground from x 108 on.
+  const map = new TileMap(region((set) => fill(set, "logic2", 85, 85, 107, 115, -128)), camera, frame);
+  const hovels = map.sitesNear("Hovel", undefined, 3);
+  assert.equal(hovels.length, 3);
+  for (const site of hovels) assert.ok(footprintRect(site.tile, 4).x1 >= 108, `hovel at ${JSON.stringify(site.tile)} touches grass`);
+  for (const site of map.woodcutterSites(undefined, 2)) assert.ok(footprintRect(site.tile, 3).x1 >= 108, `woodcutter at ${JSON.stringify(site.tile)}`);
+  // A farm still finds its ground there.
+  assert.ok(map.sitesNear("Apple Orchard", undefined, 1).length === 1);
+});
+
+test("stone, ore and oil are kept for their own buildings, and each keeps off the others'", () => {
+  const map = new TileMap(region((set) => {
+    fill(set, "logic", 90, 90, 93, 93, 0x28000); // stone
+    fill(set, "logic", 110, 90, 113, 93, 0x88000); // ore
+  }), camera, frame);
+  assert.deepEqual(map.fits("Hovel", { x: 92, y: 92 }), { ok: false, reason: "deposit" });
+  assert.deepEqual(map.fits("Hovel", { x: 112, y: 92 }), { ok: false, reason: "deposit" });
+  assert.equal(map.fits("Quarry", { x: 92, y: 92 }).ok, true);
+  assert.equal(map.fits("Iron Mine", { x: 112, y: 92 }).ok, true);
+  assert.deepEqual(map.fits("Quarry", { x: 112, y: 92 }), { ok: false, reason: "deposit" }, "a quarry stays off ore");
+  assert.deepEqual(map.fits("Hovel", { x: 100, y: 100 }), { ok: true });
 });
 
 test("stone, ore and oil ground are buildable and count toward quarry, iron mine and pitch rig", () => {
@@ -79,7 +105,8 @@ test("stone, ore and oil ground are buildable and count toward quarry, iron mine
   assert.deepEqual(map.fits("Quarry", { x: 92, y: 92 }), { ok: true }); // 89..94 × 89..94
   assert.deepEqual(map.fits("Quarry", { x: 93, y: 92 }), { ok: true }); // 90..95: still 8
   assert.equal(map.fits("Quarry", { x: 94, y: 92 }).reason, "no_stone"); // 91..96: 4
-  assert.deepEqual(map.fits("Hovel", { x: 91, y: 92 }), { ok: true }, "stone does not block other buildings");
+  assert.deepEqual(map.fits("Hovel", { x: 91, y: 92 }, false), { ok: true }, "the game allows other buildings on stone");
+  assert.equal(map.fits("Hovel", { x: 91, y: 92 }).reason, "deposit", "spots the harness picks keep it for quarries");
   assert.equal(map.fits("Iron Mine", { x: 110, y: 91 }).reason, "no_ore");
   assert.deepEqual(map.fits("Iron Mine", { x: 111, y: 101 }), { ok: true });
   assert.deepEqual(map.fits("Pitch Rig", { x: 91, y: 111 }), { ok: true });
