@@ -72,19 +72,38 @@ test("market_trade without a marketplace says to build one with build_structure"
 /**
  * A game with a marketplace: its hotkey opens the panel, the category and good buttons choose a
  * good, and Buy and Sell trade the way the game was seen to on 2026-10-11: a purchase is 5 units, a
- * sale 20 while 100 or more are in stock, 10 from 50, else 5. `meanwhile` runs after each trade
- * click, before the reader is read: deliveries and tax payments landing at the same moment.
+ * sale 20 while 100 or more are in stock, 10 from 50, else 5. A trade lands `delay(click)` reader
+ * polls after its click; `meanwhile` runs at the click, before it lands, for deliveries and taxes
+ * arriving in samples of their own.
  */
-function fakeMarket(goods: Record<string, number>, gold: number, meanwhile: (game: { goods: Record<string, number>; gold: number }, click: number) => void = () => {}) {
+function fakeMarket(
+  goods: Record<string, number>,
+  gold: number,
+  { meanwhile = () => {}, delay = () => 0, everyPoll = () => {} }: {
+    meanwhile?: (game: { goods: Record<string, number>; gold: number }, click: number) => void;
+    /** Runs at every reader poll, before the sample is taken: a woodcutter unloading, say. */
+    everyPoll?: (game: { goods: Record<string, number>; gold: number }, poll: number) => void;
+    delay?: (click: number) => number;
+  } = {},
+) {
   const game = { goods: { ...goods }, gold, panel: null as { id: number; type: number } | null, good: null as string | null };
   const prices: Record<string, { buy: number; sell: number }> = { wood_planks: { buy: 4, sell: 1 }, apples: { buy: 8, sell: 4 } };
   const buttons: Record<string, string> = { "1040,970": "wood_planks", "1085,975": "apples" };
-  let trades = 0;
-  const stats = () => ({
-    status: "ok",
-    captured_unix_ms: Date.now(),
-    observation: { selected_building: game.panel, placement: { action: 0, sub_action: 0 }, gold: game.gold, resources_by_name: { ...game.goods } },
-  });
+  let trades = 0, polls = 0;
+  const pending: { at: number; land: () => void }[] = [];
+  const stats = () => {
+    polls++;
+    everyPoll(game, polls);
+    for (const trade of pending.filter((p) => p.at <= polls)) { trade.land(); pending.splice(pending.indexOf(trade), 1); }
+    return {
+      status: "ok",
+      captured_unix_ms: Date.now(),
+      observation: {
+        selected_building: game.panel, placement: { action: 0, sub_action: 0 }, gold: game.gold, resources_by_name: { ...game.goods },
+        settlement: { tax_amount: 37 },
+      },
+    };
+  };
   const frame = { id: "f", width: 1920, height: 1080, receivedAt: Date.now() };
   const ctx = {
     device: { currentStats: stats },
@@ -95,16 +114,20 @@ function fakeMarket(goods: Record<string, number>, gold: number, meanwhile: (gam
       if (action.button === 3) game.panel = null;
       else if (game.panel && buttons[at]) game.good = buttons[at];
       else if (game.panel && game.good && (at === "1235,932" || at === "1235,998")) {
-        const good = game.good, stock = game.goods[good] ?? 0;
-        if (at === "1235,932") {
-          game.goods[good] = stock + 5;
-          game.gold -= 5 * prices[good].buy;
-        } else {
-          const units = Math.min(stock, stock >= 100 ? 20 : stock >= 50 ? 10 : 5);
-          game.goods[good] = stock - units;
-          game.gold += units * prices[good].sell;
-        }
-        meanwhile(game, ++trades);
+        const good = game.good;
+        const buy = at === "1235,932";
+        const click = ++trades;
+        meanwhile(game, click);
+        pending.push({
+          at: polls + delay(click),
+          land: () => {
+            const stock = game.goods[good] ?? 0;
+            const units = buy ? 5 : Math.min(stock, stock >= 100 ? 20 : stock >= 50 ? 10 : 5);
+            if (buy && game.gold < units * prices[good].buy) return; // the game refuses it
+            game.goods[good] = stock + (buy ? units : -units);
+            game.gold += buy ? -units * prices[good].buy : units * prices[good].sell;
+          },
+        });
       }
       return { at: Date.now() };
     },
@@ -144,19 +167,53 @@ test("market_trade sells in the game's steps and never more than asked", async (
 });
 
 test("market_trade counts a click only when the reader shows that trade", async () => {
-  // A woodcutter's delivery and the month's taxes land with the clicks: neither hides a sale or
-  // passes for one, and the count stays at what was sold.
-  const { ctx, game } = fakeMarket({ wood_planks: 60 }, 500, (g, click) => {
-    if (click === 1) g.goods.wood_planks += 1;
-    if (click === 2) g.gold += 37;
-    if (click === 3) { g.goods.wood_planks += 1; g.gold += 37; }
+  // Deliveries and the month's taxes arrive in samples of their own while trades land a few polls
+  // after their clicks; the last one lands with both and more than a second late, as a purchase did
+  // live on 2026-10-11. Every trade is counted once, and nothing else is taken for one.
+  const { ctx, game } = fakeMarket({ wood_planks: 40 }, 500, {
+    meanwhile: (g, click) => {
+      if (click === 1) g.goods.wood_planks += 1;
+      if (click === 2) g.gold += 37;
+      if (click === 4) { g.goods.wood_planks += 1; g.gold += 37; }
+    },
+    delay: (click) => (click === 4 ? 50 : 3),
   });
-  const result = await marketTrade(ctx, "wood_planks", "sell", 6) as any;
-  assert.equal(result.status, "traded");
-  // 10 at 60, 10 at 51 (with the delivery), then 5 and 5 below 50.
-  assert.deepEqual([result.units, result.clicks], [-30, 4]);
-  assert.equal(game.goods.wood_planks, 60 - 30 + 2);
-  assert.equal(result.goldChange, 30 + 74, "taxes are in the gold change");
+  const result = await marketTrade(ctx, "wood_planks", "buy", 4) as any;
+  assert.equal(result.status, "traded", JSON.stringify(result));
+  assert.deepEqual([result.units, result.clicks], [20, 4]);
+  assert.equal(game.goods.wood_planks, 40 + 20 + 2);
+  assert.equal(result.goldChange, -80 + 74, "taxes are in the gold change");
+
+  // A sale with a delivery and the taxes in its very sample still counts.
+  const both = fakeMarket({ wood_planks: 60 }, 500, { meanwhile: (g) => { g.goods.wood_planks += 1; g.gold += 37; } });
+  const sold = await marketTrade(both.ctx, "wood_planks", "sell", 2) as any;
+  assert.deepEqual([sold.status, sold.units, sold.clicks], ["traded", -10, 1]);
+
+  // A purchase the game never makes is not counted, and with gold and room left it is not blamed
+  // on either.
+  const stuck = fakeMarket({ wood_planks: 40 }, 500, { delay: () => 10_000 });
+  const none = await marketTrade(stuck.ctx, "wood_planks", "buy", 2) as any;
+  assert.deepEqual([none.status, none.units], ["not_traded", 0]);
+  assert.match(none.note, /did not show in the reader/);
+
+  // A woodcutter unloading a plank a poll does not pass for a purchase the game refuses: with gold
+  // for one, 2 lots buy 5 and stop for gold.
+  const drip = fakeMarket({ wood_planks: 40 }, 25, { delay: () => 30, everyPoll: (g) => { g.goods.wood_planks += 1; } });
+  const poor = await marketTrade(drip.ctx, "wood_planks", "buy", 2) as any;
+  assert.deepEqual([poor.status, poor.units, poor.clicks], ["partly_traded", 5, 1]);
+  assert.match(poor.note, /not enough gold/);
+
+  // A purchase landing in the very sample of the month's taxes and a delivery (live 2026-10-11, three
+  // times): the stock moved 6 and the gold +17, which is the purchase with the month's 37 on top.
+  const tick = fakeMarket({ wood_planks: 40 }, 500, { delay: (click) => (click === 2 ? 0 : 3), meanwhile: (g, click) => {
+    if (click === 2) { g.goods.wood_planks += 1; g.gold += 37; }
+  } });
+  const withTaxes = await marketTrade(tick.ctx, "wood_planks", "buy", 3) as any;
+  assert.deepEqual([withTaxes.status, withTaxes.units, withTaxes.clicks], ["traded", 15, 3]);
+  // A trade that never lands within the wait is not counted.
+  const still = fakeMarket({ wood_planks: 40 }, 500, { delay: () => 100 });
+  const missed = await marketTrade(still.ctx, "wood_planks", "buy", 1) as any;
+  assert.deepEqual([missed.status, missed.units], ["not_traded", 0]);
 
   // Food is bought 5 units a click too (not lots of 10).
   const food = fakeMarket({ apples: 40 }, 500);

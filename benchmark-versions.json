@@ -111,7 +111,7 @@
     },
     {
       "version": "1.5.0",
-      "fingerprint": "f92518f8dd56857390e86f40c9dbba1b02a69442ad7cbba6dfcc1edb954833c3",
+      "fingerprint": "49c2166eecd78158565fc5f70f76165276600c28a50ec9f7d1d7e0ee45e5cb4d",
       "date": "2026-10-11",
       "note": "market_trade trades in the game's own steps (a purchase 5 units a click; a sale 20 while 100 or more are in stock, 10 from 50, else 5) up to lots x 5 units and never more, counting a click only when the reader shows that trade; its description no longer says food trades in lots of 10."
     }

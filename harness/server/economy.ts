@@ -1,10 +1,11 @@
 import type { Frame } from "../shared/protocol.js";
 import type { GameHotkey } from "./device.js";
 import { ackTime, dismiss, sampleAfter, type AnchorContext } from "./anchors.js";
-import type { Observation } from "./placement.js";
+import { SAMPLE_POLL_SECONDS, type Observation } from "./placement.js";
 import { buyPrice, sellPrice } from "./market-prices.js";
 import { inventoryGroups } from "./inventory.js";
 import { points } from "../shared/popularity.js";
+import { storageOf } from "./status.js";
 
 /**
  * Tax and marketplace panels, driven by clicks at positions measured on the 1920×1080
@@ -150,10 +151,58 @@ export function unitsPerClick(action: "buy" | "sell", stock: number) {
 }
 
 /**
+ * Waits up to `seconds` for one trade to show in the reader after `after`: from one sample to the
+ * next the stock moved by exactly `units` or the gold by exactly `gold`, or the gold did since `from`
+ * (the state before the click). A trade changes both at once, while a delivery or the month's taxes
+ * change one of them, so one of the two stays exact; the gold also counts with the month's taxes
+ * (the keep's `tax_amount`) on top, for a trade that lands in the sample of the taxes. The stock is
+ * not compared with `from`: a woodcutter unloads one plank a sample, which adds up to a purchase's 5
+ * in about half a second (live 2026-10-11), while only trades and taxes move the gold. Three
+ * purchases in short live checks that day landed with the taxes and a delivery in one sample and
+ * were missed.
+ */
+async function tradeShown(
+  ctx: AnchorContext,
+  after: number,
+  values: (o: Observation) => { stock: number; gold: number } | null,
+  from: { stock: number; gold: number },
+  units: number,
+  gold: number,
+  seconds: number,
+) {
+  let prev = from;
+  for (let i = 0; i < seconds / SAMPLE_POLL_SECONDS; i++) {
+    const stats = ctx.device.currentStats();
+    const o = stats.status === "ok" ? (stats.observation as Observation | null) : null;
+    const v = o && (stats.captured_unix_ms ?? 0) >= after ? values(o) : null;
+    if (v) {
+      const tax = (o?.settlement as { tax_amount?: unknown } | null | undefined)?.tax_amount;
+      const paid = (delta: number) => delta === gold || (typeof tax === "number" && tax !== 0 && delta === gold + tax);
+      // From one sample to the next: exact in the stock or the gold, or for a sale both moved its
+      // way (a delivery and the taxes in the very sample of the sale). Since the click: the gold.
+      const step = v.stock - prev.stock === units || paid(v.gold - prev.gold) ||
+        (units < 0 && v.stock < prev.stock && v.gold - prev.gold >= gold);
+      if (step || paid(v.gold - from.gold)) return v;
+      prev = v;
+    }
+    await ctx.pause(SAMPLE_POLL_SECONDS);
+  }
+  return null;
+}
+
+/** Room for `units` more of a good in the reader's storage: its piles and the empty ones, or the granaries. */
+function roomFor(o: Observation | null, good: string, units: number) {
+  const storage = o ? storageOf(o as Parameters<typeof storageOf>[0]) : undefined;
+  if (!storage) return true;
+  if ((inventoryGroups.granary as readonly string[]).includes(good)) return storage.granary.room >= units;
+  const own = storage.stockpile.goods[good];
+  return own ? own.room >= units : storage.stockpile.empty_piles > 0;
+}
+
+/**
  * Buy or sell up to `lots` × 5 units of one good at the marketplace, one click at a time in the
  * game's own steps (unitsPerClick), and never more than asked. A click counts once the reader shows
- * that trade: the gold or the stock moved by exactly its units, or both moved its way, so a
- * delivery or a tax payment in between is not taken for one.
+ * that trade (tradeShown), so a delivery or a tax payment at the same moment is not taken for one.
  */
 export async function marketTrade(ctx: AnchorContext, good: string, action: "buy" | "sell", lots: number) {
   const button = goodsButtons[good];
@@ -178,29 +227,30 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
   const price = (action === "buy" ? buyPrice : sellPrice)[good] ?? 0;
   // +1 when a purchase moves units in and gold out, -1 for a sale.
   const way = action === "buy" ? 1 : -1;
+  const values = (o: Observation) => {
+    const s = stock(o), g = gold(o);
+    return s === null || g === null ? null : { stock: s, gold: g };
+  };
   let traded = 0, clicks = 0, last = before, tooLarge = 0;
+  let lastSeen: Observation | null = opened;
   while (traded < wanted && last.stock !== null && last.gold !== null) {
     const step = unitsPerClick(action, last.stock);
     if (step === 0) break;
     if (step > wanted - traded) { tooLarge = step; break; }
-    const from = { stock: last.stock, gold: last.gold };
     const ack = await click(ctx, action === "buy" ? BUY : SELL);
-    const seen = await sampleAfter(ctx, ackTime(ack), (o) => {
-      const s = stock(o), g = gold(o);
-      if (s === null || g === null) return false;
-      const moved = (s - from.stock) * way, paid = (from.gold - g) * way;
-      return moved === step || (price > 0 && paid === step * price) || (moved > 0 && paid >= step * price);
-    }, 1);
+    const seen = await tradeShown(ctx, ackTime(ack), values, { stock: last.stock, gold: last.gold }, step * way, -step * price * way, 2);
     if (!seen) break;
     traded += step;
     clicks++;
-    last = { stock: stock(seen), gold: gold(seen) };
+    last = seen;
+    lastSeen = ctx.device.currentStats().observation as Observation | null ?? lastSeen;
   }
   await dismiss(ctx, await ctx.frame());
   const units = traded * way;
   const goldChange = before.gold !== null && last.gold !== null ? last.gold - before.gold : null;
-  // A purchase stops for gold or for storage room; with gold left for another click it was room.
-  const roomOut = last.gold !== null && last.gold >= (buyPrice[good] ?? Infinity) * 5;
+  // A purchase stops for gold or for storage room; it says which only when the reader shows it.
+  const noGold = last.gold !== null && last.gold < (buyPrice[good] ?? Infinity) * 5;
+  const roomOut = !noGold && !roomFor(lastSeen, good, 5);
   const food = (inventoryGroups.granary as readonly string[]).includes(good);
   const stopped = traded >= wanted
     ? {}
@@ -212,13 +262,15 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
       : action === "sell"
         ? last.stock === 0
           ? { note: "Stopped: no more of this good to sell.", remedy: "Sell only what get_inventory shows in stock." }
-          : { note: "Stopped: a sale did not show in the reader.", remedy: "Observe, then call market_trade again for the rest." }
+          : { note: "Stopped: a sale did not show in the reader within 2 seconds.", remedy: "Observe; if the stock did not fall, call market_trade again for the rest." }
         : roomOut
           ? {
               note: "Stopped: no storage room for this good (see storage in status).",
               remedy: food ? "Make room: expand_storage (kind granary) adds granaries." : "Make room: expand_storage (kind stockpile) adds stockpile piles.",
             }
-          : { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." };
+          : noGold
+            ? { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." }
+            : { note: "Stopped: a purchase did not show in the reader within 2 seconds.", remedy: "Observe; if the stock did not rise, call market_trade again for the rest." };
   return {
     status: traded >= wanted ? "traded" as const : traded ? "partly_traded" as const : "not_traded" as const,
     good, action, lots: traded / 5, units, clicks,

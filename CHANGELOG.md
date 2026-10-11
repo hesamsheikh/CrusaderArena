@@ -30,9 +30,16 @@ more than asked, and its description says how the game trades.
   lots. Seen live on wood, stone and apples: a purchase is always 5 units a click, a
   sale 20, 10 or 5. The tool now trades one click at a time in those steps up to
   `lots` × 5 units and stops, saying which step to ask for, when the next step is
-  larger than what is left. A click counts once the reader shows its trade (the gold or
-  the stock moved by exactly its units, or both moved its way), so a delivery or a tax
-  payment at the same moment is not taken for one. The result gives the units traded
+  larger than what is left. A click counts once the reader shows its trade within 2
+  seconds: from one sample to the next the stock or the gold moved by exactly its units,
+  or the gold did since the click, also with the month's taxes (the keep's tax figure)
+  on top. A trade changes both at once while a delivery or the taxes change one, so
+  neither hides a trade nor passes for one; the stock is not compared with the click's,
+  because a woodcutter unloading a plank a sample adds up to 5 in half a second. In
+  three short live checks a purchase that landed in the very sample of the month's
+  taxes and a delivery (gold +17, stock +6) had been missed, and the first time blamed
+  on storage room. A stopped purchase now blames gold or room only when the reader
+  shows it short of them. The result gives the units traded
   and the clicks. The description no longer says food trades in lots of 10: food is
   bought 5 units a click like the rest.
 

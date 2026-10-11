@@ -203,8 +203,10 @@ between September and October 2026.
 
 - `market_trade` trading in the game's own steps (1.5.0), with a simulated market
   (`economy.test.ts`): 20 lots of 225 wood sell exactly 100; a sale stops, with the step
-  to ask for, when the next step is larger than what is left; a delivery and a tax
-  payment at the same moment as a click neither hide a trade nor pass for one. The
+  to ask for, when the next step is larger than what is left; deliveries and tax
+  payments around a click, a plank unloaded every poll, and a trade landing in the very
+  sample of the month's taxes and a delivery neither hide a trade nor pass for one; a
+  purchase that never lands is not blamed on gold or room the reader shows. The
   steps themselves were measured live on 2026-10-11 by clicking the marketplace through
   the host on a saved game (wood, stone and apples: a purchase 5 units a click, a sale
   20 from 100 in stock, 10 from 50, else 5; 103 sold 20 and 91 sold 10, 53 sold 10 and
