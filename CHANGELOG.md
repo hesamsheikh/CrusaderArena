@@ -17,6 +17,18 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.2] - 2026-10-11
+
+Comparable with 1.5.0 and 1.5.1: nothing an Oasis by the Sea run sees changed.
+
+### Benchmark
+
+- A second scored scenario, *Large Barren Desert construction*, on the save "Large Barren
+  Desert benchmark start" (the start of the person's reference game on that map): the Oasis
+  rules with the map described from the save, read live (a desert with no farmland, single
+  trees, stone far west of the keep and iron east of it; 5,000 gold, wood and meat as the
+  starting package), and its own objective file.
+
 ## [1.5.1] - 2026-10-11
 
 Comparable with 1.5.0: runs on the profiles that 1.5.0 accepted send and play the same.

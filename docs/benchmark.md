@@ -36,15 +36,18 @@ the operator's instruction alone defines the task.
 | Benchmark | Save | Task | Scored |
 | --- | --- | --- | --- |
 | Oasis by the Sea construction | `Oasis by the Sea-1` | Grow the economy as far as possible | Yes: net worth |
+| Large Barren Desert construction | `Large Barren Desert benchmark start` | Grow the economy as far as possible, on a map with no farmland | Yes: net worth |
 | Cactus Valley construction | `Cactus Valley-1` | Build a basic working settlement: granary, stockpile, wood, housing, food | No (diagnostic) |
 | Free build construction | `A Mightier Oasis-1` | Make visible construction progress | No (diagnostic) |
 
-All three are Free Build games saved at the very start of play, with soldiers and
+All four are Free Build games saved at the very start of play, with soldiers and
 defences not allowed. The starting goods are still arriving when a save loads:
 `Oasis by the Sea-1` shows 120 gold and 12 wood, and the rest of the package arrives
 within about 25 game seconds: wood first, then stone, bread and the last of the gold
 (see [Scoring](#scoring-net-worth)). The Oasis rules tell the model this, and the game
-reference tells it that starting goods rise at first.
+reference tells it that starting goods rise at first. `Large Barren Desert benchmark start`
+shows 4,080 gold, 43 wood and 12 meat and has its package of 5,000 gold, wood and 55 meat
+about 27 game seconds later; its wood stops at 192, when the stockpile is full.
 
 The saves are not included. To make one, start a Free Build game on that map and save
 it straight away under the exact name in the table. A save made later starts from a

@@ -108,6 +108,12 @@ between September and October 2026.
   `inspect_building` opened a panel only with the game running, as it is during play.
 
 **Runs**
+- The Large Barren Desert scenario's map facts, on 2026-10-11, from "Large Barren Desert
+  benchmark start" loaded without an agent: the package arriving to 5,000 gold, 192 wood
+  (the stockpile's four piles of 48 full) and 55 meat about 27 game seconds after load,
+  the granary and stockpile already standing, and from the whole-map summary no oasis
+  grass, only single trees, stone about 100 tiles west of the keep and iron ore about 60
+  east. No agent has played the scenario yet.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
