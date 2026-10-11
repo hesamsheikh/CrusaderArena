@@ -192,7 +192,9 @@ episodes are independent games of the same save; `--playbook` makes them a
 
 1. Starts the game through Steam on the game machine and connects to it.
 2. Waits for the main menu, opens Load Game, searches for the save by name and loads it
-   (up to 3 attempts), then confirms the map with the reader. The main menu and the
+   (up to 3 attempts), then confirms the map with the reader. While it waits it clicks
+   the screen centre once a second, which skips the intro videos and the promo splash
+   (plain cover art on the main menu, away from its buttons). The main menu and the
    Load Game dialog are recognised as soon as they show, from a few pixel colours of a
    capture (`tools/runner/screen_probe.py`, which needs Pillow on the host, and
    `harness/server/menu-screen.ts`); the runner log gives the seconds from launch to
@@ -270,6 +272,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
 | `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
 | `--fallback-observation` | `when-needed` | What the host sends after a turn that acted without looking: `when-needed` is text only unless the turn used `game_action`, `inspect_building` or a pixel placement (a screenshot then); `always` is a screenshot every time |
+| `--screenshot-width` | 1280 | Width the model's screenshots are scaled down to (0: the window's own size); see [Context](context.md#observations) |
 | `--context-budget` | 120000 | Working context budget in tokens |
 | `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |
 | `--playbook` | off | Run the episodes as a [learning series](#learning-series): the playbook carries over |

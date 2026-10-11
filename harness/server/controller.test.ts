@@ -515,6 +515,19 @@ test("every request repeats the previous one exactly, so the provider's prompt c
   }
 });
 
+test("the run's screenshots use its screenshot width, and the final captures the window's own size", async () => {
+  const f = fixture(2);
+  const device = (f.controller as unknown as { device: { screenshotWidth?: number } }).device;
+  const seen: (number | undefined)[] = [];
+  f.provider((n) => {
+    seen.push(device.screenshotWidth);
+    return n === 1 ? [call("observe", {})] : [{ type: "text", text: "Done." }];
+  });
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.deepEqual(seen, [1280, 1280]);
+  assert.equal(device.screenshotWidth, undefined);
+});
+
 test("fallbackObservation defaults to when-needed and is recorded in run.json", () => {
   const store = new Store(mkdtempSync(path.join(tmpdir(), "arena-controller-")), {});
   const run = store.create("test", store.models()[0].id, "Play.", 1);

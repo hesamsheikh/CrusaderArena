@@ -267,6 +267,16 @@ between September and October 2026.
   (`menu-screen.test.ts`) and the sampler with synthetic images (`tools/runner`). Not
   yet used in a live launch; the seconds it saves, and whether the dialog is ready to
   type into a second after it is recognised, need one.
+- Screenshots scaled down by the game-machine bridge with clicks scaled back up: live on
+  2026-10-11 through the host's own `GameDevice`, a 1280 × 720 capture of a 1920 × 1080
+  window, and a click on the main menu's Load Game at its 1280-wide coordinates opening
+  the Load Game dialog. The window-coordinate scaling and the run applying the setting
+  are tested in code (`protocol.test.ts`, `controller.test.ts`). No agent run has used
+  the smaller screenshots yet.
+- Clicking through the startup screens: live on 2026-10-11, clicking the screen centre
+  once a second skipped the Firefly and Stronghold intro videos and the promo splash and
+  brought the main menu 25 s after launch instead of 49 s, with nothing else opened;
+  built into the runner after that and not yet used by `npm run episodes`.
 - `demolish_building`: the demolish button (the X on the red strip beside the
   construction tray at 1537, 1016 in the 1920 × 1080 layout) putting the game in
   demolish mode (reader placement action 6), a click on a woodcutter's hut removing it

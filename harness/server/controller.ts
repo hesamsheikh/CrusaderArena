@@ -559,8 +559,13 @@ export class RunController {
     );
     this.publish();
   }
+  /** The model's screenshots at the run's size (screenshotWidth) for the whole run, or the window's own. */
+  private useScreenshotWidth(on: boolean) {
+    this.device.screenshotWidth = on ? this.runtime.config.screenshotWidth || undefined : undefined;
+  }
   async prepare() {
     if (this.prepared) throw new Error("Run already prepared.");
+    this.useScreenshotWidth(true);
     this.runtime.phase("preparing");
     await this.ensurePauseState(true);
     this.log("system", "Game confirmed paused for agent preparation.");
@@ -703,6 +708,7 @@ export class RunController {
     return this.runtime.config.fallbackObservation === "always" || this.cycle.pixelInput;
   }
   async runSession() {
+    this.useScreenshotWidth(true);
     const unsubscribe = this.device.events.subscribe((record) => {
       try {
         this.memory.journal(this.store.redact(record));
@@ -968,6 +974,8 @@ export class RunController {
       }
     } finally {
       this.session.close();
+      // The final reading's capture and the overview image keep the window's own size.
+      this.useScreenshotWidth(false);
       if (this.session.errorDetail) {
         this.progress.endError ??= this.session.errorDetail;
         this.log("error", this.session.errorDetail);

@@ -66,6 +66,7 @@ const { values: opts } = parseArgs({
     "default-wait": { type: "string" },
     "min-turn-seconds": { type: "string" },
     "fallback-observation": { type: "string" },
+    "screenshot-width": { type: "string" },
     "context-budget": { type: "string" },
     episodes: { type: "string" },
     playbook: { type: "boolean" },
@@ -84,11 +85,11 @@ const { values: opts } = parseArgs({
 });
 const DEFAULTS = {
   benchmark: "Custom", "game-minutes": "25", "wall-limit-minutes": "360", "default-wait": "5",
-  "min-turn-seconds": "8", "fallback-observation": "when-needed", "context-budget": "120000", episodes: "3",
+  "min-turn-seconds": "8", "fallback-observation": "when-needed", "screenshot-width": "1280", "context-budget": "120000", episodes: "3",
 };
 const setting = (name: keyof typeof DEFAULTS) => opts[name] ?? DEFAULTS[name];
 const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-file", "game-minutes", "wall-limit-minutes",
-  "default-wait", "min-turn-seconds", "fallback-observation", "context-budget", "episodes", "playbook", "record"] as const;
+  "default-wait", "min-turn-seconds", "fallback-observation", "screenshot-width", "context-budget", "episodes", "playbook", "record"] as const;
 /** What an episode is run with: a series' settings, or the flags for --idle, --human and --dry-run. */
 type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
@@ -240,8 +241,11 @@ async function currentScreen(): Promise<MenuScreen | null> {
     child.stdin.end(image);
   });
 }
-/** Poll until `target` shows: true, false at the deadline, null when screens cannot be told apart here. */
-async function waitForScreen(target: MenuScreen, seconds: number, intervalMs = 1000) {
+/**
+ * Poll until `target` shows: true, false at the deadline, null when screens cannot be told apart
+ * here. `meanwhile` runs after each look that shows something else.
+ */
+async function waitForScreen(target: MenuScreen, seconds: number, intervalMs = 1000, meanwhile?: () => Promise<unknown>) {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
     checkStop();
@@ -249,9 +253,16 @@ async function waitForScreen(target: MenuScreen, seconds: number, intervalMs = 1
     if (screen === null) return null;
     if (screen === target) return true;
     if (Date.now() > deadline) return false;
+    await meanwhile?.();
     await sleep(intervalMs);
   }
 }
+/**
+ * Where a click skips the startup videos and the promo splash: the screen centre, which on the
+ * main menu is plain cover art well away from its buttons. Clicking each second brought the main
+ * menu 25 s after launch instead of 49 s, and opened nothing (live 2026-10-11).
+ */
+const SKIP_CLICK = { x: 960, y: 540 };
 
 /** EPISODE_DEBUG=1 saves a screenshot after each save-loading step. */
 async function debugShot(step: string) {
@@ -293,7 +304,8 @@ const MENU_SECONDS = 180;
  */
 async function openLoadDialog(attempt: number, launchedAt: number) {
   const since = () => `${Math.round((Date.now() - launchedAt) / 1000)} s after launch`;
-  const menu = await waitForScreen("main_menu", Math.max(20, (launchedAt + MENU_SECONDS * 1000 - Date.now()) / 1000));
+  const menu = await waitForScreen("main_menu", Math.max(20, (launchedAt + MENU_SECONDS * 1000 - Date.now()) / 1000), 1000,
+    () => clickScaled(SKIP_CLICK.x, SKIP_CLICK.y).catch(() => {}));
   if (menu === null) {
     if (attempt === 1) await sleep(Math.max(0, launchedAt + STARTUP_SECONDS * 1000 - Date.now()));
     await waitForStillScreen(90);
@@ -1021,6 +1033,7 @@ async function main() {
       defaultWaitSeconds: Number(setting("default-wait")),
       minTurnSeconds: Number(setting("min-turn-seconds")),
       fallbackObservation: setting("fallback-observation"),
+      screenshotWidth: Number(setting("screenshot-width")),
       contextBudget: Number(setting("context-budget")),
       imageTokenEstimate: 4096,
       recordVideo: opts.record ?? false,

@@ -114,7 +114,10 @@ def window():
         raise RuntimeError('Unsupported game window dimensions.')
     return w, g
 
-def capture():
+def capture(width=None):
+    """The game window as a JPEG, scaled down to `width` pixels across (keeping the aspect) when
+    that is smaller than the window; windowWidth/windowHeight give the window's own size, which
+    input must use (the host scales its coordinates back up)."""
     w, g = window()
     # Compositor-owned backing pixmap: other windows cannot appear in this image.
     pixmap = w.composite_name_window_pixmap()
@@ -123,12 +126,15 @@ def capture():
         if raw is None or raw.depth not in (24, 32):
             raise RuntimeError('Game capture unavailable.')
         im = Image.frombytes('RGB', (g.width, g.height), raw.data, 'raw', 'BGRX')
+        if isinstance(width, int) and 320 <= width < g.width:
+            im = im.resize((width, round(g.height * width / g.width)), Image.LANCZOS)
         output = io.BytesIO()
         im.save(output, format='JPEG', quality=80)
     finally:
         pixmap.free()
     return {'image':base64.b64encode(output.getvalue()).decode(), 'mimeType':'image/jpeg',
-            'width':g.width, 'height':g.height, 'windowId':w.id, 'pid':pid,
+            'width':im.width, 'height':im.height, 'windowWidth':g.width, 'windowHeight':g.height,
+            'windowId':w.id, 'pid':pid,
             'capturedAt':int(time.time()*1000), 'scope':'game-window'}
 
 def emit(w, event, event_mask):
@@ -261,7 +267,7 @@ try:
             request = json.loads(line)
             op = request.get('op')
             if op == 'capture':
-                result = capture()
+                result = capture(request.get('width'))
             elif op == 'action':
                 result = action(request['action'])
             elif op == 'status':

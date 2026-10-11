@@ -527,6 +527,12 @@ export function RunDetail({
                     <dd>{run.config.minTurnSeconds} game s</dd>
                   </div>
                 )}
+                {run.config.screenshotWidth !== undefined && (
+                  <div>
+                    <dt>Screenshot width</dt>
+                    <dd>{run.config.screenshotWidth ? `${run.config.screenshotWidth} px` : "Window size"}</dd>
+                  </div>
+                )}
                 {run.config.fallbackObservation !== undefined && (
                   <div>
                     <dt>Fallback observation</dt>

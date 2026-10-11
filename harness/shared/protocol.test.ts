@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionSchema, modelToolAction, runConfigSchema, validateFrameAction, type Frame } from "./protocol.js";
+import { actionSchema, modelToolAction, runConfigSchema, validateFrameAction, windowAction, type Frame } from "./protocol.js";
 const frame: Frame = {
   id: "test",
   image: "",
@@ -92,4 +92,15 @@ test("fallbackObservation defaults to when-needed, accepts always, and rejects a
   assert.equal(runConfigSchema.parse({}).fallbackObservation, "when-needed");
   assert.equal(runConfigSchema.parse({ fallbackObservation: "always" }).fallbackObservation, "always");
   assert.equal(runConfigSchema.safeParse({ fallbackObservation: "sometimes" }).success, false);
+});
+
+test("input aimed at a scaled-down screenshot is scaled back to the game window", () => {
+  const scaled = { width: 1280, height: 720, windowWidth: 1920, windowHeight: 1080 };
+  assert.deepEqual(windowAction({ type: "click", x: 447, y: 679, button: 1 }, scaled), { type: "click", x: 671, y: 1019, button: 1 });
+  assert.deepEqual(windowAction({ type: "drag", x: 0, y: 0, endX: 1279, endY: 719, button: 1 }, scaled), { type: "drag", x: 0, y: 0, endX: 1919, endY: 1079, button: 1 });
+  assert.deepEqual(windowAction({ type: "key", key: "Z" }, scaled), { type: "key", key: "Z" });
+  // A full-size frame is sent as it is.
+  const click = { type: "click" as const, x: 5, y: 6, button: 1 as const };
+  assert.equal(windowAction(click, { width: 1920, height: 1080 }), click);
+  assert.equal(runConfigSchema.parse({}).screenshotWidth, 1280);
 });

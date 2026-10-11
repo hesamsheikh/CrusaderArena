@@ -94,6 +94,12 @@ figure, and three little-used tools were removed.
   (placement retries, `place_near`, `expand_storage`) keep off the ground of other
   buildings: oasis grass for farms, stone, iron ore and oil for quarries, iron mines and
   pitch rigs. A target the agent gives itself is still clicked as given.
+- The model's screenshots are scaled down to 1280 × 720 by default (new run setting
+  `screenshotWidth`, `--screenshot-width`; 0 keeps the window's own size): about 44% of
+  the pixels and image tokens, with buildings, terrain and the HUD's figures still
+  legible. GLM's wait for the first token had grown by about a second with every
+  1920 × 1080 screenshot kept in the conversation. The bridge on the game machine scales
+  the capture, and the host scales clicks back to the window.
 - New tool `demolish_building`: removes one of the agent's buildings, given by map tile
   or pixel, with the game's own demolish tool, checked through the reader (the
   structure count falls). It counts as one action. Before, only raw `game_action`
@@ -111,7 +117,9 @@ figure, and three little-used tools were removed.
 - `npm run episodes` recognises the game's main menu and the Load Game dialog from a few
   pixel colours of a capture (`tools/runner/screen_probe.py`, Pillow on the host)
   instead of waiting for the screen to stop changing, which the animated menu never did:
-  every launch ran out a 90 s and a 15 s timeout. The save's name is typed with one
+  every launch ran out a 90 s and a 15 s timeout. While waiting it clicks the screen
+  centre once a second, which skips the intro videos and the promo splash: the menu came
+  25 s after launch instead of 49 s. The save's name is typed with one
   capture instead of one per key, and the loaded map is polled every 250 ms. A host
   without Pillow waits the old way.
 

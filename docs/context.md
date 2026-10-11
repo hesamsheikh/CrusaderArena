@@ -81,8 +81,14 @@ observation, and the host sends one itself when a turn needs it. When a reply's 
 tool result has no observation, the host appends a "Game time left: … of …" line to
 it, so every request shows the time left. An observation has:
 
-- **A screenshot**: JPEG of the game window only, at the window's own size. `width` and
-  `height` in the JSON block are this image's pixels, which clicks target.
+- **A screenshot**: JPEG of the game window only, scaled down to the run setting
+  `screenshotWidth` (`--screenshot-width`, default 1280: 1280 × 720 from a 1920 × 1080
+  window, about 44% of the pixels and image tokens, with buildings, terrain and the HUD's
+  figures still legible; 0 keeps the window's own size). The game-machine bridge scales
+  it; the size is fixed for the run, so the conversation's images stay alike for the
+  prompt cache. `width` and `height` in the JSON block are this image's pixels, which
+  clicks target; the host scales every click back to the window. The final reading's
+  capture and the final overview keep the window's own size.
 - **A JSON block**:
 
 | Field | Contents |

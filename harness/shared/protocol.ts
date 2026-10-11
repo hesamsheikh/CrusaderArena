@@ -62,8 +62,12 @@ export type Frame = {
   id: string;
   image: string;
   mimeType: "image/jpeg";
+  /** The image's size: the pixels the model and the tools target. */
   width: number;
   height: number;
+  /** The game window's own size, when the image was scaled down from it (windowAction). */
+  windowWidth?: number;
+  windowHeight?: number;
   windowId: number;
   pid: number;
   capturedAt: number;
@@ -287,6 +291,13 @@ export const runConfigSchema = z
      * A reply with no tool calls gets a screenshot under either.
      */
     fallbackObservation: z.enum(["when-needed", "always"]).default("when-needed"),
+    /**
+     * Width the model's screenshots are scaled down to, keeping the window's aspect (1280 gives
+     * 1280 x 720 from 1920 x 1080: about 44% of the pixels and image tokens, the buildings, terrain
+     * and HUD figures still legible); 0 keeps the window's own size. Fixed for the run, so the
+     * conversation's images stay alike for the prompt cache. Clicks are scaled back to the window.
+     */
+    screenshotWidth: z.number().int().min(0).max(7680).default(1280),
     contextBudget: z.number().int().min(32000).max(200000).default(120000),
     imageTokenEstimate: z.number().int().min(1024).max(16384).default(4096),
     /** Record the game window while the agent acts (not while it thinks) for tools/video/render-video.py. */
@@ -450,6 +461,20 @@ export type State = {
     error?: string;
   };
 };
+/**
+ * The input for the game window from one aimed at `frame`'s image: coordinates scaled up when the
+ * image was scaled down from the window (Frame.windowWidth/windowHeight), clamped inside it.
+ */
+export function windowAction<A extends GameAction>(action: A, frame: Pick<Frame, "width" | "height" | "windowWidth" | "windowHeight">): A {
+  const ww = frame.windowWidth ?? frame.width, wh = frame.windowHeight ?? frame.height;
+  if (ww === frame.width && wh === frame.height) return action;
+  const sx = (v: number) => Math.min(ww - 1, Math.round((v * ww) / frame.width));
+  const sy = (v: number) => Math.min(wh - 1, Math.round((v * wh) / frame.height));
+  const scaled: Record<string, unknown> = { ...action };
+  if ("x" in action) { scaled.x = sx(action.x); scaled.y = sy(action.y); }
+  if (action.type === "drag") { scaled.endX = sx(action.endX); scaled.endY = sy(action.endY); }
+  return scaled as A;
+}
 export function validateFrameAction(
   action: GameAction,
   frame: Frame,

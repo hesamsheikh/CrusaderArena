@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Frame, GameAction, Stats } from "../shared/protocol.js";
-import { validateFrameAction } from "../shared/protocol.js";
+import { validateFrameAction, windowAction } from "../shared/protocol.js";
 import { GameEvents } from "./game-events.js";
 import type { MapSummary } from "./map-view.js";
 /** Single-quoted for the remote shell. */
@@ -424,11 +424,16 @@ export class GameDevice {
   cancelQueued() {
     this.epoch++;
   }
+  /**
+   * Width the bridge scales captures down to (the run's screenshotWidth); undefined keeps the
+   * window's own size. Input is scaled back to the window (windowAction).
+   */
+  screenshotWidth: number | undefined;
   async capture(): Promise<Frame> {
     return this.serial(async () => {
       let result;
       try {
-        result = await this.rpc("capture");
+        result = await this.rpc("capture", this.screenshotWidth ? { width: this.screenshotWidth } : {});
       } catch (error) {
         this.fail("Game capture failed; reconnect before continuing.");
         throw error;
@@ -452,10 +457,10 @@ export class GameDevice {
       this.announce({ ...action, width: frame.width, height: frame.height });
       return this.rpc("action", {
         action: {
-          ...action,
+          ...windowAction(action, frame),
           windowId: frame.windowId,
-          width: frame.width,
-          height: frame.height,
+          width: frame.windowWidth ?? frame.width,
+          height: frame.windowHeight ?? frame.height,
         },
       });
     });
@@ -472,7 +477,7 @@ export class GameDevice {
       if (!frame) throw new Error("Capture the game before sending a hotkey.");
       this.announce({ type: "hotkey", name, width: frame.width, height: frame.height });
       return this.rpc("action", {
-        action: { type: "hotkey", name, windowId: frame.windowId, width: frame.width, height: frame.height },
+        action: { type: "hotkey", name, windowId: frame.windowId, width: frame.windowWidth ?? frame.width, height: frame.windowHeight ?? frame.height },
       }) as Promise<{ at?: number }>;
     });
   }
@@ -488,7 +493,7 @@ export class GameDevice {
       if (!frame) throw new Error("Capture the game before sending a key.");
       this.announce({ type: "key", key, width: frame.width, height: frame.height });
       return this.rpc("action", {
-        action: { type: "key", key, windowId: frame.windowId, width: frame.width, height: frame.height },
+        action: { type: "key", key, windowId: frame.windowId, width: frame.windowWidth ?? frame.width, height: frame.windowHeight ?? frame.height },
       }) as Promise<{ at?: number } | undefined>;
     });
   }
