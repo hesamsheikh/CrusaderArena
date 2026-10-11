@@ -47,9 +47,10 @@ The [benchmark page](https://github.com/hesamsheikh/CrusaderArena/blob/main/docs
 describes the task and the scoring in full; this is the short version. Every run's tables give
 its exact version and settings (`dataset_version`, `save`, `game_minutes_budget`, `run_settings`).
 
-- **Task.** In the scenario *Oasis by the Sea construction* the model starts a Free Build game
-  on the map Oasis by the Sea from a fixed save and grows the economy. Soldiers and defences
-  are not allowed.
+- **Task.** In each scenario the model starts a Free Build game from a fixed save and grows the
+  economy. Soldiers and defences are not allowed. *Oasis by the Sea construction* plays the map
+  Oasis by the Sea; *Large Barren Desert construction* (from version 1.5.2) plays Large Barren
+  Desert, which has no farmland and starts with 5,000 gold.
 - **Score: net worth** when the run ends: gold plus every stored good at the game's marketplace
   sell price. Buildings count only through what they produce. The model is told the settlement
   is judged on its net worth, population and popularity, without weights; the score published
@@ -62,15 +63,18 @@ its exact version and settings (`dataset_version`, `save`, `game_minutes_budget`
   8 KB that the agent writes during play and rewrites after each episode, once it has seen its
   result. The last episode's net worth is the series' score; the change from episode 1 shows how
   much it learned. These runs keep their tables and logs only (see below).
-- **Version 1.5: against a person's game.** Single episodes with no playbook, from the save
-  `Oasis by the Sea benchmark start` for 33 min 20 s of game time (2,000 game seconds). A person
-  played the same save for the same game time, 25 real minutes at speed 40, and reached a net
-  worth of 19,513 with 202 people; each episode's interview shows the model its result beside
-  that game.
+- **Version 1.5: against a person's game.** Single episodes with no playbook for 33 min 20 s of
+  game time (2,000 game seconds), from the save a person's game on the same map started from, and
+  for the same game time, 25 real minutes at speed 40: `Oasis by the Sea benchmark start` (the
+  person reached a net worth of 19,513 with 202 people) and `Large Barren Desert benchmark start`
+  (9,984 with 250 people). Each episode's interview shows the model its result beside that game.
 - **Baseline.** `net_worth_growth` is net worth minus what doing nothing scores on the same save
-  and game time: 1,304 for 25 game minutes on `Oasis by the Sea-1` and 1,220 for 33 min 20 s on
-  `Oasis by the Sea benchmark start`. Left alone, the starting package of 1,000 gold, 50 wood,
-  25 stone and 50 bread arrives and the peasants eat the bread.
+  and game time: 1,304 for 25 game minutes on `Oasis by the Sea-1`, 1,220 for 33 min 20 s on
+  `Oasis by the Sea benchmark start` and 5,192 on `Large Barren Desert benchmark start`. Left
+  alone, the starting package arrives and the peasants eat the food. On the desert part of the
+  package (stone, iron, pitch, ale and more wood, about 1,150) waits until the stockpile, full of
+  wood, has room, so a game left alone never receives it and any run that frees storage counts
+  it as growth.
 - **The agent** sees screenshots of the game window and numbers read from the running game
   (gold, goods, population, popularity, on-screen messages), and acts through tools to look,
   click, build, move the camera, trade, wait, and keep a plan and notes (see the
