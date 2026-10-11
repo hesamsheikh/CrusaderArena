@@ -44,24 +44,33 @@ of the settlement.
 ## The benchmark
 
 The [benchmark page](https://github.com/hesamsheikh/CrusaderArena/blob/main/docs/benchmark.md)
-describes the task and the scoring in full; this is the short version for benchmark version
-`1.0.0`.
+describes the task and the scoring in full; this is the short version. Every run's tables give
+its exact version and settings (`dataset_version`, `save`, `game_minutes_budget`, `run_settings`).
 
 - **Task.** In the scenario *Oasis by the Sea construction* the model starts a Free Build game
   on the map Oasis by the Sea from a fixed save and grows the economy. Soldiers and defences
   are not allowed.
 - **Score: net worth** when the run ends: gold plus every stored good at the game's marketplace
-  sell price. Buildings count only through what they produce.
-- **Time.** Each episode gets 25 game minutes at a fixed game speed of 40, counted in game
-  ticks. The game is paused while the model thinks, so a slow model loses no game time; a
-  real-time limit of 6 hours only stops runs that have gone badly wrong.
-- **Learning series.** A model plays three episodes in a row from the same start. One thing
-  carries over: a playbook of notes of up to 8 KB that the agent writes during play and
-  rewrites after each episode, once it has seen its result. The **last episode's net worth is
-  the series' score**; the change from episode 1 shows how much it learned.
-- **Baseline.** Doing nothing scores 1,304 on this save and budget: the starting package of
-  1,000 gold, 50 wood, 25 stone and 50 bread arrives, the game places the granary by itself,
-  and the peasants eat some of the bread. `net_worth_growth` is net worth minus this baseline.
+  sell price. Buildings count only through what they produce. The model is told the settlement
+  is judged on its net worth, population and popularity, without weights; the score published
+  here is net worth.
+- **Time.** Each episode gets a fixed amount of game time at a fixed game speed of 40, counted
+  in game ticks. The game is paused while the model thinks, so a slow model loses no game time;
+  a real-time limit of 6 hours only stops runs that have gone badly wrong.
+- **Versions 1.0 and 1.1: learning series.** A model plays three episodes of 25 game minutes in
+  a row from the save `Oasis by the Sea-1`. One thing carries over: a playbook of notes of up to
+  8 KB that the agent writes during play and rewrites after each episode, once it has seen its
+  result. The last episode's net worth is the series' score; the change from episode 1 shows how
+  much it learned. These runs keep their tables and logs only (see below).
+- **Version 1.5: against a person's game.** Single episodes with no playbook, from the save
+  `Oasis by the Sea benchmark start` for 33 min 20 s of game time (2,000 game seconds). A person
+  played the same save for the same game time, 25 real minutes at speed 40, and reached a net
+  worth of 19,513 with 202 people; each episode's interview shows the model its result beside
+  that game.
+- **Baseline.** `net_worth_growth` is net worth minus what doing nothing scores on the same save
+  and game time: 1,304 for 25 game minutes on `Oasis by the Sea-1` and 1,220 for 33 min 20 s on
+  `Oasis by the Sea benchmark start`. Left alone, the starting package of 1,000 gold, 50 wood,
+  25 stone and 50 bread arrives and the peasants eat the bread.
 - **The agent** sees screenshots of the game window and numbers read from the running game
   (gold, goods, population, popularity, on-screen messages), and acts through tools to look,
   click, build, move the camera, trade, wait, and keep a plan and notes (see the
@@ -82,7 +91,7 @@ describes the task and the scoring in full; this is the short version for benchm
 ```python
 from datasets import load_dataset
 
-series = load_dataset("{{repo}}", "series", split="train")      # one row per learning series
+series = load_dataset("{{repo}}", "series", split="train")      # one row per series (or single episode)
 episodes = load_dataset("{{repo}}", "episodes", split="train")  # one row per episode
 timeline = load_dataset("{{repo}}", "timeline", split="train")  # one row per game minute of each episode
 ```
