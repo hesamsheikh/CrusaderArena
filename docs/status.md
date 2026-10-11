@@ -201,6 +201,15 @@ between September and October 2026.
 
 ## Tested in code only
 
+- `market_trade` trading in the game's own steps (1.5.0), with a simulated market
+  (`economy.test.ts`): 20 lots of 225 wood sell exactly 100; a sale stops, with the step
+  to ask for, when the next step is larger than what is left; a delivery and a tax
+  payment at the same moment as a click neither hide a trade nor pass for one. The
+  steps themselves were measured live on 2026-10-11 by clicking the marketplace through
+  the host on a saved game (wood, stone and apples: a purchase 5 units a click, a sale
+  20 from 100 in stock, 10 from 50, else 5; 103 sold 20 and 91 sold 10, 53 sold 10 and
+  46 sold 5). Before the fix, two GLM 5.3 Flash runs that day sold 105 wood for 10 lots
+  (494a5f78) and all 225 for 20 (cdecaf85).
 - The 1.4.0 request savings (see the changelog), with a fake provider: the preparation
   request carries the gameplay tools and the first gameplay request repeats them
   (`controller.test.ts`, `model-config.test.ts`), a preparation reply that calls a tool
@@ -439,12 +448,6 @@ between September and October 2026.
   GPU; the Intel GPU with Vulkan works. See [Setup](setup.md#known-issues).
 - **Map-wide structure count.** The reader's structure count includes other players,
   so it cannot attribute a change to the agent on maps with opponents.
-- **`market_trade` sales of wood can remove more than the lots asked.** In two GLM 5.3
-  Flash runs on 2026-10-11, selling 10 lots of wood took 105 wood (run 494a5f78), and
-  20 lots took all 225 in stock, reported as 19 lots (run cdecaf85); a lot is 5 units,
-  and other sales and purchases moved about their lots' worth, give or take what was
-  produced or eaten meanwhile. The cause is not yet known. Net worth barely changes
-  (wood sells at its counted value), but the agent loses wood it did not mean to sell.
 - **Reads are not atomic.** Each sample is read twice and checked, but it is not a
   guaranteed consistent snapshot.
 - **Guide images are private.** A fresh checkout runs with a text-only menu guide.

@@ -17,6 +17,25 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.0] - 2026-10-11
+
+Comparable within itself only: `market_trade` sells in the game's own steps and never
+more than asked, and its description says how the game trades.
+
+### Benchmark
+
+- `market_trade` sold more than asked when a good was plentiful: the game sells 20
+  units a click while 100 or more are in stock and 10 from 50, not 5, so a GLM 5.3 Flash
+  run that asked for 20 lots of its 225 wood sold all 225, and another sold 105 for 10
+  lots. Seen live on wood, stone and apples: a purchase is always 5 units a click, a
+  sale 20, 10 or 5. The tool now trades one click at a time in those steps up to
+  `lots` × 5 units and stops, saying which step to ask for, when the next step is
+  larger than what is left. A click counts once the reader shows its trade (the gold or
+  the stock moved by exactly its units, or both moved its way), so a delivery or a tax
+  payment at the same moment is not taken for one. The result gives the units traded
+  and the clicks. The description no longer says food trades in lots of 10: food is
+  bought 5 units a click like the rest.
+
 ## [1.4.0] - 2026-10-11
 
 Comparable within itself only: the observation stats leave out goods with none stored,

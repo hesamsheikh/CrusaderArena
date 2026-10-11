@@ -1230,7 +1230,7 @@ export function makeAgent(
       name: "market_trade",
       label: "Buy or sell at the marketplace",
       description:
-        "Buy or sell a good at your Marketplace: 1-20 lots (5 units a lot; food sells in lots of 10). Returns the units and gold that changed, as the game reports them, with the per-unit prices; it stops early when gold, stock or storage runs out. Prices are fixed per unit (buy / sell): wood_planks 4/1, stone 14/7, iron 45/23, pitch 20/10, hops 15/8, wheat 23/8, flour 32/10, ale 20/10, bread, cheese, meat and apples 8/4, bows 31/15, crossbows 58/30, spears 20/10, pikes 36/18, maces 58/30, swords 58/30, leather armour 25/12, metal armour 58/30. Needs a built Marketplace.",
+        "Buy or sell a good at your Marketplace: up to 1-20 lots of 5 units. A purchase buys 5 units a click; a sale sells in the game's own steps, 5 units a click below 50 in stock, 10 from 50 and 20 from 100, and never more than asked: when the next step is larger than what is left, it stops and says so. Returns the units traded, the gold that changed and the per-unit prices; it stops early when gold, stock or storage runs out. Prices are fixed per unit (buy / sell): wood_planks 4/1, stone 14/7, iron 45/23, pitch 20/10, hops 15/8, wheat 23/8, flour 32/10, ale 20/10, bread, cheese, meat and apples 8/4, bows 31/15, crossbows 58/30, spears 20/10, pikes 36/18, maces 58/30, swords 58/30, leather armour 25/12, metal armour 58/30. Needs a built Marketplace.",
       parameters: Type.Object({
         good: oneOf(tradeGoods),
         action: oneOf(["buy", "sell"]),

@@ -139,7 +139,22 @@ export async function setRations(ctx: AnchorContext, level: RationLevel) {
   };
 }
 
-/** Buy or sell `lots` lots of one good at the marketplace, counting what the reader shows changed. */
+/**
+ * Units one marketplace click trades (live 2026-10-11, wood, stone and apples): a purchase is always
+ * 5; a sale is 20 while 100 or more of the good are in stock, 10 from 50, else 5 (or what is left).
+ * Selling 20 lots of 225 wood as 5-unit clicks sold all 225 in a GLM run that day.
+ */
+export function unitsPerClick(action: "buy" | "sell", stock: number) {
+  if (action === "buy") return 5;
+  return Math.max(0, Math.min(stock, stock >= 100 ? 20 : stock >= 50 ? 10 : 5));
+}
+
+/**
+ * Buy or sell up to `lots` × 5 units of one good at the marketplace, one click at a time in the
+ * game's own steps (unitsPerClick), and never more than asked. A click counts once the reader shows
+ * that trade: the gold or the stock moved by exactly its units, or both moved its way, so a
+ * delivery or a tax payment in between is not taken for one.
+ */
 export async function marketTrade(ctx: AnchorContext, good: string, action: "buy" | "sell", lots: number) {
   const button = goodsButtons[good];
   if (!button) return { status: "failed" as const, note: `Unknown good ${good}.`, remedy: `Use one of: ${tradeGoods.join(", ")}.` };
@@ -159,39 +174,61 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
   await ctx.pause(0.3);
   await click(ctx, button.at);
   await ctx.pause(0.3);
-  let done = 0, last = before;
-  for (; done < lots; done++) {
+  const wanted = lots * 5;
+  const price = (action === "buy" ? buyPrice : sellPrice)[good] ?? 0;
+  // +1 when a purchase moves units in and gold out, -1 for a sale.
+  const way = action === "buy" ? 1 : -1;
+  let traded = 0, clicks = 0, last = before, tooLarge = 0;
+  while (traded < wanted && last.stock !== null && last.gold !== null) {
+    const step = unitsPerClick(action, last.stock);
+    if (step === 0) break;
+    if (step > wanted - traded) { tooLarge = step; break; }
+    const from = { stock: last.stock, gold: last.gold };
     const ack = await click(ctx, action === "buy" ? BUY : SELL);
-    const seen = await sampleAfter(ctx, ackTime(ack), (o) => stock(o) !== last.stock, 1);
+    const seen = await sampleAfter(ctx, ackTime(ack), (o) => {
+      const s = stock(o), g = gold(o);
+      if (s === null || g === null) return false;
+      const moved = (s - from.stock) * way, paid = (from.gold - g) * way;
+      return moved === step || (price > 0 && paid === step * price) || (moved > 0 && paid >= step * price);
+    }, 1);
     if (!seen) break;
+    traded += step;
+    clicks++;
     last = { stock: stock(seen), gold: gold(seen) };
   }
   await dismiss(ctx, await ctx.frame());
-  const units = before.stock !== null && last.stock !== null ? last.stock - before.stock : null;
+  const units = traded * way;
   const goldChange = before.gold !== null && last.gold !== null ? last.gold - before.gold : null;
-  // A purchase stops for gold or for storage room; with gold left for another lot it was room.
-  const lotUnits = done && units ? Math.abs(units) / done : (inventoryGroups.granary as readonly string[]).includes(good) ? 10 : 5;
-  const roomOut = last.gold !== null && last.gold >= (buyPrice[good] ?? Infinity) * lotUnits;
-  return {
-    status: done === lots ? "traded" as const : done ? "partly_traded" as const : "not_traded" as const,
-    good, action, lots: done,
-    units, goldChange,
-    // Stored goods count at the sell price, so a sale leaves net worth unchanged and a
-    // purchase lowers it by the buy/sell difference.
-    netWorthChange: units !== null && goldChange !== null ? goldChange + units * (sellPrice[good] ?? 0) : null,
-    stock: last.stock, gold: last.gold,
-    unitPrice: { buy: buyPrice[good], sell: sellPrice[good] },
-    ...(done < lots
-      ? action === "sell"
-        ? { note: "Stopped: no more of this good to sell.", remedy: "Sell only what get_inventory shows in stock." }
+  // A purchase stops for gold or for storage room; with gold left for another click it was room.
+  const roomOut = last.gold !== null && last.gold >= (buyPrice[good] ?? Infinity) * 5;
+  const food = (inventoryGroups.granary as readonly string[]).includes(good);
+  const stopped = traded >= wanted
+    ? {}
+    : tooLarge
+      ? {
+          note: `The game sells ${tooLarge} a click with ${last.stock} in stock (20 from 100, 10 from 50, else 5), more than the ${wanted - traded} left to sell, so it stopped.`,
+          remedy: `Ask for lots in steps of ${tooLarge / 5} (${tooLarge} units) to sell more now, or sell the rest once the stock is lower.`,
+        }
+      : action === "sell"
+        ? last.stock === 0
+          ? { note: "Stopped: no more of this good to sell.", remedy: "Sell only what get_inventory shows in stock." }
+          : { note: "Stopped: a sale did not show in the reader.", remedy: "Observe, then call market_trade again for the rest." }
         : roomOut
           ? {
               note: "Stopped: no storage room for this good (see storage in status).",
-              remedy: (inventoryGroups.granary as readonly string[]).includes(good)
-                ? "Make room: expand_storage (kind granary) adds granaries."
-                : "Make room: expand_storage (kind stockpile) adds stockpile piles.",
+              remedy: food ? "Make room: expand_storage (kind granary) adds granaries." : "Make room: expand_storage (kind stockpile) adds stockpile piles.",
             }
-          : { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." }
-      : {}),
+          : { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." };
+  return {
+    status: traded >= wanted ? "traded" as const : traded ? "partly_traded" as const : "not_traded" as const,
+    good, action, lots: traded / 5, units, clicks,
+    ...(traded < wanted ? { asked: wanted } : {}),
+    goldChange,
+    // Stored goods count at the sell price, so a sale leaves net worth unchanged and a
+    // purchase lowers it by the buy/sell difference; taxes paid meanwhile are in goldChange.
+    netWorthChange: goldChange !== null ? goldChange + units * (sellPrice[good] ?? 0) : null,
+    stock: last.stock, gold: last.gold,
+    unitPrice: { buy: buyPrice[good], sell: sellPrice[good] },
+    ...stopped,
   };
 }
