@@ -29,6 +29,16 @@ two. The project website shows this file, so keep that shape.
 - **First results.** Run several models on one benchmark version and publish the
   comparison, with every run in the
   [dataset](https://huggingface.co/datasets/hesamation/crusader-arena-runs).
+- **Prompt fixes from the 1.5 runs.** The sell prices the prompt lists for net worth leave
+  out wheat and hops (8 each), so Kimi K3 took them as worthless, and the prompt says the
+  settlement is judged on net worth, population and popularity with unstated weights while
+  the published score is net worth alone. Also decide whether the prompt should say that
+  peasants stop arriving while 24 stand idle, which stalled every model's population.
+- **Tool fixes from the 1.5 runs.** `find_sites` searches only the current view and
+  placing on a tile off screen fails, which cost Claude Haiku 5.5 its iron mines: search
+  the whole map's tile data and let `build_structure` move the camera itself. The rule
+  that ends a run after four replies without tools ended GLM 5.3 Flash's run 5 game
+  seconds early, so the last seconds should not count.
 
 ## Later
 
