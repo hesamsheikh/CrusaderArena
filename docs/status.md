@@ -66,6 +66,21 @@ between September and October 2026.
   blocks input while another window is active.
 
 **Tools**
+- `market_trade` in the game's own steps (1.5.0), on 2026-10-11. Clicking the
+  marketplace through the host on a saved game: a purchase is 5 units a click for every
+  good tried (wood, apples), and a sale is 20 units while 100 or more are in stock, 10
+  from 50, else 5 (wood, stone and apples; 103 sold 20 and 91 sold 10, 53 sold 10 and 46
+  sold 5); purchases land about 0.45 s after their clicks at any pace and at the turn of
+  the month. Then four 3-game-minute GLM 5.3 Flash checks from the 1.4.0 episode's end
+  save, each told to make the same trades; the last, on the final code, matched the
+  game in every one: 20 lots of 102 stone sold exactly 100 in 13 clicks (gold +700);
+  5 lots of 120 apples sold 20 and stopped, saying the next click would sell 10 of the 5
+  left; 20 lots of wood bought 100 in 20 clicks with the month's taxes landing among
+  them (gold −363, that is −400 and +37); 10 lots of bread bought 50. The earlier checks
+  had each missed one purchase that landed in the very reader sample of the taxes and a
+  delivery. Before the fix, two runs that day sold 105 wood for 10 lots (494a5f78) and
+  all 225 for 20 (cdecaf85). The simulated market in `economy.test.ts` covers the same
+  cases and a purchase the game refuses while planks are being unloaded.
 - `build_structure` placement, its verification by cost and structure count, the
   camera guard, and retries at nearby spots.
 - `center_on`, `place_near`, `expand_storage`, `flat_view` and saved views.
@@ -201,17 +216,6 @@ between September and October 2026.
 
 ## Tested in code only
 
-- `market_trade` trading in the game's own steps (1.5.0), with a simulated market
-  (`economy.test.ts`): 20 lots of 225 wood sell exactly 100; a sale stops, with the step
-  to ask for, when the next step is larger than what is left; deliveries and tax
-  payments around a click, a plank unloaded every poll, and a trade landing in the very
-  sample of the month's taxes and a delivery neither hide a trade nor pass for one; a
-  purchase that never lands is not blamed on gold or room the reader shows. The
-  steps themselves were measured live on 2026-10-11 by clicking the marketplace through
-  the host on a saved game (wood, stone and apples: a purchase 5 units a click, a sale
-  20 from 100 in stock, 10 from 50, else 5; 103 sold 20 and 91 sold 10, 53 sold 10 and
-  46 sold 5). Before the fix, two GLM 5.3 Flash runs that day sold 105 wood for 10 lots
-  (494a5f78) and all 225 for 20 (cdecaf85).
 - The 1.4.0 request savings (see the changelog), with a fake provider: the preparation
   request carries the gameplay tools and the first gameplay request repeats them
   (`controller.test.ts`, `model-config.test.ts`), a preparation reply that calls a tool
