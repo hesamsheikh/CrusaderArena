@@ -30,6 +30,13 @@ Comparable with 1.5.0 to 1.5.2 on Oasis by the Sea; the Large Barren Desert rule
   stockpile; a GLM 5.3 Flash run on 1.5.2 received it within 90 game seconds. The rules now
   say so.
 
+### Harness
+
+- Saving the finished game failed on Large Barren Desert ("no save file appeared"): the
+  click on the Save dialog's name field put the cursor inside the long loaded name, so
+  clearing it left "rt" behind and the game saved under the new name plus "rt". The runner
+  now moves the cursor to the end of the name before clearing it.
+
 ## [1.5.2] - 2026-10-11
 
 Comparable with 1.5.0 and 1.5.1: nothing an Oasis by the Sea run sees changed.

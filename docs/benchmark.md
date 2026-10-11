@@ -215,7 +215,10 @@ episodes are independent games of the same save; `--playbook` makes them a
    `glm 5-3 flash 1-1-1 ae6fc4 e3a2` (the game takes 32 characters, so a long model name
    is shortened), and copies the file into the run's folder
    as `<name>.sav`, to load and watch later. The Save dialog starts with the loaded
-   save's name, so saving without replacing it would overwrite the benchmark save. Before
+   save's name, so saving without replacing it would overwrite the benchmark save. The
+   runner moves the cursor to the end of that name before clearing it: a click on the field
+   can land inside a long name, which left "rt" of `Large Barren Desert benchmark start`
+   behind the new name and the save under a name the runner did not look for. Before
    the first save the runner keeps a copy of the benchmark save on the game machine
    (`~/.local/state/crusader-arena/save-backups/`). It compares the benchmark save's hash
    after every save, puts the copy back if it changed, and then pauses the series. A

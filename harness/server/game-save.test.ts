@@ -5,22 +5,27 @@ import { saveGame, type SaveIo } from "./game-save.js";
 const keysFor = (text: string) => [...text].map((c) => (c === " " ? "Space" : c.toUpperCase()));
 
 /** A save folder and a game whose Save button writes the typed name (or the default one). */
-function machine(options: { typing?: boolean; existing?: string[]; backupMatches?: boolean } = {}) {
+function machine(options: { typing?: boolean; existing?: string[]; backupMatches?: boolean; clickBeforeEnd?: number } = {}) {
   const files = new Map<string, string>([["Oasis by the Sea-1", "original"], ...(options.existing ?? []).map((n) => [n, "old"] as [string, string])]);
   const backup = { sha256: "sha:original" };
   let field = "Oasis by the Sea-1";
+  // Where the text cursor is: a click on the name field puts it `clickBeforeEnd` letters before the end.
+  let cursor = field.length;
   const calls: string[] = [];
   const written: Record<string, Buffer> = {};
   const io: SaveIo = {
     key: async (key) => {
       calls.push(key);
       if (options.typing === false) return;
-      if (key === "Backspace") field = field.slice(0, -1);
-      else if (key === "Space") field += " ";
-      else if (key.length === 1) field += key.toLowerCase();
+      const insert = (c: string) => { field = field.slice(0, cursor) + c + field.slice(cursor); cursor++; };
+      if (key === "Backspace") { if (cursor > 0) { field = field.slice(0, cursor - 1) + field.slice(cursor); cursor--; } }
+      else if (key === "ArrowRight") cursor = Math.min(field.length, cursor + 1);
+      else if (key === "Space") insert(" ");
+      else if (key.length === 1) insert(key.toLowerCase());
     },
     click: async (x, y) => {
       calls.push(`click ${x},${y}`);
+      if (x === 600 && y === 496) cursor = Math.max(0, field.length - (options.clickBeforeEnd ?? 0));
       if (x === 474 && y === 742) files.set(field, `game at ${field}`);
     },
     settle: async () => {},
@@ -46,6 +51,16 @@ test("the finished game is saved under its own name and copied into the run fold
   assert.equal(m.written[result.file!].toString(), "game at arena glm 5-3 flash v1-1-1 3aae6fc4 e3");
   assert.equal(m.files.get("Oasis by the Sea-1"), "original");
   assert.ok(m.calls.indexOf("backup-save Oasis by the Sea-1") < m.calls.indexOf("Escape"), "the copy is kept before the menu opens");
+});
+
+test("a click that lands inside the loaded save's name still clears all of it", async () => {
+  // Live 2026-10-11: on "Large Barren Desert benchmark start" the click landed two letters before
+  // the end, and the game saved "glm 5-3 flash 1-5-3 ea2895rt".
+  const m = machine({ clickBeforeEnd: 2 });
+  const result = await saveGame(m.io, "arena test e1", "Oasis by the Sea-1", keysFor);
+  assert.equal(result.error, undefined, JSON.stringify(result));
+  assert.equal(m.written["arena test e1.sav"].toString(), "game at arena test e1");
+  assert.ok(![...m.files.keys()].some((n) => n.startsWith("arena test e1") && n !== "arena test e1"));
 });
 
 test("a save that overwrote the benchmark save is put back and stops the series", async () => {

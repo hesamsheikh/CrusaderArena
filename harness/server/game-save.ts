@@ -33,7 +33,12 @@ export async function saveGame(io: SaveIo, name: string, benchmarkSave: string, 
     await io.settle(15);
     await io.click(600, 496); // Name field, holding the loaded save's name
     await io.sleep(400);
-    for (let i = 0; i < 40; i++) await io.key("Backspace");
+    // The click puts the cursor where it lands: inside a name long enough to reach it ("Large
+    // Barren Desert benchmark start" kept its last two letters, "rt", after the new name, live
+    // 2026-10-11). Move to the end first, then clear the whole name.
+    const clear = benchmarkSave.length + 5;
+    for (let i = 0; i < clear; i++) await io.key("ArrowRight");
+    for (let i = 0; i < clear; i++) await io.key("Backspace");
     for (const key of keys) await io.key(key);
     await io.sleep(400);
     await io.click(474, 742); // Save button; the dialog and the menu close

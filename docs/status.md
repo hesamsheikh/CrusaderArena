@@ -224,6 +224,9 @@ between September and October 2026.
 
 ## Tested in code only
 
+- Clearing the Save dialog's whole name field when the click lands inside a long loaded
+  name (`game-save.test.ts`), the cause of the failed saves on Large Barren Desert, where
+  the game saved "glm 5-3 flash 1-5-3 ea2895rt". Not yet saved live with the fix.
 - A Moonshot profile's reasoning level sent as Kimi K3's `reasoning_effort` (`low`, `high`,
   `max`), with `default` still sending none and other levels refused
   (`model-config.test.ts`, `store.test.ts`). Moonshot's guide lists those three values;

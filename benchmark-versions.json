@@ -138,6 +138,12 @@
       "fingerprint": "e96ff54517f962c2b3acbb6ceb87e7be6cecff98aab2ad473be457ef1311e58b",
       "date": "2026-10-11",
       "note": "Large Barren Desert rules give the whole starting package and say part of it waits for storage room"
+    },
+    {
+      "version": "1.5.3",
+      "fingerprint": "c57171574eb42ee036c81aa0430365da5b3aa016430e3251d97bde6d5ef1e5e2",
+      "date": "2026-10-11",
+      "note": "The finished game's save clears the whole name field; what a run plays is unchanged"
     }
   ]
 }
