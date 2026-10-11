@@ -111,6 +111,7 @@ def make_run(runs: Path, n: int, *, events_extra='', logs_extra='', dirty=False,
     (d / 'interview.json').write_text(json.dumps({'format': 1, 'status': 'completed', 'exchanges': [{'answer': 'More bakeries.'}]}))
     (d / 'results.json').write_text(json.dumps({'format': 1, 'kind': 'agent', 'net_worth': 1500 + n, 'buildings': {'Hovel': 3}}))
     (d / 'results.md').write_text(f'# Results: Test Model on Oasis by the Sea\n\n| Net worth | {1500 + n} |\n')
+    (d / 'analysis.md').write_text('# Run analysis: Test Model on Oasis by the Sea\n\nRead from /Users/tester/runs.\n')
     goods = {'bread': 40, 'stone': 20, 'wood_planks': 10}
     events = ''.join([
         line(1, {'type': 'preparation_reply', 'reply': {'usage': usage(100)}}),
@@ -228,8 +229,9 @@ class PackageTest(Fixture):
         self.assertFalse(any(f['path'].startswith(('episode-1/recording', 'episode-1/checkpoint')) for f in m['files']))
         # The interview after each episode is published, scrubbed like the agent's other text.
         self.assertTrue({'episode-1/interview.md', 'episode-2/interview.json', 'episode-1/results.json',
-                         'episode-2/results.md'} <= {f['path'] for f in m['files']})
+                         'episode-2/results.md', 'episode-1/analysis.md'} <= {f['path'] for f in m['files']})
         self.assertNotIn('/Users/tester', (result.dest / 'episode-1' / 'interview.md').read_text())
+        self.assertNotIn('/Users/tester', (result.dest / 'episode-1' / 'analysis.md').read_text())
 
         staged = result.dest / 'episode-1'
         events = (staged / 'events.jsonl').read_text()

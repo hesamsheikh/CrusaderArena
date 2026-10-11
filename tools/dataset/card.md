@@ -120,6 +120,7 @@ v1.0/                                     benchmark version, major.minor
           memory.json, notebook.md, playbook.md   the agent's own notes
           interview.md, interview.json    the agent's interview after the episode
           results.json, results.md        the whole state of the game at the end, as data and tables
+          analysis.md                     a reading of the run written afterwards from its logs, where there is one
 ```
 
 ## Comparing runs
