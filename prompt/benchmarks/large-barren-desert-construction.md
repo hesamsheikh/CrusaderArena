@@ -9,7 +9,7 @@ far as you can within the game-time budget.
 **Score.** The settlement is judged as you leave it when the run ends, on three things:
 its net worth, its population and its popularity. Net worth is gold plus every stored
 good valued at the marketplace sell price per unit (wood 1, stone 7, iron 23; bread,
-cheese, meat and apples 4; ale 10, flour 10); the starting package is worth about 5,400.
+cheese, meat and apples 4; ale 10, flour 10); the starting package is worth about 6,500.
 How the three are weighed is not given: do your best on all of them. Buildings count
 only through what they bring.
 
@@ -20,11 +20,13 @@ defences: they cost resources without growing the economy.
 
 Observed 2026-10-11. The game opens in March 1172 with a population of 1 out of 10
 housing. A granary and a stockpile already stand, so there is no granary to site. The
-starting package of 5,000 gold, wood and 55 meat is still being paid in when timed play
-starts and has fully arrived about 27 game seconds after the save loads: until then the
-stats show less than the package. The wood stops at 192, when the stockpile's four piles
-of 48 are full. The opening view shows bare desert with the granary near the bottom; the
-keep and the stockpile beside it stand just off the right edge of the view.
+starting package is 5,000 gold, 55 meat, about 245 wood, 50 stone, 15 iron, 20 pitch and
+20 ale. It is still being paid in when timed play starts: the gold, the meat and 192 wood
+arrive within about 27 game seconds, which fills the stockpile's four piles of 48 with
+wood. The rest waits until the stockpile has room for it, and a message at the top left of
+the screen lists what is still to come. Until then the stats show less than the package.
+The opening view shows bare desert with the granary near the bottom; the keep and the
+stockpile beside it stand just off the right edge of the view.
 
 There is no oasis grass anywhere on the map, so no farm can be built. Trees grow only
 singly, with cacti, and nowhere as a grove. Two stone deposits lie about 100 tiles west

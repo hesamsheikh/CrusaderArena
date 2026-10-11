@@ -46,8 +46,9 @@ defences not allowed. The starting goods are still arriving when a save loads:
 within about 25 game seconds: wood first, then stone, bread and the last of the gold
 (see [Scoring](#scoring-net-worth)). The Oasis rules tell the model this, and the game
 reference tells it that starting goods rise at first. `Large Barren Desert benchmark start`
-shows 4,080 gold, 43 wood and 12 meat and has its package of 5,000 gold, wood and 55 meat
-about 27 game seconds later; its wood stops at 192, when the stockpile is full.
+shows 4,080 gold, 43 wood and 12 meat. Its package is 5,000 gold, 55 meat, about 245 wood,
+50 stone, 15 iron, 20 pitch and 20 ale: the gold, the meat and 192 wood arrive within about
+27 game seconds and fill the stockpile with wood, and the rest waits until it has room.
 
 The saves are not included. To make one, start a Free Build game on that map and save
 it straight away under the exact name in the table. A save made later starts from a
@@ -143,7 +144,10 @@ itself (5 wood), and the peasants who move in eat 29 of the bread. Runs too shor
 the game to place the granary end lower: 1,225, with all the bread eaten. With 33⅓ game
 minutes (2,000 game seconds) doing nothing scores 1,220 on `Oasis by the Sea benchmark
 start`, where the granary is already placed (all the bread is eaten), and 5,192 on `Large
-Barren Desert benchmark start`, which starts with 5,000 gold.
+Barren Desert benchmark start`, which starts with 5,000 gold. Left alone, the desert's
+stockpile stays full of wood, so the part of its package that waits for room (stone, iron,
+pitch, ale and more wood, about 1,150 at the sell price) never arrives; a run that frees
+storage receives it, and its growth includes it.
 
 **Growth** is net worth minus the baseline for the same save and game minutes, so it
 shows what a run achieved beyond leaving the game alone. The measured baselines are in

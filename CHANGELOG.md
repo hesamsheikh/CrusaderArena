@@ -17,6 +17,19 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.3] - 2026-10-11
+
+Comparable with 1.5.0 to 1.5.2 on Oasis by the Sea; the Large Barren Desert rules changed.
+
+### Benchmark
+
+- The Large Barren Desert rules gave the starting package as 5,000 gold, wood and 55 meat,
+  worth about 5,400, all arrived within 27 game seconds. It also holds 50 stone, 15 iron,
+  20 pitch, 20 ale and more wood, about 6,500 in all, and that part waits until the
+  stockpile, full of wood, has room. The live check missed it because nothing freed the
+  stockpile; a GLM 5.3 Flash run on 1.5.2 received it within 90 game seconds. The rules now
+  say so.
+
 ## [1.5.2] - 2026-10-11
 
 Comparable with 1.5.0 and 1.5.1: nothing an Oasis by the Sea run sees changed.

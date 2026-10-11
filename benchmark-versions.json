@@ -1,5 +1,5 @@
 {
-  "current": "1.5.2",
+  "current": "1.5.3",
   "history": [
     {
       "version": "1.0.0",
@@ -132,6 +132,12 @@
       "fingerprint": "7d7b30f4b74ebc0ab3835622deb72f5b74f3b3dfc9eecb161085b1caf80b587b",
       "date": "2026-10-11",
       "note": "Add the Large Barren Desert construction scenario; Oasis runs see nothing new"
+    },
+    {
+      "version": "1.5.3",
+      "fingerprint": "e96ff54517f962c2b3acbb6ceb87e7be6cecff98aab2ad473be457ef1311e58b",
+      "date": "2026-10-11",
+      "note": "Large Barren Desert rules give the whole starting package and say part of it waits for storage room"
     }
   ]
 }

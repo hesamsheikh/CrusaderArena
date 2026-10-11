@@ -109,11 +109,13 @@ between September and October 2026.
 
 **Runs**
 - The Large Barren Desert scenario's map facts, on 2026-10-11, from "Large Barren Desert
-  benchmark start" loaded without an agent: the package arriving to 5,000 gold, 192 wood
-  (the stockpile's four piles of 48 full) and 55 meat about 27 game seconds after load,
-  the granary and stockpile already standing, and from the whole-map summary no oasis
-  grass, only single trees, stone about 100 tiles west of the keep and iron ore about 60
-  east. No agent has played the scenario yet.
+  benchmark start" loaded without an agent: 5,000 gold, 192 wood (the stockpile's four
+  piles of 48 full) and 55 meat about 27 game seconds after load, with the rest of the
+  package listed at the top left as still to come; the granary and stockpile already
+  standing; and from the whole-map summary no oasis grass, only single trees, stone about
+  100 tiles west of the keep and iron ore about 60 east. In a GLM 5.3 Flash run the rest
+  (50 stone, 15 iron, 20 pitch, 20 ale) arrived within 90 game seconds, once building had
+  used some wood; the total wood (about 245) is read from the screen's list, not counted.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
