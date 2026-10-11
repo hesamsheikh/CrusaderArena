@@ -90,6 +90,10 @@ timeline = load_dataset("{{repo}}", "timeline", split="train")  # one row per ga
 The tables hold the numbers and the final image. Videos, logs and model traces are files
 next to them; the `files` and `video` columns give their paths in this repository.
 
+Runs from versions 1.0 and 1.1 keep only their tables, logs and results: their videos,
+screenshots (`images/`) and `final-overview.jpg` were removed, so the paths to them in
+`events.jsonl`, `manifest.json` and the `video` column lead nowhere.
+
 ## Layout
 
 ```
