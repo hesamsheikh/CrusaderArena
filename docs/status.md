@@ -112,8 +112,10 @@ between September and October 2026.
   benchmark start" loaded without an agent: 5,000 gold, 192 wood (the stockpile's four
   piles of 48 full) and 55 meat about 27 game seconds after load, with the rest of the
   package listed at the top left as still to come; the granary and stockpile already
-  standing; and from the whole-map summary no oasis grass, only single trees, stone about
-  100 tiles west of the keep and iron ore about 60 east. In a GLM 5.3 Flash run the rest
+  standing; and from the whole-map summary no oasis grass, stone about 100 tiles west of
+  the keep and iron ore about 60 east. The summary's 154 "tree" tiles were cacti: two
+  woodcutters of Claude Haiku 5.5 placed among them delivered no wood in 30 game minutes.
+  In a GLM 5.3 Flash run the rest
   (50 stone, 15 iron, 20 pitch, 20 ale) arrived within 90 game seconds, once building had
   used some wood; the total wood (about 245) is read from the screen's list, not counted.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
@@ -224,6 +226,11 @@ between September and October 2026.
 
 ## Tested in code only
 
+- Trees told from cacti by the ring of 0x2000 tiles a tree has around it (`tile-map.test.ts`
+  for `find_sites`' tree counts), from tile data read live on 2026-10-11: on Oasis by the
+  Sea every trunk tile on a palm had a ring tile within 3 tiles and every one on a cactus had
+  none, and Large Barren Desert has no ring tiles at all. The reader's map summary draws
+  trunks without a ring as cacti (`c`) instead of trees.
 - Clearing the Save dialog's whole name field when the click lands inside a long loaded
   name (`game-save.test.ts`), the cause of the failed saves on Large Barren Desert, where
   the game saved "glm 5-3 flash 1-5-3 ea2895rt". Not yet saved live with the fix.

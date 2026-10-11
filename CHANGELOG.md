@@ -17,6 +17,27 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.4] - 2026-10-11
+
+A patch at the maintainers' choice, though what the model is shown changed on every map: a
+reminder after long waits, and trees told apart from cacti.
+
+### Benchmark
+
+- `wait_and_observe` reminds the model once 3 game minutes have passed with no economy
+  action (building, placing, storage, demolishing, trading, taxes, rations or a
+  `game_action`; camera moves and inspecting do not count): it says how long the model has
+  only waited and read, and that it may be time to do something else. Claude Haiku 5.5 waited
+  10 game minutes on Large Barren Desert for wood its woodcutters never delivered.
+- Trees are told from cacti. Both are an organism on a trunk tile in the game's tile data,
+  but only a tree has a ring of 0x2000 tiles around it within 3 tiles (live on both maps on
+  2026-10-11: every palm on Oasis by the Sea had one, no cactus did). `find_sites` counts only
+  trees for woodcutters, and the reader's map summary draws cacti as their own category, so
+  `map_overview` lists no groves of them: on Oasis by the Sea 114 of the 204 tiles it called
+  trees were cacti, and all 154 on Large Barren Desert.
+- The Large Barren Desert rules no longer say trees grow there singly. The map has only
+  cacti; the rules now say nothing about wood.
+
 ## [1.5.3] - 2026-10-11
 
 Comparable with 1.5.0 to 1.5.2 on Oasis by the Sea; the Large Barren Desert rules changed.

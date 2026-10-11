@@ -165,20 +165,27 @@ test("the signpost zone refuses generic buildings by the footprint's top-left ti
 });
 
 test("woodcutter sites come closest to trees first, with the trees within reach", () => {
-  // Ten trees (organism on a trunk tile) 15 tiles down-right of the centre; open land elsewhere.
+  // Ten trees (organism on a trunk tile, with the ring of 0x2000 tiles a tree has) 15 tiles
+  // down-right of the centre, and ten cacti (the same marks, no ring) 15 tiles up-left; open land
+  // elsewhere.
   const trees = (set: Parameters<Parameters<typeof region>[0] & {}>[0]) => {
     for (let i = 0; i < 10; i++) {
       set("organism", 115 + (i % 5), 100 + Math.floor(i / 5), 300);
       set("logic", 115 + (i % 5), 100 + Math.floor(i / 5), 0x8000 | 0x1000);
+      set("organism", 81 + (i % 5), 100 + Math.floor(i / 5), 400);
+      set("logic", 81 + (i % 5), 100 + Math.floor(i / 5), 0x8000 | 0x1000);
     }
+    for (let x = 115; x < 120; x++) set("logic", x, 102, 0x8000 | 0x2000);
   };
   const map = new TileMap(region(trees), camera, frame);
   // Ranked by distance alone the centre comes first, 15 tiles from any tree.
   assert.deepEqual(map.sitesNear("Woodcutter", undefined, 1)[0].tile, { x: 100, y: 100 });
   const [first, ...rest] = map.woodcutterSites(undefined, 3);
   assert.ok(Math.max(Math.abs(first.tile.x - 115), Math.abs(first.tile.y - 100)) <= 3, JSON.stringify(first));
-  assert.equal(first.trees, 10);
+  assert.equal(first.trees, 10, "the cacti do not count");
   assert.ok(rest.every((s) => (s.trees ?? 0) > 0));
+  // Next to the cacti alone, a spot has no trees.
+  assert.equal(map.woodcutterSites({ x: 80, y: 103 }, 1, 2)[0]?.trees ?? 0, 0);
   // Without trees in view, the nearest spots come back with no trees counted.
   const bare = new TileMap(region(), camera, frame).woodcutterSites(undefined, 2);
   assert.deepEqual(bare.map((s) => s.trees), [0, 0]);

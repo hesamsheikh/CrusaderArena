@@ -28,10 +28,9 @@ the screen lists what is still to come. Until then the stats show less than the 
 The opening view shows bare desert with the granary near the bottom; the keep and the
 stockpile beside it stand just off the right edge of the view.
 
-There is no oasis grass anywhere on the map, so no farm can be built. Trees grow only
-singly, with cacti, and nowhere as a grove. Two stone deposits lie about 100 tiles west
-of the keep (up and to the left on screen), and strips of iron ore about 60 tiles east of
-it (down and to the right). `map_overview` shows them on the whole map and `find_sites`
+There is no oasis grass anywhere on the map, so no farm can be built. Two stone deposits
+lie about 100 tiles west of the keep (up and to the left on screen), and strips of iron
+ore about 60 tiles east of it (down and to the right). `map_overview` shows them on the whole map and `find_sites`
 finds quarry and iron mine spots in the current view.
 
 ## Ways to grow net worth

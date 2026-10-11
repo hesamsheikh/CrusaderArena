@@ -1229,6 +1229,22 @@ test("wait_and_observe with screenshot false waits the same, returns the reading
   assert.ok(game.actions.some((a) => a.x === 500 && a.y === 400));
 });
 
+test("wait_and_observe reminds the model after 3 game minutes of only waiting, until it acts again", async () => {
+  const { runtime } = timedRuntime();
+  const game = simulatedGame({ runtime });
+  await game.observe();
+  const texts = async (seconds: number) => {
+    const result = await game.tool("wait_and_observe").execute("wait", { seconds, screenshot: false });
+    return result.content.flatMap((c) => (c.type === "text" ? [c.text] : []));
+  };
+  assert.ok(!(await texts(120)).some((t) => /only waited/.test(t)), "2 game minutes: no reminder");
+  const late = await texts(90);
+  assert.ok(late.some((t) => /only waited and read for 3 game minutes in a row/.test(t)), late.join("\n"));
+  // An action starts the count again; a camera move or an inspection would not.
+  await game.tool("game_action").execute("key", { type: "key", key: "Z" });
+  assert.ok(!(await texts(60)).some((t) => /only waited/.test(t)), "after an action: no reminder");
+});
+
 test("only input that works from the screenshot marks the turn as pixel input", async () => {
   const { runtime, cycle } = timedRuntime();
   const game = simulatedGame({ runtime, tiles: () => {} });

@@ -55,6 +55,17 @@ const READING_TOOLS = new Set([
  * they return.
  */
 const MINIMAP_TOOLS = new Set(["go_to_tile", "navigate_minimap"]);
+/** Tools that change the settlement or the economy. Waiting, reading, camera moves and inspecting are not actions here. */
+const ECONOMY_ACTIONS = new Set(["game_action", "build_structure", "place_near", "expand_storage", "demolish_building",
+  "market_trade", "set_tax", "set_rations"]);
+/**
+ * Game seconds of only waiting and reading, since the last economy action, after which each
+ * `wait_and_observe` result reminds the model. Claude Haiku 5.5 waited 10 game minutes for wood its
+ * woodcutters never delivered on Large Barren Desert (2026-10-11).
+ */
+export const WAIT_REMINDER_SECONDS = 180;
+export const waitReminder = (seconds: number) =>
+  `You have only waited and read for ${Math.floor(seconds / 60)} game minutes in a row, with no building, trading, tax or ration change since. If what you are waiting for has not come, it may be time to do something else in the meantime.`;
 /**
  * A string that is one of `names`, as a plain JSON Schema enum. A union of literals spelled each
  * name out as its own object, about three times the bytes, in the tool list every request repeats.
@@ -400,6 +411,8 @@ export function makeAgent(
     `Observe the game first${observedClearedBy ? `: ${observedClearedBy} returned no screenshot` : ""}. ` +
     "Call observe (or wait_and_observe) and take pixel targets from that screenshot; build_structure also takes tile_x/tile_y without one.");
   let observedPausedMs = 0;
+  // The session's used game ticks at the last economy action (ECONOMY_ACTIONS).
+  let lastActionTicks = 0;
   let observedCamera: string | null = null;
   let observedSpan: ReturnType<typeof cameraSpanOf> = null;
   let observedCameraSample: TileCamera | null = null;
@@ -1615,7 +1628,7 @@ export function makeAgent(
         name: "wait_and_observe",
         label: "Wait and observe",
         description:
-          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants. screenshot: false waits the same way and returns the stats, game events and run_clock as text only, with no image; pixel targets still come from your last screenshot, with its age limit.",
+          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. After " + WAIT_REMINDER_SECONDS / 60 + " game minutes in a row with no building, trading, tax or ration change, the result says how long you have only waited. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants. screenshot: false waits the same way and returns the stats, game events and run_clock as text only, with no image; pixel targets still come from your last screenshot, with its age limit.",
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({
@@ -1639,9 +1652,11 @@ export function makeAgent(
             met = condition() || (await runtime.session.waitGame(Math.max(0, args.seconds - owed), condition));
           }
           const view = args.screenshot === false ? await observeText() : await observe();
-          const longer = owed > args.seconds
-            ? [turnNote(Math.round((owed - args.seconds) * 10) / 10, args.screenshot !== false)]
-            : [];
+          const idle = (runtime.session.gameUsedTicks() - lastActionTicks) / TICKS_PER_GAME_SECOND;
+          const longer = [
+            ...(owed > args.seconds ? [turnNote(Math.round((owed - args.seconds) * 10) / 10, args.screenshot !== false)] : []),
+            ...(idle >= WAIT_REMINDER_SECONDS ? [{ type: "text" as const, text: waitReminder(idle) }] : []),
+          ];
           if (!until) return { ...view, content: [...longer, ...view.content] };
           const endTick = device.currentStats().observation?.game_time;
           const waited = typeof startTick === "number" && typeof endTick === "number" ? Math.round((endTick - startTick) / 30) : undefined;
@@ -1749,6 +1764,17 @@ export function makeAgent(
       }),
     );
   }
+  // The game time of the last economy action, for wait_and_observe's reminder.
+  for (const tool of tools)
+    if (runtime && ECONOMY_ACTIONS.has(tool.name)) {
+      const run = tool.execute;
+      // A refused action (a throw) is not one: its error passes through unchanged.
+      tool.execute = async (...args) => {
+        const result = await run(...args);
+        lastActionTicks = runtime.session.gameUsedTicks();
+        return result;
+      };
+    }
   return new Agent({
     // Lets a provider with session affinity (OpenRouter) keep the whole run on one upstream
     // deployment, so its prompt cache stays warm across requests (modelConfig's compat flag).

@@ -1,5 +1,5 @@
 {
-  "current": "1.5.3",
+  "current": "1.5.4",
   "history": [
     {
       "version": "1.0.0",
@@ -144,6 +144,12 @@
       "fingerprint": "c57171574eb42ee036c81aa0430365da5b3aa016430e3251d97bde6d5ef1e5e2",
       "date": "2026-10-11",
       "note": "The finished game's save clears the whole name field; what a run plays is unchanged"
+    },
+    {
+      "version": "1.5.4",
+      "fingerprint": "0d53a4d530ff4147e42c227e6a67dc0032ec45aabe720fc59ea69f430ed1cf68",
+      "date": "2026-10-11",
+      "note": "Waiting reminder after 3 game minutes without an economy action; trees told from cacti; the desert rules lose their tree sentence"
     }
   ]
 }

@@ -34,8 +34,14 @@ import { footprintOf } from "./footprints.js";
  */
 const LAND = 0x8000;
 const TREE_RING = 0x2000;
-/** A tree's own tile: an organism on a trunk tile (the map summary's "T"). */
+/**
+ * A trunk tile: an organism on it with this bit. Trees and cacti both have it; only a tree has a ring
+ * of TREE_RING tiles around it, within TREE_RING_REACH tiles of its trunk (live on Oasis by the Sea and
+ * Large Barren Desert, 2026-10-11: every palm had one, no cactus did, and the desert has none at all).
+ * The map summary's "T" is a trunk with a ring, its "c" one without.
+ */
 const TRUNK = 0x1000;
+const TREE_RING_REACH = 3;
 const STONE = 0x20000;
 const ORE = 0x80000;
 const OIL = 0x80000000;
@@ -462,10 +468,19 @@ export class TileMap {
   /** Tree tiles in the read region. */
   private treeTiles() {
     if (this.trees) return this.trees;
-    const { x0, y0, w, layers } = this.region;
+    const { x0, y0, w, h, layers } = this.region;
+    const ringNear = (x: number, y: number) => {
+      for (let dy = -TREE_RING_REACH; dy <= TREE_RING_REACH; dy++)
+        for (let dx = -TREE_RING_REACH; dx <= TREE_RING_REACH; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h && layers.logic[yy * w + xx] & TREE_RING) return true;
+        }
+      return false;
+    };
     this.trees = [];
     layers.logic.forEach((logic, i) => {
-      if (layers.organism[i] && logic & TRUNK) this.trees!.push({ x: x0 + (i % w), y: y0 + Math.floor(i / w) });
+      const x = i % w, y = Math.floor(i / w);
+      if (layers.organism[i] && logic & TRUNK && ringNear(x, y)) this.trees!.push({ x: x0 + x, y: y0 + y });
     });
     return this.trees;
   }

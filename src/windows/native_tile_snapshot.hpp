@@ -145,6 +145,22 @@ void sample_native_map(DWORD pid, std::uintptr_t base, DWORD size) {
         read_native_bytes(process.value,base,size,rva+std::uint64_t(lo)*bytes,
                           static_cast<std::uint8_t*>(out)+(lo-first)*bytes,std::size_t(hi-lo)*bytes);
     };
+    // Trees have a ring of 0x2000 tiles around them; cacti, which carry the same organism-on-trunk
+    // marks, have none (live on Oasis by the Sea and Large Barren Desert, 2026-10-11). A trunk tile
+    // counts as a tree only with a ring tile within 3 tiles, so a first pass reads every row's logic.
+    std::vector<std::uint32_t> logic_all(std::size_t(N)*N);
+    for(int y=0;y<N;++y) {
+        const std::int64_t first=std::int64_t(read_native<std::int32_t>(process.value,base,size,0x402ff2cull+12ull*y));
+        read_row(0x48f71b0,4,first,logic.data());
+        for(int x=0;x<N;++x)logic_all[std::size_t(y)*N+x]=std::uint32_t(logic[x]);
+    }
+    const auto ring_near=[&](int x,int y) {
+        for(int dy=-3;dy<=3;++dy)for(int dx=-3;dx<=3;++dx) {
+            const int xx=x+dx,yy=y+dy;
+            if(xx>=0 && yy>=0 && xx<N && yy<N && (logic_all[std::size_t(yy)*N+xx]&0x2000))return true;
+        }
+        return false;
+    };
     std::ostringstream out;
     int x0=N,y0=N,x1=-1,y1=-1;
     out<<"{\"size\":"<<N<<",\"rows\":[";
@@ -165,7 +181,7 @@ void sample_native_map(DWORD pid, std::uintptr_t base, DWORD size) {
             else if(L&0x4)c='F';
             else if((L&0x100000) || L==0x1)c='W';
             else if(L&0x30)c='M';
-            else if(organism[x] && (L&0x1000))c='T';
+            else if(organism[x] && (L&0x1000))c=ring_near(x,y)?'T':'c';
             else if(organism[x] || (L&0x80))c='R';
             else if(occupancy[x]<0)c='a';
             else if(L&0x80000)c='I';
