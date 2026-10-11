@@ -43,6 +43,12 @@ more than asked, and its description says how the game trades.
   and the clicks. The description no longer says food trades in lots of 10: food is
   bought 5 units a click like the rest.
 
+### Harness
+
+- Model profiles have a `max` reasoning level, the endpoint's highest effort as
+  Artificial Analysis reports models: Claude's own `max` effort (which Pi would otherwise
+  send as `high`) and OpenRouter's `xhigh`. Runs record it with their model settings.
+
 ## [1.4.0] - 2026-10-11
 
 Comparable within itself only: the observation stats leave out goods with none stored,

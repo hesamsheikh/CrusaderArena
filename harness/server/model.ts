@@ -176,8 +176,9 @@ export function modelConfig(
       api: "anthropic-messages",
       baseUrl,
       reasoning: true,
-      // "default" sends no thinking setting, leaving it to the model's own default.
-      ...(settings.reasoning === "default" ? { thinkingLevelMap: { off: null } } : {}),
+      // "default" sends no thinking setting, leaving it to the model's own default; "max" is Claude's
+      // own max effort, which Pi otherwise sends as "high".
+      thinkingLevelMap: { ...(settings.reasoning === "default" ? { off: null } : {}), max: "max" },
       input: ["text", "image"],
       contextWindow: 1048576,
       maxTokens: settings.maxTokens,
@@ -198,7 +199,8 @@ export function modelConfig(
     baseUrl,
     reasoning: true,
     // Pi sends `effort: "none"` to OpenRouter when no level is given; "default" sends nothing.
-    ...(openRouter && settings.reasoning === "default" ? { thinkingLevelMap: { off: null } } : {}),
+    // "max" is OpenRouter's highest effort, "xhigh".
+    ...(openRouter ? { thinkingLevelMap: { ...(settings.reasoning === "default" ? { off: null } : {}), max: "xhigh" } } : {}),
     input: ["text", "image"],
     contextWindow: 1048576,
     maxTokens: settings.maxTokens,

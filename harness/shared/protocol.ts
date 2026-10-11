@@ -177,7 +177,8 @@ export type Stats = {
  * Reasoning effort sent with every request. "default" sends no setting and leaves it to the
  * endpoint; "off" (OpenRouter only) asks for none.
  */
-export const reasoningLevels = ["default", "off", "minimal", "low", "medium", "high"] as const;
+/** "max" is the endpoint's highest effort: Claude's own "max", OpenRouter's "xhigh" (as Artificial Analysis reports models). */
+export const reasoningLevels = ["default", "off", "minimal", "low", "medium", "high", "max"] as const;
 export type ReasoningLevel = (typeof reasoningLevels)[number];
 /** How a profile's requests are made; part of every run's model snapshot. */
 export type ModelSettings = {

@@ -53,6 +53,16 @@ test("profiles saved before the settings keep the old requests: low reasoning, 8
   assert.equal(body.provider, undefined);
 });
 
+test("max reasoning asks each endpoint for its highest effort: OpenRouter's xhigh, Claude's max", async () => {
+  // As Artificial Analysis reports models; Pi would otherwise send Claude "high" for it.
+  assert.deepEqual((await payload({ ...openRouter, reasoning: "max" })).reasoning, { effort: "xhigh" });
+  assert.deepEqual((await payload({ ...openRouter, reasoning: "high" })).reasoning, { effort: "high" });
+  const claude = await payload({ ...haiku, reasoning: "max", maxTokens: 32768 });
+  assert.equal((claude.thinking as { type: string }).type, "adaptive");
+  assert.deepEqual(claude.output_config, { effort: "max" });
+  assert.deepEqual((await payload({ ...haiku, reasoning: "high" })).output_config, { effort: "high" });
+});
+
 test("reasoning default sends no setting; off asks OpenRouter for none", async () => {
   assert.equal((await payload({ ...openRouter, reasoning: "default" })).reasoning, undefined);
   assert.deepEqual((await payload({ ...openRouter, reasoning: "off" })).reasoning, { effort: "none" });

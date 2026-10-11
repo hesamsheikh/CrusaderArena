@@ -114,6 +114,12 @@
       "fingerprint": "49c2166eecd78158565fc5f70f76165276600c28a50ec9f7d1d7e0ee45e5cb4d",
       "date": "2026-10-11",
       "note": "market_trade trades in the game's own steps (a purchase 5 units a click; a sale 20 while 100 or more are in stock, 10 from 50, else 5) up to lots x 5 units and never more, counting a click only when the reader shows that trade; its description no longer says food trades in lots of 10."
+    },
+    {
+      "version": "1.5.0",
+      "fingerprint": "31b5ff59f7a52c33f0dd12ebcf9bfb44649b2382825688888b82903a80868dee",
+      "date": "2026-10-11",
+      "note": "The max reasoning level (Claude's max effort, OpenRouter's xhigh) is a model setting; runs record it, and what a run plays and scores is unchanged."
     }
   ]
 }
