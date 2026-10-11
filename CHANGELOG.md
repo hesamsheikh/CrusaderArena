@@ -17,6 +17,16 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.1] - 2026-10-11
+
+Comparable with 1.5.0: runs on the profiles that 1.5.0 accepted send and play the same.
+
+### Harness
+
+- Moonshot profiles take Kimi K3's reasoning levels, `low`, `high` and `max`, sent as its
+  `reasoning_effort`; before, Moonshot took only `default`, which sends none and which
+  Kimi K3 treats as `max`. Kimi K3 has no `medium`, so other levels are refused.
+
 ## [1.5.0] - 2026-10-11
 
 Comparable within itself only: `market_trade` sells in the game's own steps and never

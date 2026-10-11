@@ -1,5 +1,5 @@
 {
-  "current": "1.5.0",
+  "current": "1.5.1",
   "history": [
     {
       "version": "1.0.0",
@@ -120,6 +120,12 @@
       "fingerprint": "31b5ff59f7a52c33f0dd12ebcf9bfb44649b2382825688888b82903a80868dee",
       "date": "2026-10-11",
       "note": "The max reasoning level (Claude's max effort, OpenRouter's xhigh) is a model setting; runs record it, and what a run plays and scores is unchanged."
+    },
+    {
+      "version": "1.5.1",
+      "fingerprint": "e5d9a165549e00ff5352d4bee185398365f0c48120772bc275ff4d3785bda09d",
+      "date": "2026-10-11",
+      "note": "Moonshot profiles send Kimi K3's reasoning levels (low, high, max) as reasoning_effort"
     }
   ]
 }

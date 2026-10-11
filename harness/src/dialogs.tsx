@@ -6,6 +6,7 @@ import {
   isMoonshot,
   isOpenRouter,
   modelSettings,
+  moonshotReasoning,
   reasoningLevels,
   runNameFor,
 } from "../shared/protocol";
@@ -139,9 +140,9 @@ export function ModelForm({
       return { openRouter: false, moonshot: false };
     }
   })();
-  // Moonshot takes no reasoning setting; "off" exists only on OpenRouter.
+  // Moonshot takes Kimi K3's levels (low, high, max); "off" exists only on OpenRouter.
   const levels = reasoningLevels.filter((level) =>
-    endpoint.moonshot ? level === "default" : level !== "off" || endpoint.openRouter,
+    endpoint.moonshot ? moonshotReasoning.has(level) : level !== "off" || endpoint.openRouter,
   );
   const effectiveReasoning = levels.includes(reasoning) ? reasoning : "default";
   const providerList = providers.split(",").map((p) => p.trim()).filter(Boolean);

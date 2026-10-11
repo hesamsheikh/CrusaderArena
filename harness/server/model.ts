@@ -150,6 +150,7 @@ import {
   allowedKeys,
   GAME_SPEED,
   isAnthropic,
+  isMoonshot,
   isOpenRouter,
   modelSettings,
   TICKS_PER_GAME_SECOND,
@@ -191,6 +192,9 @@ export function modelConfig(
         supportsCacheControlOnTools: false,
       },
     };
+  // Kimi K3 on Moonshot takes a level as `reasoning_effort` ("low", "high" or "max"); Pi sends none
+  // to Moonshot unless told it may, and "default" still sends nothing.
+  const moonshotEffort = isMoonshot(baseUrl) && settings.reasoning !== "default";
   return {
     id: profile?.modelId || process.env.MOONSHOT_MODEL || "kimi-k3",
     name: profile?.name || "Kimi K3",
@@ -201,6 +205,7 @@ export function modelConfig(
     // Pi sends `effort: "none"` to OpenRouter when no level is given; "default" sends nothing.
     // "max" is OpenRouter's highest effort, "xhigh".
     ...(openRouter ? { thinkingLevelMap: { ...(settings.reasoning === "default" ? { off: null } : {}), max: "xhigh" } } : {}),
+    ...(moonshotEffort ? { thinkingLevelMap: { max: "max" } } : {}),
     input: ["text", "image"],
     contextWindow: 1048576,
     maxTokens: settings.maxTokens,
@@ -209,6 +214,7 @@ export function modelConfig(
     compat: {
       supportsDeveloperRole: false,
       maxTokensField: "max_tokens",
+      ...(moonshotEffort ? { supportsReasoningEffort: true } : {}),
       ...(openRouter ? { thinkingFormat: "openrouter" as const } : {}),
       // Pi adds Claude's cache markers only for its own "openrouter" provider id; profiles use their own id.
       ...(anthropicCaching(profile) ? { cacheControlFormat: "anthropic" as const } : {}),

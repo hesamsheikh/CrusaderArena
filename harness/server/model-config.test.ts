@@ -76,6 +76,16 @@ test("Moonshot requests send no reasoning setting and no provider routing", asyn
   assert.equal(body.max_tokens, 12288);
 });
 
+test("a Moonshot level is sent as Kimi K3's reasoning_effort", async () => {
+  const kimi = { ...openRouter, modelId: "kimi-k3", baseUrl: "https://api.moonshot.ai/v1", maxTokens: 32768 };
+  for (const level of ["low", "high", "max"] as const) {
+    const body = await payload({ ...kimi, reasoning: level });
+    assert.equal(body.reasoning_effort, level);
+    assert.equal(body.reasoning, undefined);
+    assert.equal(body.thinking, undefined);
+  }
+});
+
 /**
  * The request headers Pi would send for a profile, given a run's session id; the request is
  * stopped (via a throwing fetch) before any network use.

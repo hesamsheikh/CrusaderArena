@@ -216,6 +216,11 @@ export function costProblem(profile: { baseUrl: string; prices?: TokenPrices }) 
   return "This endpoint does not report what it bills. Enter the model's prices in its settings so runs record their cost.";
 }
 export const isMoonshot = (baseUrl: string) => /^api\.moonshot\./.test(new URL(baseUrl).hostname);
+/**
+ * Reasoning levels a Moonshot profile can take: Default sends nothing, which Kimi K3 treats as max;
+ * a level is sent as Kimi K3's `reasoning_effort`, which takes only "low", "high" and "max".
+ */
+export const moonshotReasoning = new Set<ReasoningLevel>(["default", "low", "high", "max"]);
 /** Anthropic's own Messages API (not its OpenAI-compatible layer). */
 export const isAnthropic = (baseUrl: string) => new URL(baseUrl).hostname === "api.anthropic.com";
 /**
@@ -243,8 +248,8 @@ export function settingsLabel(model: Partial<ModelSettings>) {
 }
 /** Settings the endpoint cannot honour; null when they are all usable. */
 export function settingsProblem(baseUrl: string, settings: ModelSettings) {
-  if (isMoonshot(baseUrl) && settings.reasoning !== "default")
-    return "Moonshot's endpoint takes no reasoning setting through this harness; choose Default.";
+  if (isMoonshot(baseUrl) && !moonshotReasoning.has(settings.reasoning))
+    return "Moonshot's endpoint takes Default (Kimi K3's own max) or the levels Kimi K3 accepts: low, high or max.";
   if (!isOpenRouter(baseUrl) && settings.reasoning === "off")
     return "Reasoning off is only available on OpenRouter; choose Default or a level.";
   if (!isOpenRouter(baseUrl) && settings.providers.length)

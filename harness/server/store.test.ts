@@ -209,7 +209,8 @@ test("model settings: older profiles keep their old behaviour, endpoints refuse 
   // The defaults are written out, so the file says what every profile sends.
   assert.equal(JSON.parse(readFileSync(path.join(root, "config/models.json"), "utf8"))[0].reasoning, "low");
   const { keyConfigured, ...kimiInput } = kimi;
-  assert.throws(() => store.saveModel({ ...kimiInput, reasoning: "high" }), /Moonshot/);
+  assert.throws(() => store.saveModel({ ...kimiInput, reasoning: "medium" }), /low, high or max/);
+  assert.equal(store.saveModel({ ...kimiInput, reasoning: "high" }).reasoning, "high");
   const other = { name: "Other", modelId: "x", baseUrl: "https://example.com/v1", apiKey: "k" };
   assert.throws(() => store.saveModel({ ...other, providers: ["z-ai"] }), /only to OpenRouter/);
   assert.throws(() => store.saveModel({ ...other, reasoning: "off" }), /only available on OpenRouter/);

@@ -216,6 +216,10 @@ between September and October 2026.
 
 ## Tested in code only
 
+- A Moonshot profile's reasoning level sent as Kimi K3's `reasoning_effort` (`low`, `high`,
+  `max`), with `default` still sending none and other levels refused
+  (`model-config.test.ts`, `store.test.ts`). Moonshot's guide lists those three values;
+  not yet checked live.
 - The 1.4.0 request savings (see the changelog), with a fake provider: the preparation
   request carries the gameplay tools and the first gameplay request repeats them
   (`controller.test.ts`, `model-config.test.ts`), a preparation reply that calls a tool
