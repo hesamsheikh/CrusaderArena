@@ -47,8 +47,10 @@ prompt prefixes can reuse it. The exact prompt of each run is saved in its
 
 ## The preparation message
 
-Before timed play the host pauses the game and sends one message, with no tools
-available:
+Before timed play the host pauses the game and sends one message. The request carries
+the gameplay tools, so the first gameplay request starts with it and the provider's
+prompt cache covers it; the message asks the model not to call them yet, and a reply
+that calls one is asked again:
 
 - instructions to study the guide, make a plan and end the reply with `BEGIN` on its
   own line;
@@ -111,7 +113,7 @@ The `stats` summary contains:
 | `worker_efficiency_percent` | Worker efficiency from the fear factor, as the game's Fear Factor report shows it; absent before the game reckons it, early in a game |
 | `tax_level` | 0 (largest bribe) to 11, with 3 meaning no tax; the same scale as `set_tax` |
 | `food` | Total food, rations (`none`, `half`, `full`, `extra`, `double`), food types eaten and available, and, when either is nonzero, what the rations and the variety of foods each add to the food factor |
-| `goods` | Every stored good by name, such as `wood_planks`, `stone`, `bread` |
+| `goods` | Every good in stock by name, such as `wood_planks`, `stone`, `bread`; goods with none are left out, and the prompt says an unlisted good has none (`status` and `get_inventory` list every good) |
 | `storage` | Stockpile piles, empty piles and, per stored good, the amount and its room: what its own piles and the empty piles can still take, at what one of its piles holds (all goods share the empty piles, so their rooms overlap); granaries, empty granaries, food and room, where an empty granary counts 250. A `full` note appears when no pile is empty (naming the goods with no room left) or every granary is full: those goods can no longer be delivered and their production stops. Absent when the reader has no storage reading |
 | `troops` | Own troops, total and by type. Only for benchmarks that allow military |
 | `placement_mode` | `none`, `placing` or `demolishing` |

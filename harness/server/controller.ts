@@ -150,7 +150,7 @@ export class RunController {
         system: string,
         tools: AgentTool<any>[],
       ) => Promise<{ text: string; usage: { totalTokens: number }; stopReason?: string }>;
-      prepare?: (message: AgentMessage, system: string) => Promise<AssistantMessage>;
+      prepare?: (message: AgentMessage, system: string, tools: AgentTool<any>[]) => Promise<AssistantMessage>;
       reflection?: (
         messages: AgentMessage[],
         system: string,
@@ -574,13 +574,17 @@ export class RunController {
     const message = preparationMessage(this.run, this.memory.playbook?.text);
     this.store.event(this.run.id, { type: "preparation_message", message });
     const started = performance.now();
+    // With the gameplay tools, so the first gameplay request repeats this one's system prompt, tools
+    // and message and the provider's prompt cache covers them (it was 26k uncached tokens without).
+    const tools = this.agent.state.tools;
     const request = () => this.dependencies.prepare
-      ? this.dependencies.prepare(message, this.systemPromptText)
+      ? this.dependencies.prepare(message, this.systemPromptText, tools)
       : prepareModel(
           this.profile,
           this.key,
           this.systemPromptText,
           message as import("@earendil-works/pi-ai").UserMessage,
+          tools,
           this.session.abort.signal,
           (dollars, source, upstream) => this.recordCost("preparation", dollars, source, upstream),
           this.run.id,
@@ -601,12 +605,15 @@ export class RunController {
       }
       if (this.operatorStopped || this.session.reason) throw new Error("Run stopped during preparation.");
       text = reply.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
-      if (isPreparedReply(text)) break;
+      // A tool call here would open the conversation unanswered, so such a reply is asked again.
+      const calledTool = reply.content.some((part) => part.type === "toolCall");
+      if (isPreparedReply(text) && !calledTool) break;
       this.store.event(this.run.id, { type: "preparation_rejected", reply });
       const cutOff = reply.stopReason === "length" ? " (cut off at the output-token limit)" : "";
+      const problem = calledTool ? "called a tool" : `did not end with BEGIN${cutOff}`;
       if (++missing > 2)
-        throw new Error(`Agent did not finish its preparation reply with BEGIN${cutOff}; game remains paused. Last reply: ${JSON.stringify(text.slice(-300))}`);
-      this.log("error", `Preparation reply did not end with BEGIN${cutOff}; retrying.`);
+        throw new Error(`Agent's preparation reply ${problem}; game remains paused. Last reply: ${JSON.stringify(text.slice(-300))}`);
+      this.log("error", `Preparation reply ${problem}; retrying.`);
       reply = undefined;
     }
     const preparationMs = performance.now() - started;

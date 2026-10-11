@@ -200,7 +200,7 @@ export function preparationMessage(run: Run, playbook?: string): AgentMessage {
       {
         type: "text",
         text: [
-          "Preparation phase. The game is paused on the starting map and no game tools are available yet. Read the benchmark rules in your instructions and study the interface guide below; it shows the construction menus from an earlier session, not the current map. Reply with your understanding of the task and a short opening plan, and end your reply with BEGIN on its own line. The host then unpauses the game, sends a fresh screenshot and timed play starts.",
+          "Preparation phase. The game is paused on the starting map. Do not call tools in this reply: they act on the game, which starts once you have replied. Read the benchmark rules in your instructions and study the interface guide below; it shows the construction menus from an earlier session, not the current map. Reply with your understanding of the task and a short opening plan, and end your reply with BEGIN on its own line. The host then unpauses the game, sends a fresh screenshot and timed play starts.",
           ...(run.series && playbook !== undefined ? [playbookBriefing(run.series, playbook)] : []),
           atlasIndex(),
           atlas.text,

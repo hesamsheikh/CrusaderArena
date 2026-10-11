@@ -55,6 +55,12 @@ const READING_TOOLS = new Set([
  * they return.
  */
 const MINIMAP_TOOLS = new Set(["go_to_tile", "navigate_minimap"]);
+/**
+ * A string that is one of `names`, as a plain JSON Schema enum. A union of literals spelled each
+ * name out as its own object, about three times the bytes, in the tool list every request repeats.
+ */
+const oneOf = <const T extends readonly string[]>(names: T, options: { description?: string } = {}) =>
+  Type.Unsafe<T[number]>({ type: "string", enum: [...names], ...options });
 import { buildingInfo } from "./building-info.js";
 import { InventoryTracker } from "./inventory.js";
 import { Placer, type Ack } from "./placement.js";
@@ -631,10 +637,7 @@ export function makeAgent(
       description:
         "Read current named quantities from the validated read-only game reader, grouped as stockpile, granary, armory or all. No menu click or screenshot. Returns capture time, freshness and net change since the previous comparable call; inventory change alone does not prove production. Missing reader data is unavailable, never zero.",
       parameters: Type.Object({
-        section: Type.Optional(Type.Union([
-          Type.Literal("all"), Type.Literal("stockpile"),
-          Type.Literal("granary"), Type.Literal("armory"),
-        ])),
+        section: Type.Optional(oneOf(["all", "stockpile", "granary", "armory"])),
       }),
       execute: async (_id, args) => ({
         content: [{ type: "text" as const, text: JSON.stringify(
@@ -651,16 +654,16 @@ export function makeAgent(
       // One object schema (some providers, e.g. Moonshot, reject a top-level anyOf); modelToolAction
       // keeps only the fields of the chosen type and validates them against actionSchema.
       parameters: Type.Object({
-        type: Type.Union([Type.Literal("click"), Type.Literal("drag"), Type.Literal("key"), Type.Literal("scroll")]),
+        type: oneOf(["click", "drag", "key", "scroll"]),
         // Space toggles the flattened landscape; flat_view uses it and always toggles back.
         // + and - would change the game speed, which the benchmark fixes.
-        key: Type.Optional(Type.Union(allowedKeys.filter((k) => !["Space", "+", "-"].includes(k)).map((k) => Type.Literal(k)), { description: "type key only" })),
+        key: Type.Optional(oneOf(allowedKeys.filter((k) => !["Space", "+", "-"].includes(k)), { description: "type key only" })),
         x: Type.Optional(Type.Integer({ minimum: 0, description: "click, drag, scroll" })),
         y: Type.Optional(Type.Integer({ minimum: 0, description: "click, drag, scroll" })),
         endX: Type.Optional(Type.Integer({ minimum: 0, description: "drag only" })),
         endY: Type.Optional(Type.Integer({ minimum: 0, description: "drag only" })),
         button: Type.Optional(Type.Union([Type.Literal(1), Type.Literal(3)], { description: "1 left (default), 3 right" })),
-        direction: Type.Optional(Type.Union([Type.Literal("up"), Type.Literal("down")], { description: "scroll only" })),
+        direction: Type.Optional(oneOf(["up", "down"], { description: "scroll only" })),
       }),
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
@@ -714,7 +717,7 @@ export function makeAgent(
       parameters: Type.Object({
         placements: Type.Array(
           Type.Object({
-            name: Type.Union(buildableNames.map((name) => Type.Literal(name))),
+            name: oneOf(buildableNames),
             x: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with y, not with tile_x/tile_y" })),
             y: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with x, not with tile_x/tile_y" })),
             tile_x: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_y, not with x/y" })),
@@ -1132,7 +1135,7 @@ export function makeAgent(
       label: "Centre camera on a building",
       description:
         "Centre the camera on your keep, granary, stockpile, market, barracks, armoury, engineers guild, mercenary post or signpost using the game's own hotkeys, close the panel it opens, and return a fresh screenshot. The stockpile has no hotkey: the first call finds it with one deliberately rejected stockpile click (the game then shows the existing stockpile) and bookmarks the view. Use it to navigate instead of hunting with the minimap.",
-      parameters: Type.Object({ target: Type.Union(anchorNames.map((name) => Type.Literal(name))) }),
+      parameters: Type.Object({ target: oneOf(anchorNames) }),
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
@@ -1212,7 +1215,7 @@ export function makeAgent(
       label: "Set the rations",
       description:
         "Set the granary's rations with its panel and close it (rations apply to every granary); returns the rations reached (checked in the game) and the ration factor the panel shows, as text. Rations: none, half, full (the start), extra, double. Needs a granary.",
-      parameters: Type.Object({ rations: Type.Union(rationLevels.map((name) => Type.Literal(name))) }),
+      parameters: Type.Object({ rations: oneOf(rationLevels) }),
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
@@ -1229,8 +1232,8 @@ export function makeAgent(
       description:
         "Buy or sell a good at your Marketplace: 1-20 lots (5 units a lot; food sells in lots of 10). Returns the units and gold that changed, as the game reports them, with the per-unit prices; it stops early when gold, stock or storage runs out. Prices are fixed per unit (buy / sell): wood_planks 4/1, stone 14/7, iron 45/23, pitch 20/10, hops 15/8, wheat 23/8, flour 32/10, ale 20/10, bread, cheese, meat and apples 8/4, bows 31/15, crossbows 58/30, spears 20/10, pikes 36/18, maces 58/30, swords 58/30, leather armour 25/12, metal armour 58/30. Needs a built Marketplace.",
       parameters: Type.Object({
-        good: Type.Union(tradeGoods.map((name) => Type.Literal(name))),
-        action: Type.Union([Type.Literal("buy"), Type.Literal("sell")]),
+        good: oneOf(tradeGoods),
+        action: oneOf(["buy", "sell"]),
         lots: Type.Optional(Type.Integer({ minimum: 1, maximum: 20 })),
       }),
       execute: async (_id, args, signal) => {
@@ -1300,7 +1303,7 @@ export function makeAgent(
       description:
         "List up to `count` non-overlapping spots in the current view where a named building fits, from the game's own tile data: every footprint tile free (no building, tree, rock, water or resting animals); a building with workers keeps one whole side of open ground, and no spot takes a neighbour's last one; farms only on oasis grass or scrub with at least 50 oasis tiles; quarries on stone and iron mines on ore (the game's own rules). Returns the sites grouped by the ground under them (plain, oasis_grass, stone, iron_ore, oil; up to `count` per group, the building's own ground first), each with its map tile (tile_x, tile_y, to pass to build_structure's tile target, no screenshot needed) and, while the latest screenshot still shows this view, its pixel in it (x, y), nearest to near_x/near_y (pixels of that screenshot, so only while it shows this view) if given, else the view centre, with each farm's oasis share. Woodcutter spots come closest to trees first, each with the trees within " + WOODCUTTER_REACH + " tiles (in this view): a woodcutter far from trees walks a long way for each log. Takes about 2 s (no game time before any action in your reply); needs no screenshot, only the live camera. Use it before placing farms or when an area looks crowded; an empty list means nothing fits in this view.",
       parameters: Type.Object({
-        building: Type.Union(buildableNames.map((name) => Type.Literal(name))),
+        building: oneOf(buildableNames),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
         near_x: Type.Optional(Type.Integer({ minimum: 0 })),
         near_y: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -1363,9 +1366,9 @@ export function makeAgent(
       description:
         "Centre on an anchor building (as center_on) and place 1–3 of a named click-to-place building flush against it. The harness reads the game's tile data and clicks spots whose whole footprint is free and off the ground other buildings need (oasis grass, stone, iron ore, oil), your preferred side first (probing outward one tile at a time only if the tile data is unavailable); a refused spot is skipped for the next one, and it stops when you cannot pay (missing resources). Spots leave a building with workers, and each neighbour, one whole side of open ground. Returns text only (placed spots in the new view's pixels, side, clicks used); the camera stays on the anchor and your next observation shows it.",
       parameters: Type.Object({
-        building: Type.Union(buildableNames.map((name) => Type.Literal(name))),
-        anchor: Type.Union(anchorNames.map((name) => Type.Literal(name))),
-        side: Type.Optional(Type.Union(sides.map((name) => Type.Literal(name)))),
+        building: oneOf(buildableNames),
+        anchor: oneOf(anchorNames),
+        side: Type.Optional(oneOf(sides)),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })),
       }),
       execute: async (_id, args, signal) => {
@@ -1384,9 +1387,9 @@ export function makeAgent(
       description:
         "Add 1–3 stockpiles or granaries touching the existing ones (the game requires adjacency). Same spot finding as place_near with the storage building as its own anchor; new ones may touch any of the same kind joined to it, including those just placed. Returns text only; the camera stays on the storage.",
       parameters: Type.Object({
-        kind: Type.Union([Type.Literal("stockpile"), Type.Literal("granary")]),
+        kind: oneOf(["stockpile", "granary"]),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })),
-        side: Type.Optional(Type.Union(sides.map((name) => Type.Literal(name)))),
+        side: Type.Optional(oneOf(sides)),
       }),
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
@@ -1608,7 +1611,7 @@ export function makeAgent(
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({
-            amount: Type.Union([...tradeGoods, "gold", "population", "food", "idle_peasants"].map((name) => Type.Literal(name))),
+            amount: oneOf([...tradeGoods, "gold", "population", "food", "idle_peasants"]),
             at_least: Type.Integer({ minimum: 0 }),
           })),
           screenshot: Type.Optional(Type.Boolean({ description: "Default true; false returns text only, no image." })),
@@ -1647,11 +1650,7 @@ export function makeAgent(
           plan: Type.Array(
             Type.Object({
               step: Type.String({ minLength: 1, maxLength: 300 }),
-              status: Type.Union(
-                ["pending", "in_progress", "completed"].map((v) =>
-                  Type.Literal(v),
-                ),
-              ),
+              status: oneOf(["pending", "in_progress", "completed"]),
             }),
             { maxItems: 20 },
           ),
@@ -1861,6 +1860,8 @@ export async function prepareModel(
   apiKey: string,
   systemPrompt: string,
   message: import("@earendil-works/pi-ai").UserMessage,
+  /** The gameplay tools, so the first gameplay request starts with this one and reads it from cache. */
+  tools: AgentTool<any>[],
   signal: AbortSignal,
   onCost?: (dollars: number, source: CostSource, upstream?: string) => void,
   /** The run's id, so an OpenRouter profile's session affinity keeps this on the same deployment. */
@@ -1869,7 +1870,7 @@ export async function prepareModel(
   const cost = costTracking(profile, onCost);
   const result = await registry(profile).completeSimple(
     modelConfig(profile),
-    { systemPrompt, messages: [message] },
+    { systemPrompt, messages: [message], ...(tools.length ? { tools } : {}) },
     {
       apiKey,
       onPayload: payloadHook(profile, [message], undefined),

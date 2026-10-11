@@ -78,7 +78,7 @@ test("observations carry game values and messages, not reader bookkeeping", asyn
     observation: {
       schema: 1, coherence: "double_read_equal", atomic: false, map_name: "m", game_time: 900,
       gold: 1000, population: 5, popularity: 60, tax_index: 3, wood_planks: 41, resources: [0, 0, 41],
-      resources_by_name: { wood_planks: 41, stone: 25, bread: 50 },
+      resources_by_name: { wood_planks: 41, stone: 25, bread: 50, hops: 0, iron: 0 },
       own_troops: { total: 0, by_type: { archer: 0 } },
       managed_heap: { heap_bytes: 1, used_bytes: 1 },
       structures: { count: 9, limit: 10 },
@@ -135,6 +135,7 @@ test("observations carry game values and messages, not reader bookkeeping", asyn
     popularity: { current: 60, upcoming_change: 1, factors: { food: 1 } },
     tax_level: 3,
     food: { total: 50, rationing: "full", types_eaten: 1, types_available: 1 },
+    // Goods with none stored are left out (the prompt says an unlisted good has none).
     goods: { wood_planks: 41, stone: 25, bread: 50 },
     placement_mode: "placing",
     camera: { centre_tile: [100, 120], zoom: 1 },

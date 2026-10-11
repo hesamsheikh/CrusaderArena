@@ -9,7 +9,7 @@ import {
   type AssistantMessage,
   type Context,
 } from "@earendil-works/pi-ai";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { Store } from "./store.js";
 import { RunController, isTransientProviderError } from "./controller.js";
 import { GameEvents } from "./game-events.js";
@@ -206,7 +206,7 @@ function fixture(
         handoffs.push({ messages, system, tools: tools.map((t) => t.name) });
         return { ...handoffReply(handoffs.length), usage: { totalTokens: 7 } };
       },
-      prepare: async (input, system) => prepareHook(input, system),
+      prepare: async (input, system, tools) => prepareHook(input, system, tools),
       reflection: async (messages, system, tools) => {
         reflections.push({ messages, system, tools: tools.map((t) => t.name) });
         return { ...reflectionReply(reflections.length), usage: { totalTokens: 11 } };
@@ -223,13 +223,14 @@ function fixture(
       gameSpeed,
     },
   );
-  let prepareHook = async (_input: AgentMessage, _system: string) => message([{ type: "text", text: "Ready.\nBEGIN" }]);
+  let prepareHook = async (_input: AgentMessage, _system: string, _tools: AgentTool<any>[]) => message([{ type: "text", text: "Ready.\nBEGIN" }]);
   const requests: Context[] = [];
   function provider(fn: (turn: number) => AssistantMessage["content"], pause = false) {
     const respond = (ctx: Context) => {
       requests.push({
         systemPrompt: ctx.systemPrompt,
         messages: structuredClone(ctx.messages),
+        tools: ctx.tools?.map(({ name, description, parameters }) => ({ name, description, parameters })),
       });
       const stream = createAssistantMessageEventStream();
       const m = message(fn(requests.length));
@@ -702,6 +703,24 @@ test("preparation and reflection timing are kept apart from gameplay's completed
   // A reflection outcome never touches gameplay's completed/failed/aborted counters.
   assert.equal(f.controller.progress.inference.completed, 0);
   assert.equal(f.controller.progress.inference.failed, 0);
+});
+test("preparation goes with the gameplay tools, and a reply that calls one is asked again", async () => {
+  const f = fixture(1);
+  const sent: string[][] = [];
+  f.setPrepareHook(async (_input, _system, tools) => {
+    sent.push(tools.map((t) => t.name));
+    return message(sent.length === 1
+      ? [{ type: "text", text: "Ready.\nBEGIN" }, { type: "toolCall", id: "c1", name: "observe", arguments: {} }]
+      : [{ type: "text", text: "Ready.\nBEGIN" }]);
+  });
+  await f.controller.prepare();
+  assert.equal(sent.length, 2, "the reply with a tool call was asked again");
+  assert.deepEqual(sent[0], f.controller.agent.state.tools.map((t) => t.name));
+  assert.ok(sent[0].includes("build_structure"));
+  assert.ok(f.logMessages.some((text) => /Preparation reply called a tool; retrying/.test(text)));
+  f.provider(() => [{ type: "text", text: "Done." }]);
+  assert.equal(await f.controller.runSession(), "completed");
+  assert.deepEqual(f.requests[0].tools?.map((t) => t.name), sent[0], "the first gameplay request has the same tools");
 });
 test("a decorated BEGIN is accepted and a missing one is retried", async () => {
   assert.ok(isPreparedReply("Plan: granary first.\n**BEGIN**"));

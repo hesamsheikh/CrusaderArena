@@ -124,7 +124,9 @@ export function observationStats(stats: Stats, { military = true } = {}) {
           },
         }
       : {}),
-    goods: o.resources_by_name ?? null,
+    // Only goods in stock: about 20 empty ones went out with every observation and stayed in the
+    // conversation (the prompt says an unlisted good has none; status lists every good).
+    goods: o.resources_by_name ? Object.fromEntries(Object.entries(o.resources_by_name).filter(([, n]) => n)) : null,
     ...(storageOf(o) ? { storage: storageOf(o) } : {}),
     ...(military && troops
       ? {

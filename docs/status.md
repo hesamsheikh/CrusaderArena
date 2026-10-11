@@ -181,6 +181,13 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The 1.4.0 request savings (see the changelog), with a fake provider: the preparation
+  request carries the gameplay tools and the first gameplay request repeats them
+  (`controller.test.ts`, `model-config.test.ts`), a preparation reply that calls a tool
+  is asked again, and the observation stats leave out goods with none stored
+  (`model-observation.test.ts`). The enums' validation was checked against pi-ai's
+  validator by script. That a provider then reads the first gameplay request from its
+  cache has not been seen in a run yet.
 - A good's `room` in `storage` counting the empty piles, and an empty granary adding 250
   to the granary room (`anchors.test.ts`), from pile and granary readings shaped like
   those seen live on 2026-10-09 and 2026-10-11. No run has played with it yet.

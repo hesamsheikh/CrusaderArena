@@ -193,6 +193,7 @@ async function prepareWith(profile: ModelProfile, stream: string) {
   try {
     const reply = await prepareModel(
       profile, "test", "Rules.", { role: "user", content: "Prepare.", timestamp: 0 },
+      tools as never,
       AbortSignal.timeout(5000),
       (dollars, source, upstream) => (costs.push(dollars), sources.push(source), upstreams.push(upstream)),
     );
@@ -208,6 +209,8 @@ test("OpenRouter is asked for the billed amount, which is read from a copy of th
     prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.00123, prompt_tokens_details: { cached_tokens: 40 },
   });
   assert.deepEqual(sent?.usage, { include: true });
+  // The gameplay tools go with it, so the first gameplay request starts with this one (cached).
+  assert.deepEqual((sent?.tools as { function: { name: string } }[]).map((t) => t.function.name), ["observe"]);
   assert.deepEqual(costs, [0.00123]);
   assert.deepEqual(sources, ["billed"]);
   // Pi still reads the whole reply and its usage.

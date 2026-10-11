@@ -17,6 +17,27 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.4.0] - 2026-10-11
+
+Comparable within itself only: the observation stats leave out goods with none stored,
+and the tool definitions and the preparation request are sent in fewer tokens.
+
+### Benchmark
+
+- The preparation request carries the gameplay tools, so the first gameplay request
+  starts with it and the provider's prompt cache covers it: in a GLM 5.3 Flash run on
+  1.3.0 that request read 26k tokens uncached, a third of the run's uncached input. The
+  preparation message now asks the model not to call tools yet, and a reply that calls
+  one is asked again.
+- The `goods` in each observation's stats list only the goods in stock; about 20 empty
+  ones went out with every observation and stayed in the conversation. The prompt says
+  a good not listed has none; `status` and `get_inventory` still list every good.
+- Tool parameters that take one of a list of names (buildings, goods, anchors, keys,
+  sides and the like) are plain JSON Schema enums instead of unions of literals, which
+  spelled out each name as its own object: the 21 game tools' definitions went from
+  about 24,500 to 18,500 characters, which every request repeats. The names and
+  descriptions are unchanged.
+
 ## [1.3.0] - 2026-10-10
 
 Comparable within itself only: `build_structure` reports and retries more cases and
