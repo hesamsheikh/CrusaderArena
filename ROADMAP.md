@@ -29,11 +29,10 @@ two. The project website shows this file, so keep that shape.
 - **First results.** Run several models on one benchmark version and publish the
   comparison, with every run in the
   [dataset](https://huggingface.co/datasets/hesamation/crusader-arena-runs).
-- **Prompt fixes from the 1.5 runs.** The sell prices the prompt lists for net worth leave
-  out wheat and hops (8 each), so Kimi K3 took them as worthless, and the prompt says the
-  settlement is judged on net worth, population and popularity with unstated weights while
-  the published score is net worth alone. Also decide whether the prompt should say that
-  peasants stop arriving while 24 stand idle, which stalled every model's population.
+- **Weapons and armour in net worth.** The score already values goods in the armoury at
+  their sell price (bows 15, swords and metal armour 30), but `build_structure` does not
+  offer the armoury and the rules say weapons and armour add nothing. The game lets an
+  armoury be built: offer it, and say in the rules that weapons and armour stored there count.
 - **Tool fixes from the 1.5 runs.** `find_sites` searches only the current view and
   placing on a tile off screen fails, which cost Claude Haiku 5.5 its iron mines: search
   the whole map's tile data and let `build_structure` move the camera itself. The rule
