@@ -37,10 +37,11 @@ the operator's instruction alone defines the task.
 | --- | --- | --- | --- |
 | Oasis by the Sea construction | `Oasis by the Sea-1` | Grow the economy as far as possible | Yes: net worth |
 | Large Barren Desert construction | `Large Barren Desert benchmark start` | Grow the economy as far as possible, on a map with no farmland | Yes: net worth |
+| The Sinkhole construction | `The Sinkhole start` | Grow the economy as far as possible, for 45 game minutes | Yes: net worth |
 | Cactus Valley construction | `Cactus Valley-1` | Build a basic working settlement: granary, stockpile, wood, housing, food | No (diagnostic) |
 | Free build construction | `A Mightier Oasis-1` | Make visible construction progress | No (diagnostic) |
 
-All four are Free Build games saved at the very start of play, with soldiers and
+All are Free Build games saved at the very start of play, with soldiers and
 defences not allowed. The starting goods are still arriving when a save loads:
 `Oasis by the Sea-1` shows 120 gold and 12 wood, and the rest of the package arrives
 within about 25 game seconds: wood first, then stone, bread and the last of the gold
@@ -49,6 +50,9 @@ reference tells it that starting goods rise at first. `Large Barren Desert bench
 shows 4,080 gold, 43 wood and 12 meat. Its package is 5,000 gold, 55 meat, about 245 wood,
 50 stone, 15 iron, 20 pitch and 20 ale: the gold, the meat and 192 wood arrive within about
 27 game seconds and fill the stockpile with wood, and the rest waits until it has room.
+`The Sinkhole start` was saved a little after the start (game tick 2,114), with its whole
+package of 2,000 gold, 55 wood, 20 stone and 55 meat already in, and a granary and four
+joined stockpiles standing.
 
 The saves are not included. To make one, start a Free Build game on that map and save
 it straight away under the exact name in the table. A save made later starts from a
@@ -207,13 +211,16 @@ scorecard uses the last reading and `human.ended` is `readings_lost`.
 
 The reference games agents are compared with are in `referenceGames` in
 [`baselines.ts`](../harness/server/baselines.ts), by map, and how the person played each
-is in its own file in [`prompt/reference-games/`](../prompt/reference-games/). Both were
-played for 25 real minutes at speed 40 (about 2,000 game seconds):
+is in its own file in [`prompt/reference-games/`](../prompt/reference-games/). The first
+two were played for 25 real minutes at speed 40 (about 2,000 game seconds), The Sinkhole for
+45 game minutes (2,698 game seconds; 33 min 45 s of real time at speed 40), so its agent
+runs take `--game-minutes 45`:
 
 | Map | Net worth | Gold | Goods | Population | Popularity |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Oasis by the Sea | 19,513 | 18,304 | 1,209 | 202 | 100 |
 | Large Barren Desert | 9,984 | 8,574 | 1,410 | 250 | 100 |
+| The Sinkhole | 41,631 | 39,977 | 1,654 | 506 | 99 |
 
 The agent sees them only in [the interview](#the-interview) after its episode.
 

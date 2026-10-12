@@ -44,10 +44,8 @@ Choose, combine and adjust these as the game develops:
 
 - **Raw materials:** quarries (with ox tethers beside them) and iron mines produce stone and iron,
   which are worth 7 and 23 each and can be built with or sold.
-- **Weapons and armour:** fletchers and poleturners make them from wood, blacksmiths
-  and armorers from iron, and tanners from dairy cows. Each is stored in an armory and
-  counts at its sell price. The workshops deliver only to an armory, so one must stand
-  first.
+- **Weapons and armour:** what the weapon workshops make is kept in an armory and is
+  stored value.
 - **Food surplus:** food beyond what the population eats is stored value.
 - **Taxes:** taxes start at "no taxes" (`set_tax` changes them). Food variety, ale from
   an inn and religion raise popularity; high popularity lets you tax for steady gold

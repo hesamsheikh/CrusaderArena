@@ -17,6 +17,20 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.6.1] - 2026-10-12
+
+A new map, and one line of the rules reworded. A patch: tools and scoring are unchanged.
+
+### Benchmark
+
+- The Sinkhole: rules (`prompt/benchmarks/the-sinkhole-construction.md`), objective and the
+  reference game a person played from `The Sinkhole start` for 45 game minutes (net worth
+  41,631, 506 people, popularity 99), which agents see only in their interview. Its runs
+  take `--game-minutes 45`.
+- Each map's rules now say of weapons and armour only that what the workshops make is kept
+  in an armory and is stored value, as they say of food, without how they are made or that
+  an armory must stand first.
+
 ## [1.6.0] - 2026-10-12
 
 Weapons and armour join the economy, and the fixes listed on the roadmap from the 1.5

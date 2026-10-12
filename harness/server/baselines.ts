@@ -34,8 +34,9 @@ export type ReferenceGame = {
 };
 
 /**
- * Reference games played by a person (docs/benchmark.md#reference-games), by map: 25 real
- * minutes at the benchmark's game speed, timed by the player. The interview after an episode
+ * Reference games played by a person (docs/benchmark.md#reference-games), by map, at the
+ * benchmark's game speed and timed by the player: 25 real minutes (about 33⅓ game minutes) on the
+ * first two maps, 45 game minutes on The Sinkhole. The interview after an episode
  * (interview.ts) shows the agent its result beside the one for its map, then how the person
  * played, from prompt/reference-games/<map>.md.
  */
@@ -44,6 +45,8 @@ export const referenceGames: Record<string, ReferenceGame> = {
   "Oasis by the Sea": { gameSeconds: 1998, netWorth: 19513, gold: 18304, goodsValue: 1209, population: 202, housing: 202, popularity: 100 },
   // 2026-10-10: tick 17 to 60,402.
   "Large Barren Desert": { gameSeconds: 2013, netWorth: 9984, gold: 8574, goodsValue: 1410, population: 250, housing: 250, popularity: 100 },
+  // 2026-10-12: tick 2,114 ("The Sinkhole start") to 83,041, 45 game minutes timed by the player.
+  "The Sinkhole": { gameSeconds: 2698, netWorth: 41631, gold: 39977, goodsValue: 1654, population: 506, housing: 506, popularity: 99 },
 };
 
 export function referenceGame(map: unknown): ReferenceGame | undefined {
