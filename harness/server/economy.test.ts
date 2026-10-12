@@ -182,7 +182,8 @@ test("market_trade counts a click only when the reader shows that trade", async 
   assert.equal(result.status, "traded", JSON.stringify(result));
   assert.deepEqual([result.units, result.clicks], [20, 4]);
   assert.equal(game.goods.wood_planks, 40 + 20 + 2);
-  assert.equal(result.goldChange, -80 + 74, "taxes are in the gold change");
+  // At the market's price: the month's taxes landing meanwhile (+74) are not taken off the cost.
+  assert.deepEqual([result.goldChange, result.netWorthChange], [-80, -60]);
 
   // A sale with a delivery and the taxes in its very sample still counts.
   const both = fakeMarket({ wood_planks: 60 }, 500, { meanwhile: (g) => { g.goods.wood_planks += 1; g.gold += 37; } });
@@ -210,10 +211,16 @@ test("market_trade counts a click only when the reader shows that trade", async 
   } });
   const withTaxes = await marketTrade(tick.ctx, "wood_planks", "buy", 3) as any;
   assert.deepEqual([withTaxes.status, withTaxes.units, withTaxes.clicks], ["traded", 15, 3]);
-  // A trade that never lands within the wait is not counted.
-  const still = fakeMarket({ wood_planks: 40 }, 500, { delay: () => 100 });
+  // A trade that lands 3 seconds after its click (120 polls of 25 ms) still counts: after 2 seconds,
+  // two of Kimi K3's trades stopped with nothing bought (2026-10-12). One that never lands within
+  // the 5 seconds is not counted.
+  const late = fakeMarket({ wood_planks: 40 }, 500, { delay: () => 120 });
+  const slow = await marketTrade(late.ctx, "wood_planks", "buy", 1) as any;
+  assert.deepEqual([slow.status, slow.units], ["traded", 5]);
+  const still = fakeMarket({ wood_planks: 40 }, 500, { delay: () => 300 });
   const missed = await marketTrade(still.ctx, "wood_planks", "buy", 1) as any;
   assert.deepEqual([missed.status, missed.units], ["not_traded", 0]);
+  assert.match(missed.note, /within 5 seconds/);
 
   // Food is bought 5 units a click too (not lots of 10).
   const food = fakeMarket({ apples: 40 }, 500);

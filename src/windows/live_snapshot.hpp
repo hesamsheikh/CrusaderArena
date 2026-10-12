@@ -225,6 +225,20 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
         s<<'}';
         return s.str();
     });
+    // What the open panel's workshop makes, for the fletcher (12), blacksmith (13) and poleturner
+    // (14), whose panels choose between two products: goods numbers (as in resources) in its
+    // building record, the one in progress at +0x1bc and the next at +0x1be, which the panel's two
+    // buttons set (live on Oasis by the Sea, 2026-10-12). Null without such a panel. Optional.
+    const auto selected_workshop=optional([&]()->std::string {
+        const auto id=i32("in_structure");
+        if(id<=0)return "null";
+        const auto [limit,at]=building_records();
+        if(id>limit)return "null";
+        const int type=at(id,0);
+        if(type<12 || type>14)return "null";
+        return "{\"id\":"+std::to_string(id)+",\"type\":"+std::to_string(type)+
+            ",\"making\":"+std::to_string(at(id,0x1bc))+",\"next\":"+std::to_string(at(id,0x1be))+"}";
+    });
     const std::string managed_heap=a.gc_heap_size
         ? "{\"heap_bytes\":"+std::to_string(a.gc_heap_size())+",\"used_bytes\":"+std::to_string(a.gc_used_size())+
           (a.gc_collections ? ",\"collections\":"+std::to_string(a.gc_collections(0))+
@@ -245,7 +259,7 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
     out<<"],\"own_troops\":{\"total\":"<<total<<",\"by_type_1_to_34\":["<<counts.str()<<"]}"
        <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"managed_heap\":"<<managed_heap
        <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building<<",\"storage\":"<<storage
-       <<",\"buildings\":"<<buildings
+       <<",\"buildings\":"<<buildings<<",\"selected_workshop\":"<<selected_workshop
        <<",\"visible_messages\":[";
     bool comma=false;
     for(const char* channel:{"Keep_Message","Message_Bar","Feedback_1"}) {

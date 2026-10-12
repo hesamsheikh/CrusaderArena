@@ -170,6 +170,11 @@ export type Stats = {
       max_hp: number;
       no_resources: number;
     } | null;
+    /**
+     * The open panel's workshop, for a fletcher (12), blacksmith (13) or poleturner (14): the goods
+     * numbers it is making and will make next; null otherwise, absent from readers before it.
+     */
+    selected_workshop?: { id: number; type: number; making: number; next: number } | null;
     [key: string]: unknown;
   } | null;
 };
@@ -275,6 +280,12 @@ export const GAME_SPEED = 40;
 export const READING_ONLY_LIMIT = 12;
 /** Replies in a row without any tool call that end the run: the model has stopped playing. */
 export const EMPTY_REPLY_LIMIT = 4;
+/**
+ * Game seconds left within which reaching EMPTY_REPLY_LIMIT lets the rest of the budget pass
+ * instead of ending the run: a reply without tools only waits, and the host waits out what is left
+ * without another request. GLM 5.3 Flash's run (2026-10-11) ended this way 5 game seconds short.
+ */
+export const EMPTY_REPLY_GRACE_SECONDS = 60;
 export const runConfigSchema = z
   .object({
     /** Benchmark budget in game time: 1 game minute = 60 × 30 = 1,800 game ticks. */

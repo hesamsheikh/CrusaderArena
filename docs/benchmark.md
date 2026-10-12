@@ -70,7 +70,7 @@ scoring and the code that carries them out. Versions follow semantic versioning,
 | --- | --- | --- |
 | Major | The task or the scoring changes | Not across majors |
 | Minor | What the model is told or can do changes: prompts, tool definitions, run rules | Within one minor version |
-| Patch | A fix changes how the harness behaves, but not the task, prompts, tool definitions or scoring | Across patches of one minor version |
+| Patch | A fix to the harness, or to what the model is shown on one map; the task and the scoring stay the same | Across patches of one minor version, unless the changelog says a map's runs were played again |
 
 A change that leaves behaviour as it was (comments, refactors, how a failed request is
 retried) keeps the version and is recorded as a relock.
@@ -162,6 +162,11 @@ stored good valued at the game's marketplace sell price per unit.
 The prices are a fixed table in the game (no difficulty or demand effects), read from
 the game code and spot-checked in play. They are in `harness/server/market-prices.ts`.
 
+Weapons and armour are stored only in an armory, so they count only once one stands.
+The score has always valued them, but until 1.5.6 the rules told the agent that they add
+nothing and `build_structure` did not offer the Armory. Since 1.6.0 it does, `set_workshop`
+chooses what each workshop makes, and the rules list their prices.
+
 **Baseline.** `npm run episodes -- --idle` measures what doing nothing scores: it loads
 the save, sets the game speed as an agent run does, lets the game run untouched for
 the same game time an agent gets, and writes the scorecard and the
@@ -215,10 +220,13 @@ The agent sees them only in [the interview](#the-interview) after its episode.
 Since 1.5.6 the agent is told that net worth counts most and population and popularity
 less, without the weights, and that every model plays the same save for the same game
 time, so growth up to the last minute counts (each map's rules file and objective). From
-1.2.0 to 1.5.5 it was told that all three count, without how they are weighed. How the three combine into one score is still being decided: until then
-reports rank runs by net worth, and the scorecard records population and popularity
-beside it. Buying at the marketplace lowers net worth (the buy price is higher than the
-sell price); selling leaves it unchanged.
+1.2.0 to 1.5.5 it was told that all three count, without how they are weighed. The
+website combines them into one number, the Crusader Bench score: 100 × (0.8 × net worth
+growth + 0.1 × population growth + 0.1 × popularity ÷ 100), each growth measured on the
+run's map from doing nothing (0) to the reference game (1). The harness's own reports
+rank runs by net worth, and the scorecard records population and popularity beside it.
+Buying at the marketplace lowers net worth (the buy price is higher than the sell price);
+selling leaves it unchanged.
 
 ## Running episodes
 
@@ -269,7 +277,7 @@ Each episode ends in one of four ways ([series.ts](../harness/server/series.ts))
 | Outcome | When | What the runner does |
 | --- | --- | --- |
 | `valid` | A full-budget score (see [the scorecard](#the-scorecard)) | Goes on with the next episode |
-| `model_failure` | The model ended the run: 4 replies without a tool call, a reply cut off at the output limit three times, or no `BEGIN` after three preparation replies | Keeps it as the episode's result (invalid) and goes on |
+| `model_failure` | The model ended the run: 4 replies without a tool call (in the last game minute the rest of the budget passes instead, and the episode counts in full), a reply cut off at the output limit three times, or no `BEGIN` after three preparation replies | Keeps it as the episode's result (invalid) and goes on |
 | `stopped` | The operator stopped it: Ctrl-C in the runner, Stop in the dashboard, the control monitor, or a host shutdown | Closes the game and pauses the series at this episode |
 | `infrastructure` | Anything else: the harness, game, reader, network, provider, memory guard, wall limit, an unconfirmed final pause | Runs the episode again at once (from the same playbook in a learning series); a second failure pauses the series |
 

@@ -23,8 +23,14 @@ export const hotkeyAnchors = {
 } as const satisfies Record<string, GameHotkey>;
 export type Anchor = keyof typeof hotkeyAnchors | "stockpile";
 export const anchorNames = [...Object.keys(hotkeyAnchors), "stockpile"] as Anchor[];
-/** Game bookmark slot the harness keeps for the located stockpile; agent views use 1–9. */
+/** Game bookmark slot the harness keeps for the located stockpile; agent views use 1–8. */
 export const STOCKPILE_BOOKMARK = 0;
+/**
+ * Game bookmark slot build_structure keeps for a tile target's view while choosing a building that
+ * moves the view (VIEW_JUMPERS): going to a bookmark works in placement mode, the minimap does not
+ * (live 2026-10-12).
+ */
+export const PLACEMENT_BOOKMARK = 9;
 
 /** PlayState.in_structure_type values checked against the open panel (live 2026-09-28). */
 export const buildingTypeNames: Record<number, string> = { 3: "Woodcutter's Hut", 19: "Granary", 41: "Keep" };

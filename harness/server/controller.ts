@@ -13,7 +13,7 @@ import type {
   RunSeries,
   RuntimeProgress,
 } from "../shared/protocol.js";
-import { EMPTY_REPLY_LIMIT, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, isOpenRouter } from "../shared/protocol.js";
+import { EMPTY_REPLY_GRACE_SECONDS, EMPTY_REPLY_LIMIT, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, isOpenRouter } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
 import { setGameSpeed, type SpeedControl } from "./game-speed.js";
 import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
@@ -938,8 +938,17 @@ export class RunController {
           progress: this.progress,
         });
         empty = this.cycle.tools === 0 ? empty + 1 : 0;
-        if (empty >= EMPTY_REPLY_LIMIT)
-          throw new Error(`No tool calls in ${EMPTY_REPLY_LIMIT} replies in a row.`);
+        if (empty >= EMPTY_REPLY_LIMIT) {
+          const left = this.session.gameRemainingSeconds();
+          if (left > EMPTY_REPLY_GRACE_SECONDS)
+            throw new Error(`No tool calls in ${EMPTY_REPLY_LIMIT} replies in a row.`);
+          // Near the end the run is played out, not cut short: what is left passes without
+          // another request, and the session ends at its budget as any full run does.
+          this.store.event(this.run.id, { type: "empty_replies_endgame", replies: empty, gameSecondsLeft: Math.round(left * 10) / 10 });
+          this.log("system", `No tool calls in ${EMPTY_REPLY_LIMIT} replies in a row with ${Math.ceil(left)} game seconds left; letting the rest of the budget pass.`);
+          await this.ensurePauseState(false);
+          for (;;) await this.session.waitGame(Math.min(300, Math.ceil(left) + 5));
+        }
         readingOnly =
           !this.cycle.acted && !this.cycle.ran && this.cycle.tools > 0
             ? readingOnly + 1

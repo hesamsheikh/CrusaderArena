@@ -7,11 +7,11 @@ import type { TileRegion } from "./device.js";
 const camera = { centre_tile_x: 100, centre_tile_y: 100, tiles_wide: 30, tiles_high: 68 };
 const frame = { width: 1920, height: 1080 };
 
-/** A region of ordinary land (logic 0x8000, bare earth) around the camera centre. */
+/** A region of ordinary land (logic 0x8000, bare earth, height 8 as by Oasis by the Sea's keep) around the camera centre. */
 function region(edit?: (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => void): TileRegion {
   const { x0, y0, w, h } = TileMap.regionFor(camera);
   const layers = Object.fromEntries(
-    ["structure", "organism", "logic", "logic2", "height", "occupancy", "walk", "gfx"].map((n) => [n, Array(w * h).fill(n === "logic" ? 0x8000 : 0)]),
+    ["structure", "organism", "logic", "logic2", "height", "occupancy", "walk", "gfx"].map((n) => [n, Array(w * h).fill(n === "logic" ? 0x8000 : n === "height" ? 8 : 0)]),
   ) as TileRegion["layers"];
   edit?.((layer, x, y, v) => { layers[layer][(y - y0) * w + (x - x0)] = v; });
   return { x0, y0, w, h, stable: true, layers };
@@ -27,11 +27,25 @@ test("a building of side S clicked on tile c covers c - floor(S/2) for S tiles (
 
 test("pixels and tiles map through the camera centre", () => {
   const map = new TileMap(region(), camera, frame);
-  // The centre tile is clicked one row (1080 / 68 ≈ 16 px) above the screen centre.
-  assert.deepEqual(map.pixel({ x: 100, y: 100 }), { x: 960, y: 524 });
+  // The centre tile at height 8 is clicked about one row (1080 / 68 ≈ 16 px) above the screen centre.
+  assert.deepEqual(map.pixel({ x: 100, y: 100 }), { x: 960, y: 525 });
   // One tile along +x moves half a tile right and one row down.
-  assert.deepEqual(map.pixel({ x: 101, y: 100 }), { x: 992, y: 540 });
+  assert.deepEqual(map.pixel({ x: 101, y: 100 }), { x: 992, y: 541 });
   for (const t of [{ x: 90, y: 104 }, { x: 110, y: 95 }]) assert.deepEqual(map.tileAt(map.pixel(t)), t);
+});
+
+test("raised ground is drawn higher: a plateau tile's pixel is above its flat position, and that pixel maps back to it", () => {
+  // Live on Oasis by the Sea (2026-10-12): a hovel aimed at a plateau tile of height 130 by its flat
+  // position hit the cliff below; the click 15 rows higher placed it on the tile.
+  const map = new TileMap(region((set) => fill(set, "height", 104, 104, 112, 112, 130)), camera, frame);
+  const plateau = { x: 108, y: 108 };
+  const flat = new TileMap(region(), camera, frame).pixel(plateau);
+  const raised = map.pixel(plateau);
+  assert.equal(raised.x, flat.x);
+  assert.equal(Math.round((flat.y - raised.y) / (1080 / 68)), 14, "about 14 rows higher than at height 8");
+  assert.deepEqual(map.tileAt(raised), plateau);
+  // The flat position shows the ground in front of the plateau, not the plateau tile.
+  assert.notDeepEqual(map.tileAt(flat), plateau);
 });
 
 test("buildings, organisms, water and other logic bits block; the tree ring does not", () => {
@@ -319,4 +333,27 @@ test("sites in a one-building strip leave each other an open side; two rows back
   open.claim("Bakery", { x: 104, y: 100 }, 0, true);
   assert.deepEqual(open.access("Bakery", { x: 100, y: 104 }), { ok: true });
   assert.deepEqual(open.access("Bakery", { x: 104, y: 104 }), { ok: true });
+});
+
+test("spots keep one tile of open ground around a granary or an armory, except for another of the same kind", () => {
+  // The user's rule (2026-10-12): workers keep walking to granaries and armories.
+  const map = () => new TileMap({
+    ...region((set) => fill(set, "structure", 100, 100, 103, 103, 9)),
+    structure_types: { 9: STRUCTURE_TYPES.granary },
+  }, camera, frame);
+  const granary = { x1: 100, y1: 100, x2: 103, y2: 103 };
+  // A hovel flush against it is refused; one tile away it fits.
+  assert.equal(map().access("Hovel", { x: 106, y: 102 }).reason, "touches_storage");
+  assert.ok(map().access("Hovel", { x: 107, y: 102 }).ok);
+  // A second granary may touch it, as the game wants.
+  assert.ok(map().access("Granary", { x: 106, y: 102 }).ok);
+  // The same holds for an armory placed during this call, and for one about to be placed.
+  const placed = new TileMap(region(), camera, frame);
+  placed.claim("Armory", { x: 102, y: 102 }, 0, true);
+  assert.equal(placed.access("Woodcutter", { x: 105, y: 102 }).reason, "touches_storage");
+  assert.ok(placed.access("Armory", { x: 106, y: 102 }).ok);
+  assert.equal(new TileMap(region(), camera, frame).access("Hovel", { x: 106, y: 102 }, [{ ...granary, building: "Granary" }]).reason, "touches_storage");
+  // Spots offered beside it leave the gap.
+  const beside = map().sitesBeside("Hovel", granary, 1, "down-right", 3)[0];
+  assert.equal(beside.gap, 1, JSON.stringify(beside));
 });

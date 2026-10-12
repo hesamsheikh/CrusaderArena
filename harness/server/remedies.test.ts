@@ -26,7 +26,9 @@ test("every failed placement status has a remedy, and a placed one has none", ()
   for (const status of ["not_on_screen", "not_selected", "camera_moved", "invalid_target", "rejected", "possibly_rejected", "unverified", "not_placed", "already_built"])
     assert.ok(placementRemedy({ building: "Hovel", status, feedback: [] }), status);
   assert.equal(placementRemedy({ building: "Hovel", status: "placed" }), undefined);
-  assert.match(placementRemedy({ building: "Hovel", status: "not_on_screen", tile_x: 5, tile_y: 7 })!, /go_to_tile \(x 5, y 7\)/);
+  // build_structure already moved the camera, so go_to_tile would fail the same way.
+  assert.match(placementRemedy({ building: "Hovel", status: "not_on_screen", tile_x: 5, tile_y: 7, reason: "The camera could not bring the tile into view." })!, /further in/);
+  assert.match(placementRemedy({ building: "Granary", status: "not_on_screen", tile_x: 5, tile_y: 7, reason: "Choosing the building moved the view, and moving back ended placement mode." })!, /expand_storage \(kind granary\)/);
   assert.match(placementRemedy({ building: "Hovel", status: "not_placed", missing: { wood: 2 } })!, /wait_and_observe/);
   assert.match(placementRemedy({ building: "Hovel", status: "not_placed", retries: 3 })!, /find_sites \(building "Hovel"\)/);
   assert.match(placementRemedy({ building: "Hovel", status: "not_placed", retryStopped: "image_too_old" })!, /tile_x\/tile_y/);

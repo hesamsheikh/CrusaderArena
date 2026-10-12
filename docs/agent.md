@@ -80,7 +80,7 @@ See [Context](context.md) for the full layout and how old images are dropped.
 | Group | Tools | For |
 | --- | --- | --- |
 | Look | `observe`, `wait_and_observe`, `flat_view` | Fresh screenshot now, after letting time pass, or with buildings flattened |
-| Build | `build_structure`, `place_near`, `expand_storage`, `find_sites` | Placing buildings and finding space for them |
+| Build | `build_structure`, `place_near`, `expand_storage`, `find_sites`, `demolish_building`, `set_workshop` | Placing buildings, finding space for them, removing them and choosing what a workshop makes |
 | Move the camera | `center_on`, `map_overview`, `go_to_tile`, `save_view`, `go_to_view`, `navigate_minimap` | Finding places on the map |
 | Run the economy | `status`, `get_inventory`, `inspect_building`, `set_tax`, `set_rations`, `market_trade` | Reading the settlement, taxes, rations and trade |
 | Look things up | `building_info` | Building costs, roles and menu positions from the game reference |
@@ -106,8 +106,8 @@ nearby spots if it was silently blocked.
   live camera themselves right before acting (see [Tools](tools.md#build)).
 - **Camera guards.** Placement and inspection tools targeted by pixel stop if the
   camera moved since the screenshot they target. A tile-targeted placement has no such
-  screenshot to drift from; it is refused instead (`not_on_screen`, no input sent) only
-  if the tile it names is not clickable on the live view right now.
+  screenshot to drift from: the host moves the camera to the tile when it is off screen,
+  and reports `not_on_screen` (no terrain click) only if it cannot bring it into view.
 - **Single-player only.** See [the harness](harness.md#safety-boundaries).
 
 Benchmark rules such as "no soldiers or defences" are instructions in the prompt, not
@@ -153,7 +153,10 @@ turn. The dashboard shows both to the operator live.
 - **Failed tool calls** are not retried by the host. The model gets the error and
   decides what to do.
 - **Stuck loops.** Four replies in a row with no tool calls end the run with an error;
-  the briefing says so, and the host repeats it after each such reply. Replies that only
+  the briefing says so, and the host repeats it after each such reply. In the last game
+  minute the fourth instead lets the rest of the budget pass without another request,
+  and the run ends at its full budget (GLM 5.3 Flash's run ended 5 game seconds short
+  this way, 2026-10-11). Replies that only
   read (no action, wait or screenshot) cost no game time, so a model could otherwise
   read forever without using the budget: from the 12th in a row, each is followed by a
   host wait (see [A turn](#a-turn)).

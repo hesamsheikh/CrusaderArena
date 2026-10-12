@@ -190,6 +190,12 @@ async function tradeShown(
   return null;
 }
 
+/**
+ * How long one click's trade may take to show in the reader before the trade stops. Two of Kimi
+ * K3's 47 trades (2026-10-12) stopped after 2 seconds with nothing bought.
+ */
+const TRADE_WAIT_SECONDS = 5;
+
 /** Room for `units` more of a good in the reader's storage: its piles and the empty ones, or the granaries. */
 function roomFor(o: Observation | null, good: string, units: number) {
   const storage = o ? storageOf(o as Parameters<typeof storageOf>[0]) : undefined;
@@ -238,7 +244,7 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
     if (step === 0) break;
     if (step > wanted - traded) { tooLarge = step; break; }
     const ack = await click(ctx, action === "buy" ? BUY : SELL);
-    const seen = await tradeShown(ctx, ackTime(ack), values, { stock: last.stock, gold: last.gold }, step * way, -step * price * way, 2);
+    const seen = await tradeShown(ctx, ackTime(ack), values, { stock: last.stock, gold: last.gold }, step * way, -step * price * way, TRADE_WAIT_SECONDS);
     if (!seen) break;
     traded += step;
     clicks++;
@@ -247,7 +253,9 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
   }
   await dismiss(ctx, await ctx.frame());
   const units = traded * way;
-  const goldChange = before.gold !== null && last.gold !== null ? last.gold - before.gold : null;
+  // At the market's fixed price, not gold after minus gold before: the month's taxes landing during
+  // a trade hid most of its cost (25 cheese Kimi K3 bought showed as 37 gold, not 200, 2026-10-12).
+  const goldChange = -units * price;
   // A purchase stops for gold or for storage room; it says which only when the reader shows it.
   const noGold = last.gold !== null && last.gold < (buyPrice[good] ?? Infinity) * 5;
   const roomOut = !noGold && !roomFor(lastSeen, good, 5);
@@ -262,7 +270,7 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
       : action === "sell"
         ? last.stock === 0
           ? { note: "Stopped: no more of this good to sell.", remedy: "Sell only what get_inventory shows in stock." }
-          : { note: "Stopped: a sale did not show in the reader within 2 seconds.", remedy: "Observe; if the stock did not fall, call market_trade again for the rest." }
+          : { note: `Stopped: a sale did not show in the reader within ${TRADE_WAIT_SECONDS} seconds.`, remedy: "Observe; if the stock did not fall, call market_trade again for the rest." }
         : roomOut
           ? {
               note: "Stopped: no storage room for this good (see storage in status).",
@@ -270,15 +278,15 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
             }
           : noGold
             ? { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." }
-            : { note: "Stopped: a purchase did not show in the reader within 2 seconds.", remedy: "Observe; if the stock did not rise, call market_trade again for the rest." };
+            : { note: `Stopped: a purchase did not show in the reader within ${TRADE_WAIT_SECONDS} seconds.`, remedy: "Observe; if the stock did not rise, call market_trade again for the rest." };
   return {
     status: traded >= wanted ? "traded" as const : traded ? "partly_traded" as const : "not_traded" as const,
     good, action, lots: traded / 5, units, clicks,
     ...(traded < wanted ? { asked: wanted } : {}),
     goldChange,
     // Stored goods count at the sell price, so a sale leaves net worth unchanged and a
-    // purchase lowers it by the buy/sell difference; taxes paid meanwhile are in goldChange.
-    netWorthChange: goldChange !== null ? goldChange + units * (sellPrice[good] ?? 0) : null,
+    // purchase lowers it by the buy/sell difference.
+    netWorthChange: goldChange + units * (sellPrice[good] ?? 0),
     stock: last.stock, gold: last.gold,
     unitPrice: { buy: buyPrice[good], sell: sellPrice[good] },
     ...stopped,

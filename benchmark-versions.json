@@ -1,5 +1,5 @@
 {
-  "current": "1.5.6",
+  "current": "1.6.0",
   "history": [
     {
       "version": "1.0.0",
@@ -186,6 +186,12 @@
       "fingerprint": "373de424fc193a4156b3b62a928c7e8a25d4fbd8f8aeb84b7e6fa11ed224b4fa",
       "date": "2026-10-12",
       "note": "The runner starts a round's host on the first free port after its own, not always the next one; what runs play is unchanged."
+    },
+    {
+      "version": "1.6.0",
+      "fingerprint": "5fe9b1063d8f4fe4c5267574809bcb1a9338a809e67956de8fcb6434c66eaee9",
+      "date": "2026-10-12",
+      "note": "Armory and set_workshop: weapons and armour count; tile targets anywhere at their terrain height; find_sites beyond the view; room around granaries and armories; market reports at market prices; the last game minute is not cut by empty replies; the no-entry sign explained"
     }
   ]
 }

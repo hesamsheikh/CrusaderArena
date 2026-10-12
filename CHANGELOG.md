@@ -17,7 +17,53 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.6.0] - 2026-10-12
+
+Weapons and armour join the economy, and the fixes listed on the roadmap from the 1.5
+runs. A minor version: what the model is told and the tools it has changed.
+
+### Benchmark
+
+- The Armory can be built (`build_structure`, `find_sites`, `place_near`), and each map's
+  rules say that weapons and armour stored there count toward net worth at their sell price
+  (bows 15, crossbows, maces, swords and metal armour 30, spears 10, pikes 18, leather armour
+  12). Before, the rules said they add nothing and no armory could be built; the score
+  always valued them. The game reference's equipment chains and workshop costs, which only
+  military benchmarks showed, are now part of every run's prompt.
+- New tool `set_workshop` chooses what a fletcher (bows or crossbows), poleturner (spears or
+  pikes) or blacksmith (swords or maces) makes, and reads the choice back from the reader's
+  new `selected_workshop`. `inspect_building` reports what a workshop is making and will
+  make next, and waits up to 3 s for a panel instead of 1 (panels show about 0.6 s after
+  the click).
+- Tile targets work anywhere on the map. `build_structure` and `demolish_building` move
+  the camera to a tile that is off screen. When choosing a Stockpile, Granary or Armory
+  centres the view on the first one, `build_structure` returns to the tile through a game
+  bookmark, since the minimap does nothing in placement mode. Claude Haiku 5.5 lost its
+  iron mines to off-screen tiles, and Claude Opus 5.5's and GPT-6.1 Sol's storage away
+  from the first stockpile and granary failed this way. `save_view` keeps 8 views; slot 9
+  is the harness's.
+  `place_near` refuses a Stockpile, Granary or Armory against another anchor while one
+  stands, without input, and names `expand_storage` or the armoury anchor instead: in a
+  1.6.0 trial GLM 5.3 Flash's Granary against the keep stopped with "call it again".
+- Tiles are clicked where the game draws them: raised ground is drawn higher, about a
+  screen row per 8.7 units of terrain height. On Oasis by the Sea's plateau at height 130,
+  the flat projection clicked the cliff below; the harness then reported the wrong tile
+  and spent retries.
+- `find_sites` searches around any map tile (`tile_x`/`tile_y`). When the view has no spot
+  on a building's own ground (stone, iron ore, oil, oasis grass, trees), it also searches
+  the nearest such ground on the map.
+- Spots the harness chooses, and `build_structure` targets, keep one tile of open ground
+  around granaries and armories (`access: touches_storage`); a granary may still touch a
+  granary and an armory an armory.
+- `market_trade` reports a trade's gold at the market's price, so taxes landing during it
+  no longer hide its cost (25 cheese Kimi K3 bought showed as 37 gold, not 200). It waits 5
+  seconds for a trade to show instead of 2, after two of Kimi's trades stopped with
+  nothing bought.
+- Four replies without a tool call in the last game minute let the rest of the budget
+  pass instead of ending the run, which had cut GLM 5.3 Flash's run 5 game seconds short.
+- The prompt explains the red no-entry sign over a building: no worker is free for it, or
+  workers cannot reach it (closed in, or cut off from the keep). Kimi K3 said in its
+  interview that it was never explained.
 
 ### Harness
 

@@ -28,6 +28,7 @@ export const footprintTiles: Record<string, number> = {
   "Blacksmith's Workshop": 4,
   "Tanner's Workshop": 4,
   "Armorer's Workshop": 4,
+  Armory: 4,
   Granary: 4,
   Bakery: 4,
   Mill: 3,

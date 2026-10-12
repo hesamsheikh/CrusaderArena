@@ -109,6 +109,46 @@ between September and October 2026.
   over. With three good things and two bad ones in a settlement of 10 people, the fear
   factor read +1 and worker efficiency 90%: good and bad things offset each other.
   `inspect_building` opened a panel only with the game running, as it is during play.
+- Run against the live game through the harness's own tool code, without a model, on
+  "Oasis by the Sea benchmark start" on 2026-10-12 (the changes of 1.6.0):
+  - `build_structure` placed an Armory (from the Castle page), a Fletcher's, a
+    Poleturner's and a Blacksmith's Workshop and a Marketplace, each confirmed by one
+    more of its type in the reader's `buildings`. A tile read showed each footprint on
+    exactly the tile asked.
+  - New workshops make bows, spears and swords. Each panel's left button sets bows,
+    spears or swords and its right one crossbows, pikes or maces. The building record
+    holds the product in progress at +0x1bc and the next at +0x1be, as goods numbers 17
+    to 22, which the reader now reports as `selected_workshop`. `set_workshop` set a
+    Fletcher to crossbows from a corner tile of its footprint and read it back;
+    `inspect_building` later showed it making crossbows. Asked for swords there, it
+    answered `wrong_workshop`; given the Armory, `not_a_workshop`. In the first of four
+    calls in a row no panel opened, so the click is now tried twice.
+  - A 10-game-minute GLM 5.3 Flash trial on 1.6.0 (unversioned, run d41d24dc) played
+    valid with no tool errors. It placed an iron mine that `find_sites` had found out of
+    view (`moved_to_tile`), an Armory, and a Fletcher's Workshop that was moved one tile
+    off it (`touches_storage`). It made 2 bows and a sword. Its `set_workshop` on a
+    Fletcher opened no panel in two clicks; on its end save the same call worked at every
+    try. A panel shows in the reader about 0.6 s after the click, so each click now waits
+    4 s and a reader without readings is reported as such.
+  - A click on a building's middle can open a neighbour's panel: a Hovel in front of a
+    Blacksmith is drawn over the Blacksmith's middle. `set_workshop` now checks the
+    opened building against the tile map and then clicks the back corner of the
+    footprint, which opened the Blacksmith.
+  - Choosing a Stockpile, Granary or Armory in the menu centres the view on the first
+    one of its kind. In placement mode the minimap does nothing, while going to a game
+    bookmark works and keeps the building selected. A Stockpile given by a tile 40
+    tiles from the first came back to its tile through bookmark 9
+    (`moved_back_to_tile`), and the game then refused it for adjacency, as it should.
+  - Tile targets off screen: the camera moved there with one minimap click and the
+    building was placed (`moved_to_tile`).
+  - Terrain height: a Hovel given by a plateau tile at height 130 was refused at its
+    flat position (which showed the cliff below it) and four retries. The sixth click,
+    15 rows higher, placed it on the very tile asked, while the tool reported another.
+    With the height-aware projection, a second Hovel on the plateau went onto its tile
+    at the first click, and one on low ground (height 8) did too.
+  - `market_trade` bought 20 wood and reported `goldChange` −80 at the market's price.
+  - `find_sites` with `tile_x`/`tile_y` listed spots around tiles out of view, and
+    `build_structure` placed there.
 
 **Runs**
 - The Large Barren Desert scenario's map facts, on 2026-10-11, from "Large Barren Desert
@@ -251,6 +291,19 @@ between September and October 2026.
   39,300 tokens) did not fit under 65% of it, which ended that run with an error.
 
 ## Tested in code only
+
+- The 1.6.0 changes not yet run live (`model-observation.test.ts`, `tile-map.test.ts`,
+  `economy.test.ts`, `controller.test.ts`):
+  - `find_sites` searching around the nearest ground of a building's own kind on the
+    map when the view has none.
+  - The one tile of open ground kept around granaries and armories
+    (`access: touches_storage`).
+  - `demolish_building` moving the camera to a tile target off screen.
+  - The right-click that leaves placement mode before a later placement's camera move.
+  - `market_trade` waiting 5 seconds for a trade to show.
+  - Four replies without a tool call in the last game minute letting the rest of the
+    budget pass.
+  - None has been used in an agent's run yet.
 
 - The run overlay on the game machine (`test_overlay.py`, `test_control_status.py`): what it
   shows from the bridge's status and how it draws it, and the host's status carrying the

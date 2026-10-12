@@ -9,7 +9,9 @@ far as you can within the game-time budget.
 **Score.** The settlement is judged as you leave it when the run ends. Net worth counts
 most; population and popularity count too, for less. Net worth is gold plus every stored
 good valued at the marketplace sell price per unit (wood 1, stone 7, iron 23, pitch 10;
-wheat and hops 8; bread, cheese, meat and apples 4; ale 10, flour 10); the starting
+wheat and hops 8; bread, cheese, meat and apples 4; ale 10, flour 10; in the armory,
+bows 15, crossbows 30, spears 10, pikes 18, maces 30, swords 30, leather armour 12 and
+metal armour 30); the starting
 package is worth about 6,500. Buildings count only through what they bring.
 
 **A race.** Every model plays this save for the same game time, and runs are compared on
@@ -34,7 +36,7 @@ stockpile beside it stand just off the right edge of the view.
 There is no oasis grass anywhere on the map, so no farm can be built. Two stone deposits
 lie about 100 tiles west of the keep (up and to the left on screen), and strips of iron
 ore about 60 tiles east of it (down and to the right). `map_overview` shows them on the whole map and `find_sites`
-finds quarry and iron mine spots in the current view.
+finds quarry and iron mine spots on them, in view or around a tile you give.
 
 ## Ways to grow net worth
 
@@ -42,8 +44,10 @@ Choose, combine and adjust these as the game develops:
 
 - **Raw materials:** quarries (with ox tethers beside them) and iron mines produce stone and iron,
   which are worth 7 and 23 each and can be built with or sold.
-- **Not weapons or armour:** their workshops deliver only to an armoury, which is not
-  part of this economic benchmark, so they add nothing to net worth.
+- **Weapons and armour:** fletchers and poleturners make them from wood, blacksmiths
+  and armorers from iron, and tanners from dairy cows. Each is stored in an armory and
+  counts at its sell price. The workshops deliver only to an armory, so one must stand
+  first.
 - **Food surplus:** food beyond what the population eats is stored value.
 - **Taxes:** taxes start at "no taxes" (`set_tax` changes them). Food variety, ale from
   an inn and religion raise popularity; high popularity lets you tax for steady gold

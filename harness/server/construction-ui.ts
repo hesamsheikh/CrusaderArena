@@ -8,7 +8,13 @@ import { typesOf } from "./building-types.js";
 // one building-button click followed by one world click; good and bad things add
 // their Town subpage's button (decorations.ts); walls need separate interaction rules.
 const singleClickPages = ["industry", "farm", "town", "weapons", "food-processing"] as const;
-const categoryNames: Record<(typeof singleClickPages)[number], string> = {
+/**
+ * Castle-page buildings offered with the economy ones: the Armory stores what the weapon
+ * workshops make, which counts toward net worth. The rest of the Castle page is military.
+ */
+const castleBuildings = ["Armory"] as const;
+const categoryNames: Record<(typeof singleClickPages)[number] | "castle", string> = {
+  castle: "Castle Buildings",
   industry: "Industry Buildings",
   farm: "Farm Buildings",
   town: "Town Buildings",
@@ -23,6 +29,7 @@ export const buildableNames = [
       .filter((label) => !nonBuildings.has(label.name))
       .map((label) => label.name),
   ),
+  ...castleBuildings,
   ...decorationNames,
 ];
 
@@ -50,7 +57,7 @@ export function constructionClicks(frame: Frame, name: string, target: { x: numb
 export function menuClicks(frame: Pick<Frame, "width" | "height">, name: string): GameAction[] {
   const scale = checkedScale(frame);
   const decoration = decorations[name];
-  const pageId = decoration ? "town" : singleClickPages.find((id) =>
+  const pageId = decoration ? "town" : (castleBuildings as readonly string[]).includes(name) ? "castle" : singleClickPages.find((id) =>
     atlasPages.find((entry) => entry.id === id)!.labels.some((label) => label.name === name));
   const page = atlasPages.find((entry) => entry.id === pageId);
   const subpage = decoration?.kind === "bad" ? "Fear-factor page" : "Good-factor page";

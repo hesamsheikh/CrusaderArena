@@ -455,6 +455,16 @@ function simulatedGame(options: {
   demolishIgnored?: boolean;
   /** The player's building records by engine type, as the reader counts them. */
   buildings?: Record<string, number>;
+  /**
+   * What a minimap click does: by default it centres the camera on the tile it names (along x only:
+   * the simulated camera moves on one axis), except in placement mode, where it does nothing (live
+   * 2026-10-12); "ignored" never moves the camera.
+   */
+  minimap?: "ignored";
+  /** The whole map's summary rows (run-length letters, 200 × 200); plain land by default. */
+  mapRows?: string[];
+  /** The products of the two-product workshop whose panel buildingAt opens (goods numbers). */
+  workshop?: { making: number; next: number };
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -486,6 +496,7 @@ function simulatedGame(options: {
       camera: options.tiles
         ? { centre_tile_x: 99 + state.camera, centre_tile_y: 100, tiles_wide: 30, tiles_high: 68, pixels_per_unit_scale: 1 }
         : { centre_tile_x: state.camera, centre_tile_y: 1, tiles_wide: 30, tiles_high: 68, pixels_per_unit_scale: 1 },
+      selected_workshop: state.sel !== null && [12, 13, 14].includes(state.sel) && options.workshop ? { id: 15, type: state.sel, ...options.workshop } : null,
       selected_building: state.sel === null ? null : {
         id: 15, type: state.sel, have_stats: state.sel === 3 ? 1 : 0, workers_have: 0, job_vacancies: 1, workers_needed: 1,
         working: 0, turned_off: 0, keep_access: 1, hp: 0, max_hp: 0, no_resources: 0,
@@ -515,8 +526,24 @@ function simulatedGame(options: {
       actions.push(action);
       ageCredits.push(ageCreditMs);
       const id = buttonIds[`${action.x},${action.y}`];
+      if (action.button === 1 && action.x >= 1605 && action.x <= 1770 && action.y >= 892 && action.y <= 1056) {
+        // The minimap: invert minimapFraction for the simulated 200 × 200 map (anchors.ts).
+        if (options.minimap !== "ignored" && state.action !== 5) {
+          const c = options.tiles ? { x: 99 + state.camera, y: 100 } : { x: state.camera, y: 1 };
+          const axis = (centre: number, f: number, lo: number, hi: number) =>
+            Math.min(Math.max(centre - 62.5, lo), hi - 125) + f * 125;
+          const u = axis(c.x - c.y, (action.x - 1605) / 165, -199, 199), v = axis(c.x + c.y, (action.y - 892) / 164, 0, 398);
+          const x = Math.round((u + v) / 2);
+          state.camera = options.tiles ? x - 99 : x;
+        }
+        return { delivered: true, at: Date.now() };
+      }
       if (action.button === 3) { state.action = 0; state.sel = null; }
-      else if (action.x === 1537 && action.y === 1016) { if (!options.demolishIgnored) state.action = 6; }
+      else if (state.sel !== null && options.workshop && action.y === 998 && (action.x === 1368 || action.x === 1448)) {
+        // A workshop panel's two product buttons (bows/crossbows, swords/maces, spears/pikes).
+        const pairs: Record<number, [number, number]> = { 12: [17, 18], 13: [22, 21], 14: [19, 20] };
+        options.workshop.next = pairs[state.sel][action.x === 1368 ? 0 : 1];
+      } else if (action.x === 1537 && action.y === 1016) { if (!options.demolishIgnored) state.action = 6; }
       else if (state.action === 6 && action.y < 900) { if (options.demolishable?.(action.x, action.y)) state.structures--; }
       else if (id && !options.ignoreButtons) { state.action = 5; state.sub = id; options.onButton?.(state); }
       else if (action.y < 900 && state.action === 5) {
@@ -533,13 +560,14 @@ function simulatedGame(options: {
         tileReads++;
         tileReadsAt.push(actions.length);
         const layers = Object.fromEntries(["structure", "organism", "logic", "logic2", "height", "occupancy", "walk", "gfx"]
-          .map((n) => [n, Array(w * h).fill(n === "logic" ? 0x8000 : 0)])) as TileRegion["layers"];
+          .map((n) => [n, Array(w * h).fill(n === "logic" ? 0x8000 : n === "height" ? 8 : 0)])) as TileRegion["layers"];
         options.tiles!((layer, x, y, v) => {
           if (x >= x0 && y >= y0 && x < x0 + w && y < y0 + h) layers[layer][(y - y0) * w + (x - x0)] = v;
         }, { x: 99 + state.camera, y: 100 });
         return { x0, y0, w, h, stable: true, layers };
       },
     } : {}),
+    mapSummary: async () => ({ size: 200, rows: options.mapRows ?? Array.from({ length: 200 }, () => ".200"), bounds: { x0: 0, y0: 0, x1: 199, y1: 199 } }),
     hotkey: async (name: string) => {
       inputSerial++;
       hotkeys.push(name);
@@ -1066,6 +1094,16 @@ test("place_near probes the view when every spot the map gave is refused without
   assert.deepEqual(footprintRect(view.tileAt(mapPixel!), 4), spot, "the first click was the map's only spot");
 });
 
+test("place_near refuses a Granary against another anchor while one stands, before any input", async () => {
+  // Choosing it centres the view on the first granary (GLM 5.3 Flash against the keep, 2026-10-12).
+  const game = simulatedGame({ buildings: { "19": 1 }, anchors: { HomeKeep: { camera: 5, type: 41 } } });
+  await game.observe();
+  const { json } = await game.run("place_near", { building: "Granary", anchor: "keep" });
+  assert.equal(json.stopped, "view_jumps", JSON.stringify(json));
+  assert.match(json.remedy, /expand_storage \(kind granary\)/);
+  assert.equal(game.actions.length + game.hotkeys.length, 0);
+});
+
 test("a second Marketplace is refused before the menu, which would move the view to the first", async () => {
   const game = simulatedGame({ buildings: { "26": 1 } });
   const report = await game.build([{ name: "Marketplace", x: 900, y: 400 }]);
@@ -1086,6 +1124,7 @@ test("build_structure leaves placement mode with an on-screen right-click when s
   });
   const [p] = (await game.build([{ name: "Hovel", tile_x: 101, tile_y: 100 }])).placements;
   assert.equal(p.status, "not_on_screen", JSON.stringify(p));
+  assert.match(p.reason, /moved the view away/);
   const exit = game.actions.at(-1);
   assert.equal(exit.button, 3);
   assert.ok(exit.x >= 0 && exit.x < 1920 && exit.y >= 0 && exit.y < 1080, JSON.stringify(exit));
@@ -1124,6 +1163,59 @@ test("find_sites gives pixels too while the latest screenshot shows the live vie
   assert.equal(game.captures(), 1, "the screenshot's capture only");
 });
 
+/** Iron ore at x 170–180, y 95–105: in the tile layers and as "I" in the map summary. */
+const oreOutOfView = {
+  tiles: (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+    for (let x = 170; x <= 180; x++) for (let y = 95; y <= 105; y++) set("logic", x, y, 0x80000);
+  },
+  mapRows: Array.from({ length: 200 }, (_, y) => (y >= 95 && y <= 105 ? ".170I11.19" : ".200")),
+};
+
+test("find_sites searches around a map tile anywhere on the map, without moving the camera", async () => {
+  const game = simulatedGame(oreOutOfView);
+  await game.observe();
+  const { json } = await game.run("find_sites", { building: "Iron Mine", tile_x: 175, tile_y: 100, count: 2 });
+  assert.deepEqual(json.searchedAround, { tile_x: 175, tile_y: 100 });
+  const ore = json.sites.iron_ore;
+  assert.equal(ore.length, 2, JSON.stringify(json));
+  assert.ok(ore.every((s: any) => s.tile_x >= 170 && s.tile_x <= 180 && s.x === undefined), "tiles only: these spots are off screen");
+  assert.equal(game.state.camera, 1, "the camera did not move");
+  assert.equal(game.actions.length, 0);
+  const half = await game.run("find_sites", { building: "Iron Mine", tile_x: 175 });
+  assert.equal(half.json.status, "invalid");
+});
+
+test("find_sites with no spot on the building's own ground in view searches around the nearest such ground on the map", async () => {
+  const game = simulatedGame(oreOutOfView);
+  const { json } = await game.run("find_sites", { building: "Iron Mine", count: 1 });
+  assert.deepEqual([json.searchedAround.tile_x, json.searchedAround.tile_y], [175, 100], JSON.stringify(json));
+  assert.match(json.searchedAround.why, /nearest iron ore on the map/);
+  const [site] = json.sites.iron_ore;
+  // build_structure then reaches it by moving the camera.
+  const { json: built } = await game.run("build_structure", { placements: [{ name: "Iron Mine", tile_x: site.tile_x, tile_y: site.tile_y }] });
+  assert.equal(built.placements[0].status, "placed", JSON.stringify(built));
+  assert.equal(built.placements[0].view, "moved_to_tile");
+});
+
+test("set_workshop clicks the workshop, presses the product's button, reads the choice back and closes the panel", async () => {
+  const game = simulatedGame({ buildingAt: () => 12, workshop: { making: 17, next: 17 } });
+  await game.observe();
+  const { json } = await game.run("set_workshop", { product: "crossbows", x: 900, y: 400 });
+  assert.deepEqual(json, { status: "set", x: 900, y: 400, workshop: "Fletchers' Workshop", making: "bows", next: "crossbows" });
+  assert.deepEqual(game.actions.map((a) => [a.x, a.y, a.button]), [[900, 400, 1], [1448, 998, 1], [960, 130, 3]]);
+  const again = await game.run("set_workshop", { product: "crossbows", x: 900, y: 400 });
+  assert.equal(again.json.status, "already");
+  // Swords come from a blacksmith, and a woodcutter's panel is no workshop's; both close the panel.
+  const wrong = await game.run("set_workshop", { product: "swords", x: 900, y: 400 });
+  assert.equal(wrong.json.status, "wrong_workshop");
+  assert.match(wrong.json.remedy, /Blacksmith's Workshop; this one makes bows or crossbows/);
+  const woodcutter = simulatedGame({ buildingAt: () => 3 });
+  await woodcutter.observe();
+  const none = await woodcutter.run("set_workshop", { product: "bows", x: 900, y: 400 });
+  assert.equal(none.json.status, "not_a_workshop");
+  assert.equal(woodcutter.actions.at(-1).button, 3);
+});
+
 test("build_structure places a tile target without any observation, using the live camera", async () => {
   const target = tileView().pixel({ x: 100, y: 100 });
   const game = simulatedGame({ tiles: () => {} });
@@ -1136,16 +1228,55 @@ test("build_structure places a tile target without any observation, using the li
   assert.equal(game.captures(), 1, "one bookkeeping capture; no screenshot was ever taken");
 });
 
-test("build_structure reports an off-screen tile target as not_on_screen, sending no input", async () => {
+test("build_structure moves the camera to an off-screen tile target, then places it", async () => {
+  // Claude Haiku 5.5 lost its iron mines to tile targets off screen (2026-10-11).
+  const game = simulatedGame({ tiles: () => {} });
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 160, tile_y: 100 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.view, "moved_to_tile");
+  assert.deepEqual(p.tile, { x: 160, y: 100 });
+  assert.equal(game.state.camera, 61, "the camera is centred on the target");
+  const minimap = game.actions.findIndex((a) => a.x >= 1605 && a.y >= 892 && a.button === 1);
+  const menu = game.actions.findIndex((a) => a.y > 1000 && a.x < 1200);
+  assert.ok(minimap >= 0 && minimap < menu, "the camera moves before the building is chosen");
+});
+
+test("build_structure reports a tile target the camera cannot bring into view as not_on_screen, clicking no terrain", async () => {
+  // The simulated camera moves along x only, so tile (1, 1) never comes into view.
   const game = simulatedGame({ tiles: () => {} });
   const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 1, tile_y: 1 }] });
   const p = json.placements[0];
-  assert.deepEqual(p, {
-    building: "Hovel", tile_x: 1, tile_y: 1, status: "not_on_screen",
-    camera: { centre_tile_x: 100, centre_tile_y: 100 },
-    remedy: "go_to_tile (x 1, y 1) brings the tile into view; then place it again.",
-  });
-  assert.deepEqual(game.actions, [], "nothing sent for an off-screen tile target, and no exit click either");
+  assert.equal(p.status, "not_on_screen", JSON.stringify(p));
+  assert.match(p.reason, /could not bring the tile into view/);
+  assert.match(p.remedy, /further in/);
+  assert.ok(game.actions.every((a) => a.x >= 1605 && a.y >= 892), "only minimap clicks: no menu, terrain or exit click");
+});
+
+test("build_structure goes back to a tile target's bookmarked view when choosing a Stockpile moved the view", async () => {
+  // Choosing a Stockpile centres the view on the first one (Claude Opus 5.5 and GPT-6.1 Sol,
+  // 2026-10-12); the minimap does nothing in placement mode, a camera bookmark does.
+  const game = simulatedGame({ tiles: () => {}, onButton: (state) => { state.camera += 40; } });
+  const [p] = (await game.build([{ name: "Stockpile", tile_x: 101, tile_y: 100 }])).placements;
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.view, "moved_back_to_tile");
+  assert.deepEqual(game.hotkeys, ["SetBookmark9", "GotoBookmark9"]);
+  // A building that does not normally move the view gets no bookmark; if the view moves anyway,
+  // the tile is reported off screen, and nothing is clicked there.
+  const other = simulatedGame({ tiles: () => {}, onButton: (state) => { state.camera += 40; } });
+  const [q] = (await other.build([{ name: "Hovel", tile_x: 101, tile_y: 100 }])).placements;
+  assert.equal(q.status, "not_on_screen", JSON.stringify(q));
+  assert.match(q.reason, /moved the view away/);
+  assert.deepEqual(other.hotkeys, []);
+});
+
+test("build_structure leaves placement mode before moving the camera to a later off-screen tile target", async () => {
+  // The first placement leaves placement mode on, in which the minimap does nothing.
+  const game = simulatedGame({ tiles: () => {} });
+  const report = await game.build([{ name: "Hovel", tile_x: 100, tile_y: 100 }, { name: "Hovel", tile_x: 160, tile_y: 100 }]);
+  assert.deepEqual(report.placements.map((p: any) => [p.status, p.view]), [["placed", undefined], ["placed", "moved_to_tile"]], JSON.stringify(report));
+  const minimap = game.actions.findIndex((a) => a.x >= 1605 && a.y >= 892 && a.button === 1);
+  assert.equal(game.actions[minimap - 1].button, 3, "a right-click left placement mode first");
 });
 
 test("build_structure rejects a placement that gives neither or both coordinate pairs", async () => {
@@ -1422,7 +1553,9 @@ test("demolish_building reports nothing demolished, a tool that did not start, a
   const stuck = await game.run("demolish_building", { tile_x: 102, tile_y: 101 });
   assert.equal(stuck.json.status, "not_selected");
   assert.ok(game.actions.every((a) => a.y >= 900), "the map was never clicked");
+  // The camera is moved to a tile off screen; one it cannot reach (the simulated camera moves along x
+  // only) is reported, with a remedy that does not repeat the move.
   const far = await simulatedGame({ tiles: () => {} }).run("demolish_building", { tile_x: 1, tile_y: 1 });
   assert.equal(far.json.status, "not_on_screen");
-  assert.match(far.json.remedy, /go_to_tile \(x 1, y 1\)/);
+  assert.match(far.json.remedy, /further in/);
 });

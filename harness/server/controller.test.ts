@@ -583,6 +583,17 @@ test("replies without any tool call end the run after four in a row, and the mod
   // run.json keeps the error, so the episode runner counts this as the model's failure.
   assert.match(f.store.get(f.run.id).progress?.endError ?? "", /No tool calls in 4 replies in a row/);
 });
+test("four replies without a tool call in the last game minute let the rest of the budget pass", async () => {
+  // GLM 5.3 Flash's run (2026-10-11) ended 5 game seconds short this way and was not a full run.
+  const f = fixture(10, 0, 1);
+  const waits = instantWaits(f);
+  f.provider(() => [{ type: "text", text: "Nothing more to do." }], true);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.equal(f.requests.length, 4, "no request after the fourth");
+  assert.equal(f.store.get(f.run.id).progress?.endError, undefined);
+  assert.ok(f.logMessages.some((m) => /letting the rest of the budget pass/.test(m)), JSON.stringify(f.logMessages));
+  assert.ok(f.controller.session.gameRemainingSeconds() <= 0, `waits: ${JSON.stringify(waits)}`);
+});
 test("brief reader freshness gaps do not end a timed run", async () => {
   const f = fixture(1);
   f.setUnavailableSamples(2);

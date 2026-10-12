@@ -1,6 +1,7 @@
 import type { Stats } from "../shared/protocol.js";
 import { FACTOR_UNITS_PER_POINT, foodPopularity, popularityFactors } from "../shared/popularity.js";
 import { buildingTypeNames } from "./anchors.js";
+import { buildingTypes } from "./building-types.js";
 import { inventoryGroups } from "./inventory.js";
 
 const months = ["January", "February", "March", "April", "May", "June", "July", "August",
@@ -190,7 +191,7 @@ export function describeBuilding(sel: NonNullable<Observation["selected_building
   return {
     id: sel.id,
     type: sel.type,
-    name: buildingTypeNames[sel.type] ?? null,
+    name: buildingTypeNames[sel.type] ?? buildingTypes[sel.type] ?? null,
     ...(staffed
       ? {
           workers: { have: sel.workers_have, needed: sel.workers_needed, vacancies: sel.job_vacancies },

@@ -38,24 +38,27 @@ observe …"). The remedies are in `harness/server/remedies.ts`.
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
 | `observe` | none | Takes a screenshot once the turn has run the minimum turn length; the host lets the rest pass first and says so | Obs | No |
-| `wait_and_observe` | `seconds` 0–300 (game seconds); optional `until: {amount, at_least}`; optional `screenshot` (default true) | Lets game time pass, at least until the turn has run the minimum turn length, then looks. `until` ends the wait early once a good, `gold`, `population`, `food` or `idle_peasants` reaches a value, but not before the minimum. `screenshot: false` waits the same way but returns stats, game events and `run_clock` as text only, with no image, and does not update the targeting frame. Once 3 game minutes have passed with no economy action (`build_structure`, `place_near`, `expand_storage`, `demolish_building`, `market_trade`, `set_tax`, `set_rations` or a `game_action`; camera moves and inspecting do not count), the result reminds the model how long it has only waited and read, and that it may be time to do something else | Wait result, then Obs (or the text-only observation) | No |
+| `wait_and_observe` | `seconds` 0–300 (game seconds); optional `until: {amount, at_least}`; optional `screenshot` (default true) | Lets game time pass, at least until the turn has run the minimum turn length, then looks. `until` ends the wait early once a good, `gold`, `population`, `food` or `idle_peasants` reaches a value, but not before the minimum. `screenshot: false` waits the same way but returns stats, game events and `run_clock` as text only, with no image, and does not update the targeting frame. Once 3 game minutes have passed with no economy action (`build_structure`, `place_near`, `expand_storage`, `demolish_building`, `set_workshop`, `market_trade`, `set_tax`, `set_rations` or a `game_action`; camera moves and inspecting do not count), the result reminds the model how long it has only waited and read, and that it may be time to do something else | Wait result, then Obs (or the text-only observation) | No |
 | `flat_view` | none | With the game paused, toggles the flattened landscape view, captures it, toggles back and restores the pause state it found. Buildings and rock become flat footprints, which shows free ground | Flat image (for reading only), then Obs (the targeting image) | No |
 
 ## Build
 
-Buildable names (28): Stockpile, Woodcutter, Quarry, Ox Tether, Iron Mine, Pitch Rig,
+Buildable names (29): Stockpile, Woodcutter, Quarry, Ox Tether, Iron Mine, Pitch Rig,
 Marketplace, Dairy Farm, Apple Orchard, Wheat Farm, Hops Farm, Hovel, Chapel, Church,
 Cathedral, Apothecary, Well, Water Pot, Fletchers' Workshop, Poleturner's Workshop,
 Blacksmith's Workshop, Tanner's Workshop, Armorer's Workshop, Granary, Bakery, Mill,
-Brewery, Inn. Castle and military buildings are not offered.
+Brewery, Inn, Armory, plus the good and bad things. The Armory is the one building
+offered from the Castle page: the weapon workshops deliver only to it, and what it
+stores counts toward net worth. Other castle and military buildings are not offered.
 
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
-| `build_structure` | `placements`: 1–4 of `{name, x?, y?, tile_x?, tile_y?, exact?}`, exactly one of the pixel pair or the tile pair | For each placement: opens the menu (for a good or bad thing, the Town page's good-factor or fear-factor subpage), selects the building, clicks the target pixel, then checks with the reader whether it was placed. A pixel target (`x`, `y`) needs the latest screenshot; a tile target (`tile_x`, `tile_y`, as named by `map_overview` or `find_sites`) needs none — right before its click the host reads the live camera and projects the tile to a pixel itself. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement (a pixel target reported `invalid_target`, or a tile target reported `not_on_screen`, does not count) |
-| `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward (see Tile map). A second Marketplace is refused without any input (`stopped: already_built`) | What was placed, where, and why it stopped | Yes, one |
+| `build_structure` | `placements`: 1–4 of `{name, x?, y?, tile_x?, tile_y?, exact?}`, exactly one of the pixel pair or the tile pair | For each placement: opens the menu (for a good or bad thing, the Town page's good-factor or fear-factor subpage), selects the building, clicks the target pixel, then checks with the reader whether it was placed. A pixel target (`x`, `y`) needs the latest screenshot; a tile target (`tile_x`, `tile_y`, as named by `map_overview` or `find_sites`) needs none — right before its click the host reads the live camera and projects the tile to a pixel itself, at the tile's terrain height, moving the camera to it first when it is off screen (see Tile targets). Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement (a pixel target reported `invalid_target`, or a tile target reported `not_on_screen`, does not count) |
+| `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward (see Tile map). A second Marketplace is refused without any input (`stopped: already_built`), and so is a Stockpile, Granary or Armory against another anchor while one stands (`stopped: view_jumps`: choosing it would centre the view on the first one; the remedy names `expand_storage` or the armoury anchor) | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
-| `demolish_building` | one target: `x`, `y` (pixels of the latest screenshot) or `tile_x`, `tile_y` (a tile of the building's footprint) | Selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. A tile target is projected from the live camera, as for `build_structure` | `demolished`, `not_demolished`, `not_selected`, `unverified`, `invalid_target`, `camera_moved` or `not_on_screen`, with a remedy when it did not go through | Yes, one |
-| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map and the live camera for the current view (no observation needed) and lists free spots where the building fits and keeps an open side (see Open sides), grouped by the ground under them (see Special ground), each as a map tile and, while the latest screenshot shows the live view, its pixel too. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles. A tree is a trunk tile with the ring of tiles a tree has around it; cacti carry the same trunk marks without a ring and do not count | Spots by ground, as tiles (and pixels) | No |
+| `set_workshop` | `product`: `bows`, `crossbows`, `spears`, `pikes`, `maces` or `swords`; one target as for `demolish_building` | Clicks the workshop (for a tile target, the middle of the building on that tile; if the panel that opens is another building's, one drawn in front of it, the back corner of its footprint and then its roof), presses the product's button in its panel, reads the choice back from the reader (`selected_workshop.next`) and right-clicks to close the panel. The two buttons sit at the same spots on the fletcher's (bows, crossbows), blacksmith's (swords, maces) and poleturner's (spears, pikes) panels; new workshops make bows, swords and spears (live 2026-10-12). The item in progress is finished first | `set`, `already`, `wrong_workshop` (with the workshop that makes it), `not_a_workshop`, `unverified` (also when the reader had no reading after the clicks), `invalid_target`, `camera_moved` or `not_on_screen`. A panel shows in the reader about 0.6 s after the click; each click waits up to 4 s | Yes, one |
+| `demolish_building` | one target: `x`, `y` (pixels of the latest screenshot) or `tile_x`, `tile_y` (a tile of the building's footprint) | Selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. A tile target is projected from the live camera at its terrain height, with the camera moved to it first when it is off screen, as for `build_structure` | `demolished`, `not_demolished`, `not_selected`, `unverified`, `invalid_target`, `camera_moved` or `not_on_screen`, with a remedy when it did not go through | Yes, one |
+| `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y`, `tile_x`, `tile_y` | Uses the tile map and the live camera for the current view (no observation needed), or with `tile_x`/`tile_y` a map read of the area around that tile anywhere on the map (spots within 25 tiles of it; the camera does not move), and lists free spots where the building fits and keeps an open side (see Open sides), grouped by the ground under them (see Special ground), each as a map tile and, while the latest screenshot shows it, its pixel too. When the view holds no spot on the building's own ground (stone for a quarry, iron ore for a mine, oil for a pitch rig, oasis grass for a farm, trees for a woodcutter), it also searches around the nearest such area on the map summary whose centre is out of view, and says so in `searchedAround`. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles. A tree is a trunk tile with the ring of tiles a tree has around it; cacti carry the same trunk marks without a ring and do not count | Spots by ground, as tiles (and pixels) | No |
 
 A stockpile is not one building in the tile map but four 2×2 piles at the corners of a
 5×5 square; the tile map joins each four into its square. `place_near` and
@@ -76,10 +79,13 @@ tile map is available):
 | `possibly_rejected` | A refusal message was visible, but it may be an old one |
 | `not_selected` | The building could not be selected in the menu, so the terrain was not clicked |
 | `invalid_target` | A pixel target is outside the screenshot or over the bottom HUD, or the coordinates given are not exactly one whole pair (`x`+`y` or `tile_x`+`tile_y`); `reason` says which. Nothing was sent, and it does not count toward the 8 actions |
-| `not_on_screen` | A tile target is not clickable right now: off screen, over the bottom HUD, or no live camera; `camera` names the live centre tile when known. Nothing was sent, and it does not count toward the 8 actions, unless the view moved while the building was being selected (`reason` says so) |
+| `not_on_screen` | A tile target could not be brought into view (the camera cannot centre near the map edge, or there is no live camera), or choosing the building moved the view and it could not come back; `reason` says which and `camera` names the live centre tile when known. The terrain was not clicked |
 | `camera_moved` | A pixel target's view changed since the screenshot, so the rest of the pixel targets in the batch were skipped; tile targets in the same batch still ran |
 | `unverified` | No confirmation either way |
 | `already_built` | A Marketplace while the player has one: the game allows one, and choosing it again only centres the view on it. Nothing was sent, and it does not count toward the 8 actions; the remedy names `market_trade` |
+
+A tile target the host moved the camera for reports `view`: `moved_to_tile` (it was off
+screen) or `moved_back_to_tile` (choosing the building moved the view away).
 
 A `placed` building also reports `cost`, its cost from the game reference. The stock
 change around the click is kept in the run's events only, not shown to the model: the
@@ -93,13 +99,22 @@ the view instead.
 **Tile targets.** `tile_x`/`tile_y` name a map tile instead of a screenshot pixel (flat
 optional fields rather than a schema union, for providers that reject one). Such a
 placement needs no prior `observe`: when its turn in the batch comes, the host reads the
-game's live camera (waiting briefly for a valid reader sample) and projects the tile to
-a pixel for the current window size, the same projection `find_sites` and `map_overview`
-use, and projects it again after selecting the building if the view has moved. If the
-tile is not clickable (off screen, or in the bottom HUD band), the placement is reported
-`not_on_screen` without a terrain click. A pixel target in the same batch is unaffected
-and keeps its rules (latest screenshot, its age, the camera guard); a batch may mix both
-kinds. A tile target's clicks go with the latest capture, whatever its age, as the
+game's live camera (waiting briefly for a valid reader sample). If the tile is off
+screen, it first moves the camera there with `go_to_tile`'s minimap clicks, after a
+right-click that leaves placement mode when an earlier placement of the call left it on:
+the minimap does nothing in placement mode. It then projects the tile to the pixel
+where it is drawn, from the view's tile map (read now if none is known): the game draws
+raised ground higher, about one screen row per 8.7 units of the tile layers' height,
+so a plateau tile at height 130 sits about 14 rows above where flat ground would put it
+(live on Oasis by the Sea, 2026-10-12; the earlier flat projection hit the cliff below
+it). Choosing a Stockpile, Granary or Armory centres the view on the first one of its
+kind, so for those the host saves the view in game bookmark 9 before choosing the
+building and goes back to it if the tile is no longer on screen; a bookmark works in
+placement mode and keeps the building selected. If the tile still cannot be clicked,
+the placement is reported `not_on_screen` without a terrain click. A pixel target in the
+same batch keeps its rules (latest screenshot, its age, the camera guard), so a camera
+move for a tile target makes later pixel targets report `camera_moved`; a batch may mix
+both kinds. A tile target's clicks go with the latest capture, whatever its age, as the
 host's own hotkeys do: only the window's identity and size are taken from it, so the
 30-second limit, which protects pixels read off an image, does not apply to them.
 
@@ -128,7 +143,7 @@ off the ground of other buildings; scrub counts as plain. A target the model giv
 itself is clicked as given.
 
 **Open sides.** A building with workers (every building except hovels, the
-marketplace, stockpiles, granaries and the good and bad things) needs one whole side of open ground: its workers
+marketplace, stockpiles, granaries, armories and the good and bad things) needs one whole side of open ground: its workers
 go in and out there, and one closed in on all four sides stays empty. In the tile map
 a side is open when every tile along it is buildable ground with nothing on it, or the
 keep's courtyard; trees, bushes, rocks, water, cliffs, farm fields and buildings close
@@ -139,6 +154,14 @@ types the harness cannot name are kept open as well. A `build_structure` target 
 moved like a blocked one without being clicked, and the placement reports `access`
 (`no_open_side` or `closes_neighbour`); with `exact` it is placed as asked and `access`
 warns.
+
+**Room around storage.** Every spot the host chooses, and every `build_structure`
+target, keeps one tile of open ground between a granary or armory and any other
+building, built, placed earlier in the call or planned in it; another granary may touch
+a granary and another armory an armory, and the keep's courtyard does not count. A
+target that would touch one is moved like a blocked one and reports
+`access: touches_storage` (with `exact`, placed as asked with the warning).
+`place_near` beside a granary or the armoury therefore places at a gap of one tile.
 
 **Tile map.** An external read of the game's own tile layers for the current view
 (about 2 seconds, read-only). It knows where structures, trees and rock are, which
@@ -165,7 +188,7 @@ same view if no input was sent in between, and otherwise reads one on its first 
 | `center_on` | `target`: `keep`, `granary`, `market`, `barracks`, `armoury`, `engineers_guild`, `mercenary_post`, `signpost`, `stockpile` | Centres the camera with the game's own hotkeys and closes any panel it opened. The stockpile has no hotkey; the first call finds it and bookmarks the view | Status, then Obs | Yes |
 | `map_overview` | none | Reads the whole map's tiles (about 2 seconds). Draws it with a 20-tile grid, the keep and the current view, and lists stone, iron, oil, farmland and tree groves with their distance from the keep. Cacti are drawn apart from trees and are not groves | Text and a map image | No |
 | `go_to_tile` | `x`, `y` 1–799 | Moves the camera to a map tile with up to 4 minimap clicks | Status, then Obs | Yes |
-| `save_view` | `name` (letters, digits, space, `_`, `-`; up to 24) | Saves the current view as a game bookmark (9 slots) | Saved views | No |
+| `save_view` | `name` (letters, digits, space, `_`, `-`; up to 24) | Saves the current view as a game bookmark (8 slots, 1–8: slot 0 holds the located stockpile and 9 `build_structure`'s target view) | Saved views | No |
 | `go_to_view` | `name` | Returns to a saved view (can differ by about one tile) | Obs | Yes |
 | `navigate_minimap` | `x`, `y` 0–1 | One click on the minimap, as a fraction of its size | Obs | Yes |
 
@@ -175,10 +198,10 @@ same view if no input was sent in between, and otherwise reads one on its first 
 | --- | --- | --- | --- | --- |
 | `status` | none | Summarises the latest reading: budget, date, gold, population and housing, idle peasants, popularity and its factors, worker efficiency, food, stock, troops, placement mode, selected building, camera, saved views, visible messages | Text | No |
 | `get_inventory` | `section`: `all`, `stockpile`, `granary`, `armory` | Stored goods from the reader, with the change since the previous call. `unavailable` if the reading is stale | Text | No |
-| `inspect_building` | `x`, `y` | Clicks a building, reads its panel (workers, vacancies, working, keep access, missing inputs, health) and closes it | Text | Yes |
+| `inspect_building` | `x`, `y` | Clicks a building, reads its panel (workers, vacancies, working, keep access, missing inputs, health; for a fletcher, poleturner or blacksmith the product it is making and the next one) and closes it | Text | Yes |
 | `set_tax` | `level` 0–11 | Opens the keep and steps the tax arrows until the reader shows that level. 0–2 are bribes, 3 is no tax (the start), 4–11 are taxes | From, to, the popularity effect (the reader's own factor after the last step, or the reference table without one), and the panel's tax figure: gold a month at that level for the current population | Yes |
 | `set_rations` | `rations`: `none`, `half`, `full`, `extra` or `double` | Opens a granary with its hotkey and clicks the ration plate until the reader shows those rations (they apply to every granary) | From, to, the ration factor the panel shows | Yes |
-| `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 (5 units each) | Opens the marketplace and trades one click at a time in the game's own steps, up to `lots` × 5 units and never more: a purchase is 5 units a click; a sale is 20 units a click while 100 or more are in stock, 10 from 50, else 5 (seen live on wood, stone and apples). A click counts once the reader shows its trade within 2 seconds: from one reader sample to the next the stock or the gold moved by exactly its units, or the gold did since the click, also with the month's taxes (the keep's tax figure) on top, so a delivery or a tax payment meanwhile neither hides a trade nor passes for one | Units traded, clicks, gold change, net worth change, price; when it stops early, why: the next sale step was larger than what was left (with the step to ask for), nothing left to sell, a trade that did not show, or for a purchase too little gold or storage room as the reader shows them | Yes |
+| `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 (5 units each) | Opens the marketplace and trades one click at a time in the game's own steps, up to `lots` × 5 units and never more: a purchase is 5 units a click; a sale is 20 units a click while 100 or more are in stock, 10 from 50, else 5 (seen live on wood, stone and apples). A click counts once the reader shows its trade within 5 seconds (two of Kimi K3's trades stopped after 2 seconds with nothing bought): from one reader sample to the next the stock or the gold moved by exactly its units, or the gold did since the click, also with the month's taxes (the keep's tax figure) on top, so a delivery or a tax payment meanwhile neither hides a trade nor passes for one | Units traded, clicks, the gold change at the market's price (units × the buy or sell price, so taxes landing meanwhile do not hide a trade's cost), the net worth change, the gold now, price; when it stops early, why: the next sale step was larger than what was left (with the step to ask for), nothing left to sell, a trade that did not show, or for a purchase too little gold or storage room as the reader shows them | Yes |
 
 After `set_tax`, `set_rations`, `market_trade`, `place_near` or `expand_storage`, the model must
 observe again before it can click.

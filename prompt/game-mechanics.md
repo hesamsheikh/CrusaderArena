@@ -98,6 +98,12 @@ everything else on plain ground.
 | Apothecary | 20 W + 150 G; 1 | Reduces disease damage and provides a worker who clears disease clouds. This is distinct from the Bedouin Healer troop. |
 | Good things | 20–30 G; none | Positive fear factor: improves popularity and troop fighting effectiveness, but reduces worker productivity. |
 | Bad things | 40–50 G; none | Negative fear factor: improves worker productivity at the expense of popularity and troop fighting effectiveness. |
+| Armory | 5 W; none | Stores weapons and armor: everything the fletcher, poleturner, blacksmith, armorer and tanner make. They deliver nowhere else. |
+| Fletcher | 20 W + 100 G; 1 | Makes bows (2 wood each) or crossbows (3 wood each) from stockpiled wood. |
+| Poleturner | 10 W + 100 G; 1 | Makes spears (1 wood each) or pikes (2 wood each) from stockpiled wood. |
+| Blacksmith | 20 W + 200 G; 1 | Makes maces or swords from stockpiled iron, 1 iron each. |
+| Armorer | 20 W + 100 G; 1 | Makes metal armor from stockpiled iron, 1 iron per suit. |
+| Tanner | 10 W + 100 G; 1 | Takes dairy cows; one cow supplies three suits of leather armor. |
 
 ### Production chains
 
@@ -105,12 +111,14 @@ everything else on plain ground.
 - **Ale:** hops farm → stockpiled hops → brewery → stockpiled ale → inn → popularity.
 - **Stone:** quarry → ox from a tether beside the quarries → stockpile → walls/towers/buildings.
 - **Iron:** iron mine → stockpile (the miners carry it; no oxen).
-<!-- military -->
+- **Wooden weapons:** woodcutter → stockpiled wood → fletcher (bows or crossbows) or
+  poleturner (spears or pikes) → armory.
+- **Metal weapons and armor:** iron mine → stockpiled iron → blacksmith (maces or
+  swords) or armorer (metal armor) → armory.
 - **Leather armor:** dairy cows → tanner → armory. Tanning consumes cows and can
   compete with cheese production.
-- **Metal equipment:** iron mine → stockpile → blacksmith/armorer → armory.
-- **Wooden equipment:** woodcutter → stockpile → fletcher/poleturner → armory.
-<!-- /military -->
+- Workshops deliver only to an armory: without one, finished weapons and armor have
+  nowhere to go.
 
 Balance stages by observing inventories. Wheat piling up while flour is empty
 suggests milling capacity, staffing or access; flour piling up with no bread
@@ -122,12 +130,6 @@ transport. Check these before adding more of the same building.
 
 | Building | Build cost; workers | Function and inputs |
 |---|---|---|
-| Armory | 5 W; none | Stores finished weapons and armor for recruitment. Raw materials alone cannot equip a soldier. |
-| Fletcher | 20 W + 100 G; 1 | Select bows (2 wood each) or crossbows (3 wood each). |
-| Poleturner | 10 W + 100 G; 1 | Select spears (1 wood each) or pikes (2 wood each). |
-| Blacksmith | 20 W + 200 G; 1 | Select maces or swords; each consumes 1 iron. |
-| Armorer | 20 W + 100 G; 1 | Makes metal armor from 1 iron per suit. |
-| Tanner | 10 W + 100 G; 1 | Takes dairy cows; one cow supplies three suits of leather armor. |
 | Barracks | 15 S; none | Recruits European troops using idle peasants, gold and armory equipment. |
 | Mercenary post | 10 W; none | Recruits Arabian troops with peasants and gold; no armory equipment chain. |
 | Bedouin stockade | 10 W; none | Recruits the eight DE Bedouin types with peasants and gold when enabled. |

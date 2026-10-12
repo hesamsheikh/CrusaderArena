@@ -62,10 +62,16 @@ export function placementRemedy(result: Record<string, unknown>) {
   if (result.retryStopped === "placement_mode_ended")
     return "Placement mode ended before the retries finished: place it again.";
   switch (status) {
-    case "not_on_screen":
-      return typeof result.tile_x === "number"
-        ? `go_to_tile (x ${result.tile_x}, y ${result.tile_y}) brings the tile into view; then place it again.`
-        : "The reader had no camera: observe, then place it again.";
+    case "not_on_screen": {
+      if (typeof result.tile_x !== "number") return "The reader had no camera: observe, then place it again.";
+      // The harness already moved the camera and failed, so go_to_tile would fail the same way.
+      const storage = building === "Stockpile" ? "stockpile" : building === "Granary" ? "granary" : undefined;
+      if (/ended placement mode/.test(String(result.reason ?? "")) && storage)
+        return `expand_storage (kind ${storage}) places it flush against the existing ones.`;
+      return /could not bring/.test(String(result.reason ?? ""))
+        ? "The camera cannot centre near that tile (map edge?): choose a tile a little further in, such as one find_sites lists."
+        : "Place it again by tile; the camera is moved there.";
+    }
     case "not_selected":
       return "The construction menu did not select it: right-click open ground with game_action to close any open panel, observe, then place it again.";
     case "camera_moved":
@@ -116,6 +122,10 @@ export function adjacentRemedy(result: { stopped?: string; missing?: Record<stri
       return alreadyBuiltRemedy(building);
     case "camera_moved":
       return "The view moved while placing: call it again.";
+    case "view_jumps":
+      return building === "Armory"
+        ? "Choosing an Armory centres the view on your first one, so it cannot go against another anchor: place_near with anchor armoury puts it beside the existing one, or build_structure places it by tile anywhere."
+        : `Choosing a ${building} centres the view on your first one, and a new one must touch the existing ones: expand_storage (kind ${building.toLowerCase()}) places it.`;
     case "no_free_spot_in_view":
     case "no_more_free_spots":
     case "probe_limit":

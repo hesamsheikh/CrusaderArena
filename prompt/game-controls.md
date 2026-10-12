@@ -32,9 +32,9 @@ That observation is always a screenshot.
 <!-- /always -->
 
 At most 8 actions per reply. Each `build_structure` placement counts as one, as does
-each `game_action`, `place_near`, `expand_storage`, `demolish_building`, `center_on`,
-`go_to_tile`, `go_to_view`, `navigate_minimap`, `inspect_building`, `set_tax`,
-`set_rations` and `market_trade`.
+each `game_action`, `place_near`, `expand_storage`, `demolish_building`,
+`set_workshop`, `center_on`, `go_to_tile`, `go_to_view`, `navigate_minimap`,
+`inspect_building`, `set_tax`, `set_rations` and `market_trade`.
 Reading tools (`observe`, `status`, `get_inventory`, `find_sites`, `flat_view`,
 `map_overview`, references, plan and notes) do not count.
 
@@ -50,7 +50,7 @@ return the game only once it has passed, so act first and look last.
 - **Screenshot:** the game window only (its `width` and `height` come with it). Tool
   coordinates are pixels of the latest screenshot, (0, 0) at the top left. Aim at ground
   level: a click hits the ground tile under the cursor, so the top of a tall building
-  targets the ground behind it. A screenshot older than 30 seconds cannot be used for
+  targets the ground behind it. Raised ground is drawn higher on screen than low ground. A screenshot older than 30 seconds cannot be used for
   clicks. `find_sites` and a `build_structure` placement given by map tile (`tile_x`,
   `tile_y`) need no screenshot at all: see Placing buildings.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
@@ -72,8 +72,8 @@ return the game only once it has passed, so act first and look last.
   that failed or fell short carries a `remedy` naming the tool call that addresses it.
 
 After anything that moves the camera (`center_on`, `go_to_tile`, `go_to_view`,
-`navigate_minimap`, zoom, a failed stockpile placement), take pixel targets only from a
-new screenshot. After `set_tax`, `set_rations`, `market_trade`, `place_near` or
+`navigate_minimap`, zoom, a failed stockpile placement, a tool given a map tile off
+screen, which moves the camera there), take pixel targets only from a new screenshot. After `set_tax`, `set_rations`, `market_trade`, `place_near` or
 `expand_storage`, which return text only, observe again before clicking at a pixel. A
 `build_structure` placement given by map tile, and `find_sites`, are unaffected: they
 read the live camera themselves and need no screenshot.
@@ -82,15 +82,19 @@ read the live camera themselves and need no screenshot.
 
 - **Build:** `build_structure` places 1–4 named buildings, each given either as pixels
   from the latest screenshot (`x`, `y`, needs a screenshot) or as a map tile (`tile_x`,
-  `tile_y`, named by `map_overview` or `find_sites`, needs no screenshot); it opens the
-  menus and selects the building for you (also the setup "Site your granary" tray with
-  the name `Granary`). `place_near` puts 1–3 buildings flush against an anchor such as
-  the keep or granary. `expand_storage` adds 1–3 stockpiles or granaries touching the
-  existing ones. `find_sites` lists spots in the current view where a building fits,
-  grouped by the ground under them (plain, oasis grass, stone, iron ore, oil), each with
-  its map tile (and its pixel while the latest screenshot shows that view); for a
-  woodcutter, those closest to trees first. `flat_view` shows free and occupied ground.
-  `demolish_building` removes one of your buildings, given by map tile or pixel.
+  `tile_y`, named by `map_overview` or `find_sites`, needs no screenshot, anywhere on
+  the map: the camera is moved there); it opens the menus and selects the building for
+  you (also the setup "Site your granary" tray with the name `Granary`). `place_near`
+  puts 1–3 buildings against an anchor such as the keep or granary. `expand_storage`
+  adds 1–3 stockpiles or granaries touching the existing ones. `find_sites` lists spots
+  where a building fits, in the current view or around a map tile you give, grouped by
+  the ground under them (plain, oasis grass, stone, iron ore, oil), each with its map
+  tile (and its pixel while the latest screenshot shows it); for a woodcutter, those
+  closest to trees first. With no spot on a building's own ground in view, it also
+  searches the nearest such ground on the map. `flat_view` shows free and occupied
+  ground. `demolish_building` removes one of your buildings, given by map tile or pixel.
+  `set_workshop` chooses what a fletcher (bows or crossbows), poleturner (spears or
+  pikes) or blacksmith (swords or maces) makes.
 - **Find your way:** `center_on` jumps to your keep, granary, stockpile, market and
   other key buildings. `map_overview` shows the whole map with its stone, iron, oil,
   farmland and trees; `go_to_tile` moves the camera to a tile it names.
@@ -126,8 +130,9 @@ placed or tried (whether given by tile or worked out from the pixel):
   nearby spot worked, so choose other ground. Pass `exact: true` to forbid retries.
 - `access: "no_open_side"` or `"closes_neighbour"`: your target would leave a building
   with workers no open side (see the rules below), so the harness moved it without
-  clicking there, as for a blocked spot. With `exact: true` it is placed as asked and
-  `access` warns you.
+  clicking there, as for a blocked spot. `access: "touches_storage"`: it would touch a
+  granary or armory with no tile between them, and was moved the same way. With
+  `exact: true` it is placed as asked and `access` warns you.
 - `retrySkipped: "not_enough_resources"` with `missing` (for example `{"wood": 4}`):
   you cannot pay for it yet.
 - `rejected`: the game showed a new error for it. `possibly_rejected`: an error was
@@ -136,17 +141,19 @@ placed or tried (whether given by tile or worked out from the pixel):
 - `invalid_target`: a pixel target is outside the screenshot or over the bottom HUD, or
   the coordinates given are not exactly one whole pair (`x`+`y` or `tile_x`+`tile_y`).
   Nothing was sent; it does not count toward the 8 actions.
-- `not_on_screen`: a tile target is not clickable right now (off screen, over the
-  bottom HUD, or no live camera); `camera` names the live centre tile when known.
-  Its terrain was not clicked.
+- `view: "moved_to_tile"`: the tile was off screen, so the harness moved the camera to
+  it first. `"moved_back_to_tile"`: choosing a Stockpile, Granary or Armory centred the
+  view on the first one, and the harness brought the tile back into view.
+- `not_on_screen`: a tile target could not be brought into view (near the map edge, or
+  no live camera); `reason` says why. Its terrain was not clicked.
 - `camera_moved`: a pixel target's view changed since the screenshot, so the rest of
   the pixel targets in the call were skipped; tile targets in the same call still ran.
 - `unverified`: no evidence either way; check the next screenshot.
 
 Game rules for placement:
 
-- Footprints are squares of tiles: well, woodcutter and mill 3; hovel, granary, bakery,
-  brewery and workshops 4; stockpile, marketplace and inn 5; quarry and apothecary 6;
+- Footprints are squares of tiles: well, woodcutter and mill 3; hovel, granary, armory,
+  bakery, brewery and workshops 4; stockpile, marketplace and inn 5; quarry and apothecary 6;
   wheat and hops farm 9; apple orchard and dairy farm 10. Space targets in one call at
   least a footprint apart.
 - A new stockpile must touch an existing stockpile, and a new granary the granary: use
@@ -154,7 +161,7 @@ Game rules for placement:
   existing stockpile.
 - Hovels, workshops, food processors, the marketplace, inn and military buildings cannot
   be built within about 12 tiles of the signpost (the wooden board the road leads to).
-  Woodcutters, stockpiles, granaries, farms, quarries and mines may be.
+  Woodcutters, stockpiles, granaries, armories, farms, quarries and mines may be.
 - Farms need their whole square free, only oasis grass or scrub under it (no gravel or
   bare earth) and at least 50 oasis tiles: most of a wheat or hops farm, half of an
   orchard or dairy farm. Oasis grass is scarce: group farms closely on it.
@@ -164,12 +171,19 @@ Game rules for placement:
   takes to keep stone from piling up while the oxen are away. An iron mine needs iron
   ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
 - A building with workers (everything but hovels, the marketplace, stockpiles,
-  granaries and the good and bad things) needs at least one whole side of open ground:
+  granaries, armories and the good and bad things) needs at least one whole side of open ground:
   its workers go in and out there, and one closed in on all four sides by buildings,
   trees, rocks, water or cliffs stays empty. Pack them in two rows back to back or in
   blocks of four, so each keeps an outer side. `find_sites`, `place_near`,
   `expand_storage` and the retries only use spots that keep this for the new building
   and its neighbours.
+- A red no-entry sign over a building means it is missing a worker. Either no peasant
+  is free to take the job (no idle peasants), or workers cannot reach the building
+  because it is closed in on every side or cut off from the keep. `inspect_building`
+  shows its workers and whether it has access to the keep.
+- The harness keeps one tile of open ground around granaries and armories: other
+  buildings are not placed touching them, though a new granary touches the granary and
+  a new armory may touch the armory.
 - Leave walking routes between buildings and their storage, and room to expand storage.
 
 ## Camera and keys

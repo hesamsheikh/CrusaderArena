@@ -70,7 +70,7 @@ export const resourceGroundNames = new Set(Object.keys(resourceGround));
  * good (live on Oasis by the Sea, 2026-10-09). The keep's campfire courtyard is its own building;
  * hovels are type 1 (live, 2026-10-09).
  */
-export const STRUCTURE_TYPES = { hovel: 1, pile: 10, granary: 19, market: 26, keep: 41, signpost: 52, courtyard: 55 } as const;
+export const STRUCTURE_TYPES = { hovel: 1, pile: 10, armory: 11, granary: 19, market: 26, keep: 41, signpost: 52, courtyard: 55 } as const;
 const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
 /**
  * Buildings without workers walking in and out. Every other building needs one whole side of open
@@ -79,26 +79,32 @@ const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
  * and got no worker while 19 peasants stood idle; one beside it with an open side was staffed). Two
  * rows back to back, or blocks of four, leave each an outer side.
  */
-const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary", ...decorationNames]);
+const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary", "Armory", ...decorationNames]);
 export const needsOpenSide = (building: string) => !noWorkers.has(building);
 /**
  * Engine types that need no open side. Buildings of other types in the map, including ones the
  * harness cannot name, are kept with an open side too.
  */
-const noOpenSideTypes = new Set<number>([STRUCTURE_TYPES.hovel, STRUCTURE_TYPES.pile, STRUCTURE_TYPES.granary,
+const noOpenSideTypes = new Set<number>([STRUCTURE_TYPES.hovel, STRUCTURE_TYPES.pile, STRUCTURE_TYPES.armory, STRUCTURE_TYPES.granary,
   STRUCTURE_TYPES.market, STRUCTURE_TYPES.keep, STRUCTURE_TYPES.courtyard, SIGNPOST_TYPE,
   // Good and bad things (the game's eStructs: gallows to garden, cesspit to dunking stool, statue to pond).
   ...[62, 63, 64, 65, 66, 91, 92, 93, 94, 95, 96, 97, 98, 100, 101, 102, 103, 104]]);
 /** Placement groups the game never runs the signpost check for. */
-const signpostExempt = new Set(["Woodcutter", "Ox Tether", "Stockpile", "Granary", "Armoury", "Quarry", "Iron Mine", "Pitch Rig", ...farmNames]);
+const signpostExempt = new Set(["Woodcutter", "Ox Tether", "Stockpile", "Granary", "Armory", "Quarry", "Iron Mine", "Pitch Rig", ...farmNames]);
 
 export type TileCamera = { centre_tile_x: number; centre_tile_y: number; tiles_wide: number; tiles_high: number };
 type Camera = TileCamera;
 type Size = { width: number; height: number };
 export type Tile = { x: number; y: number };
 export type Rect = { x1: number; y1: number; x2: number; y2: number };
-/** A building's footprint, and whether its workers need an open side (see needsOpenSide). */
-export type Footprint = Rect & { needsOpenSide?: boolean };
+/** A building's footprint, whether its workers need an open side (see needsOpenSide), and its name when known. */
+export type Footprint = Rect & { needsOpenSide?: boolean; building?: string };
+/**
+ * Storage that spots chosen by the harness keep one tile of open ground around, by engine type:
+ * granaries and armories, which workers keep walking to (the user's rule, 2026-10-12). One may
+ * touch another of its own kind: the game wants a new granary against the granary.
+ */
+const SPACED_STORAGE: Record<string, number> = { Granary: 19, Armory: 11 };
 export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number; ground?: string };
 /**
  * How a spot is chosen. `reserve` (the default): keep off every other building's ground, for
@@ -118,15 +124,22 @@ const inside = (t: Tile, r: Rect) => t.x >= r.x1 && t.x <= r.x2 && t.y >= r.y1 &
 const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
 /**
- * The pixel a click must hit for the game to pick tile t. The camera formula gives the
- * tile's lower vertex; clicks there landed one tile further along +x and +y (a woodcutter
- * and hovels, 2026-09-30), so the target is one row higher, the tile's centre.
+ * Screen rows one unit of terrain height (the tile layers' `height`) raises a tile. The game draws
+ * raised ground higher: on Oasis by the Sea a hovel aimed at a plateau tile of height 130 by its
+ * flat position was refused five times, and the click that placed it there was 15 rows higher
+ * (live 2026-10-12); on the low ground of height 8 by the keep, clicks one row higher than the
+ * flat position had landed on their tiles (2026-09-30). One row per 8.7 units fits both.
  */
-export function tilePixel(camera: Camera, frame: Size, t: Tile) {
+const ROWS_PER_HEIGHT = 1 / 8.7;
+/** Terrain height assumed where none is read: the low ground the flat formula was calibrated on. */
+export const DEFAULT_HEIGHT = 8;
+
+/** The pixel a click must hit for the game to pick tile t, at terrain height `height`: the tile's centre as drawn. */
+export function tilePixel(camera: Camera, frame: Size, t: Tile, height = DEFAULT_HEIGHT) {
   const half = frame.width / camera.tiles_wide / 2;
   const row = frame.height / camera.tiles_high;
   const dx = t.x - camera.centre_tile_x, dy = t.y - camera.centre_tile_y;
-  return { x: Math.round(frame.width / 2 + (dx - dy) * half), y: Math.round(frame.height / 2 + (dx + dy - 1) * row) };
+  return { x: Math.round(frame.width / 2 + (dx - dy) * half), y: Math.round(frame.height / 2 + (dx + dy - height * ROWS_PER_HEIGHT) * row) };
 }
 /** On visible terrain above the HUD, away from the edges. */
 export function onScreen(frame: Size, p: { x: number; y: number }) {
@@ -142,7 +155,19 @@ export class TileMap {
     readonly region: TileRegion,
     readonly camera: Camera,
     readonly frame: Size,
+    /**
+     * Sites anywhere in the region, not only on screen: for find_sites around a tile of the
+     * model's choice, whose spots build_structure reaches by moving the camera.
+     */
+    readonly anywhere = false,
   ) {}
+  /** A square region of `radius` tiles around `centre`, inside the map and the probe's 160 × 160 limit. */
+  static regionAround(centre: Tile, radius: number) {
+    const r = Math.min(radius, 79);
+    const x0 = Math.max(1, centre.x - r);
+    const y0 = Math.max(1, centre.y - r);
+    return { x0, y0, w: Math.min(2 * r + 1, 799 - x0), h: Math.min(2 * r + 1, 799 - y0) };
+  }
   /** The region covering the visible view (plus a margin) around the camera centre. */
   static regionFor(camera: Camera) {
     // The view is a diamond: |dx - dy| <= tiles_wide / 2 and |dx + dy| <= tiles_high / 2.
@@ -204,13 +229,38 @@ export class TileMap {
     return this.buildings;
   }
   /**
+   * Whether a footprint for `building` would touch a granary or armory (or, for one of those, any
+   * other building) with no tile between them: built, placed during this call, or `planned`.
+   * Another of the same kind may touch it, and so may the keep's open courtyard.
+   */
+  touchesStorage(building: string, rect: Rect, planned: readonly Footprint[] = []) {
+    const own = SPACED_STORAGE[building];
+    const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
+    const types = this.region.structure_types ?? {};
+    for (let x = ring.x1; x <= ring.x2; x++)
+      for (let y = ring.y1; y <= ring.y2; y++) {
+        if (inside({ x, y }, rect)) continue;
+        const id = this.value("structure", { x, y });
+        if (!id) continue;
+        const type = types[id];
+        if (type === undefined || type === STRUCTURE_TYPES.courtyard || type === own) continue;
+        if (own !== undefined || Object.values(SPACED_STORAGE).includes(type)) return true;
+      }
+    for (const n of [...this.claimed, ...planned]) {
+      if (!n.building || !overlaps(n, ring) || overlaps(n, rect) || n.building === building && own !== undefined) continue;
+      if (own !== undefined || SPACED_STORAGE[n.building] !== undefined) return true;
+    }
+    return false;
+  }
+  /**
    * Whether `building` at `centre` keeps an open side if it has workers, and leaves one to every
    * neighbour with workers that has one now: built, placed during this call, or `planned` (about to
    * be placed, not in the map yet).
    */
-  access(building: string, centre: Tile, planned: readonly Footprint[] = []): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" } {
+  access(building: string, centre: Tile, planned: readonly Footprint[] = []): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" } {
     const rect = footprintRect(centre, footprintOf(building));
     if (needsOpenSide(building) && !this.openSides(rect, planned)) return { ok: false, reason: "no_open_side" };
+    if (this.touchesStorage(building, rect, planned)) return { ok: false, reason: "touches_storage" };
     const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
     for (const n of [...this.existing(), ...this.claimed, ...planned]) {
       if (!n.needsOpenSide || !overlaps(n, ring) || overlaps(n, rect)) continue;
@@ -295,20 +345,33 @@ export class TileMap {
       }
     return best.id;
   }
-  /** The pixel a click must hit for the game to pick tile t (see tilePixel). */
+  /** The pixel a click must hit for the game to pick tile t, at its own terrain height (see tilePixel). */
   pixel(t: Tile) {
-    return tilePixel(this.camera, this.frame, t);
+    return tilePixel(this.camera, this.frame, t, this.value("height", t) ?? DEFAULT_HEIGHT);
   }
-  /** The tile the game picks for a click at pixel p (inverse of pixel). */
+  /**
+   * The tile the game picks for a click at pixel p (inverse of pixel): of the tiles drawn in p's
+   * screen column, the frontmost whose drawn centre lies within a row of p. Raised ground is drawn
+   * higher, so that tile can lie further down the map than the flat position says.
+   */
   tileAt(p: { x: number; y: number }): Tile {
     const half = this.frame.width / this.camera.tiles_wide / 2;
     const row = this.frame.height / this.camera.tiles_high;
-    const u = (p.x - this.frame.width / 2) / half, v = (p.y - this.frame.height / 2) / row + 1;
-    return { x: Math.round(this.camera.centre_tile_x + (u + v) / 2), y: Math.round(this.camera.centre_tile_y + (v - u) / 2) };
+    const u = (p.x - this.frame.width / 2) / half, v = (p.y - this.frame.height / 2) / row + DEFAULT_HEIGHT * ROWS_PER_HEIGHT;
+    const flat = { x: Math.round(this.camera.centre_tile_x + (u + v) / 2), y: Math.round(this.camera.centre_tile_y + (v - u) / 2) };
+    let nearest = flat, distance = Infinity;
+    for (let j = 32; j >= -4; j--) {
+      const t = { x: flat.x + j, y: flat.y + j };
+      if (this.value("height", t) === undefined) continue;
+      const d = Math.abs(this.pixel(t).y - p.y);
+      if (d < row) return t;
+      if (d < distance) { distance = d; nearest = t; }
+    }
+    return nearest;
   }
   /** Clickable: the centre pixel is on visible terrain above the HUD, away from the edges. */
   clickable(t: Tile) {
-    return onScreen(this.frame, this.pixel(t));
+    return this.anywhere || onScreen(this.frame, this.pixel(t));
   }
   /** Signpost tiles in the region (empty when the probe reported no types). */
   private signpostTiles() {
@@ -368,7 +431,7 @@ export class TileMap {
     const r = footprintRect(centre, footprintOf(building));
     this.claimed.push({
       x1: r.x1 - margin, y1: r.y1 - margin, x2: r.x2 + margin, y2: r.y2 + margin,
-      ...(placed ? { needsOpenSide: needsOpenSide(building) } : {}),
+      ...(placed ? { needsOpenSide: needsOpenSide(building), building } : {}),
     });
   }
   /**
@@ -526,7 +589,7 @@ export class TileMap {
       if (taken.some((c) => overlaps(r, c))) continue;
       if (taken.length && !this.access(building, s.tile, [...planned, ...taken]).ok) continue;
       chosen.push(s);
-      taken.push({ ...r, needsOpenSide: needsOpenSide(building) });
+      taken.push({ ...r, needsOpenSide: needsOpenSide(building), building });
     }
     return chosen;
   }

@@ -14,7 +14,7 @@ export const buildingTypes: Record<number, string> = {
   8: "Barracks (wood)",
   9: "Barracks (stone)",
   10: "Stockpile pile",
-  11: "Armoury",
+  11: "Armory",
   12: "Fletchers' Workshop",
   13: "Blacksmith's Workshop",
   14: "Poleturner's Workshop",
@@ -107,6 +107,22 @@ export function typesOf(name: string): number[] {
  * menu centres the view on it, and clicks on open ground place nothing (a recorded run, 2026-10-12).
  */
 const singleBuildings = new Set(["Marketplace"]);
+
+/**
+ * Buildings whose choice in the menu centres the view on the first one of its kind, when there is
+ * one (live 2026-10-12: Stockpile, Granary and Armory).
+ */
+export const VIEW_JUMPERS = new Set(["Stockpile", "Granary", "Armory"]);
+
+/**
+ * Whether choosing `name` would centre the view on one the player already has (VIEW_JUMPERS), from
+ * the reader's counts by type: then place_near cannot place it against another anchor.
+ */
+export function viewJumps(name: string, observation: Record<string, unknown> | null | undefined) {
+  if (!VIEW_JUMPERS.has(name)) return false;
+  const counts = observation?.buildings as Record<string, number> | undefined;
+  return !!counts && typeof counts === "object" && typesOf(name).some((t) => (counts[String(t)] ?? 0) > 0);
+}
 
 /** Whether `name` is a one-only building the player already has, from the reader's counts by type. */
 export function alreadyBuilt(name: string, observation: Record<string, unknown> | null | undefined) {
