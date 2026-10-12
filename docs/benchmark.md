@@ -131,7 +131,7 @@ moving a round changes no version.
   makes a git worktree under `.versions/<version>-<commit>` (ignored by git) on first use,
   links this checkout's `.env`, `harness/runtime/` and `.internal/` into it and installs
   its dependencies; copies that version's game-machine files over (above); starts that
-  version's host on the next port (`--port` + 1, its log in the worktree's `host.log`);
+  version's host on the first free port after `--port` (its log in the worktree's `host.log`);
   and runs that version's own runner with the same arguments. Runs, series and saves
   land in this checkout's `harness/runtime/` as usual. This checkout's host stays up but
   does not list the run until it restarts; do not restart a host while the other one has

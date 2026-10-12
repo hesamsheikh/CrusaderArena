@@ -6,6 +6,7 @@
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
+import net from "node:net";
 import { existsSync, lstatSync, mkdirSync, openSync, readFileSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,6 +86,22 @@ function isLink(file: string) {
   } catch {
     return false;
   }
+}
+
+/**
+ * The first port from `from` on that nothing listens on, so the round's host never meets another
+ * host already there (such as one left running from an older checkout).
+ */
+export async function freePort(from: number, tries = 20) {
+  for (let port = from; port < from + tries; port++) {
+    const free = await new Promise<boolean>((resolve) => {
+      const server = net.createServer();
+      server.once("error", () => resolve(false));
+      server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+    });
+    if (free) return port;
+  }
+  throw new Error(`No free port between ${from} and ${from + tries - 1} for the round's host.`);
 }
 
 /**

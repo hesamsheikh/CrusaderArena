@@ -48,7 +48,7 @@ import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { MENU_PROBES, menuScreen, type MenuScreen } from "./menu-screen.js";
 import { forwardedArgs, readRounds, roundPlan, writeRound, type Round } from "./rounds.js";
-import { gameMachineDifferences, prepareWorktree, startHost, stopHost, syncGameMachine } from "./version-checkout.js";
+import { freePort, gameMachineDifferences, prepareWorktree, startHost, stopHost, syncGameMachine } from "./version-checkout.js";
 import { classify, counts, episodeSaveName, humanSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
 import { TICKS_PER_GAME_SECOND, costProblem, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
@@ -995,14 +995,15 @@ async function runPlain(plan: Plan, total: number) {
 
 /**
  * Plays the run on the round's version instead (rounds.ts): that commit's worktree, its game-machine
- * files on the game machine, its host on the next port and its own runner with these arguments.
+ * files on the game machine, its host on the first free port after this one and its own runner with
+ * these arguments.
  * Returns the runner's exit code.
  */
 async function playElsewhere(round: Round) {
   log(`${opts.resume ? "This series" : `Benchmark "${setting("benchmark")}"`} plays on its round's version ${round.version} (since ${round.since}), not this checkout's; running it from ${round.commit.slice(0, 7)}. --new-round would move the round to this version.`);
   const dir = await prepareWorktree(round, log);
   await syncGameMachine(dir, log);
-  const port = String(Number(opts.port) + 1);
+  const port = String(await freePort(Number(opts.port) + 1));
   const host = await startHost(dir, port, round, log);
   try {
     const child = spawn(process.execPath, [path.join(dir, "node_modules/tsx/dist/cli.mjs"), "harness/server/episodes.ts", ...forwardedArgs(process.argv.slice(2), port)],

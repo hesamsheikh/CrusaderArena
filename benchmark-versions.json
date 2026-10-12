@@ -180,6 +180,12 @@
       "fingerprint": "3e1f84510204274d48eeac2337b13a7212975f145ae501649e8229f9e269e444",
       "date": "2026-10-12",
       "note": "The run overlay draws with Pillow and python-xlib from the control venv instead of GTK; what runs play is unchanged."
+    },
+    {
+      "version": "1.5.6",
+      "fingerprint": "373de424fc193a4156b3b62a928c7e8a25d4fbd8f8aeb84b7e6fa11ed224b4fa",
+      "date": "2026-10-12",
+      "note": "The runner starts a round's host on the first free port after its own, not always the next one; what runs play is unchanged."
     }
   ]
 }
