@@ -3,12 +3,12 @@
 benchmark, the game time used and left as a progress bar, and a line of figures (net worth, gold,
 population, popularity, turns, tool calls, cost).
 
-A separate window above the game that never takes focus and lets clicks through. The agent's
+A separate X window above the game that never takes focus and lets clicks through. The agent's
 screenshots and the run videos copy only the game window's own image (its compositor pixmap), so
 the overlay is in neither, and the bridge sends input to the game window directly. Started by the
-bridge's monitor (control-status.py) with the system Python, which has GTK; it reads the bridge's
-status.json, shows itself while a run has a game clock, and exits once the bridge has been gone
-for 30 seconds."""
+bridge's monitor (control-status.py) with the control venv's Python: Pillow draws the panel and
+python-xlib shows it. It reads the bridge's status.json, shows itself while a run has a game
+clock, and exits once the bridge has been gone for 30 seconds."""
 import fcntl
 import json
 import os
@@ -18,6 +18,8 @@ import time
 BASE = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'crusader-arena'
 WIDTH, HEIGHT = 660, 88
 GONE_SECONDS = 30
+FONTS = Path('/usr/share/fonts/truetype/dejavu')
+INK = (237, 224, 204)
 
 
 def read(file):
@@ -75,60 +77,78 @@ def panel(status, now):
     }
 
 
-def draw(cr, width, height, p):
-    import cairo
-    cr.set_operator(cairo.OPERATOR_SOURCE)
-    cr.set_source_rgba(0, 0, 0, 0)
-    cr.paint()
-    cr.set_operator(cairo.OPERATOR_OVER)
-    r = 10
-    cr.new_sub_path()
-    cr.arc(width - r, r, r, -1.5708, 0)
-    cr.arc(width - r, height - r, r, 0, 1.5708)
-    cr.arc(r, height - r, r, 1.5708, 3.1416)
-    cr.arc(r, r, r, 3.1416, 4.7124)
-    cr.close_path()
-    cr.set_source_rgba(0.11, 0.07, 0.08, 0.84)
-    cr.fill_preserve()
-    cr.set_source_rgba(0.92, 0.87, 0.79, 0.35)
-    cr.set_line_width(1)
-    cr.stroke()
-    ink = (0.93, 0.88, 0.80)
-    cr.select_font_face('DejaVu Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-    cr.set_font_size(15)
-    cr.set_source_rgb(*ink)
-    cr.move_to(16, 25)
-    cr.show_text(p['title'])
-    cr.select_font_face('DejaVu Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-    cr.set_font_size(11)
-    phase = p['phase']
-    extents = cr.text_extents(phase)
-    cr.set_source_rgba(*ink, 0.7)
-    cr.move_to(width - 16 - extents.x_advance, 24)
-    cr.show_text(phase)
+def font(size, bold=False):
+    from PIL import ImageFont
+    try:
+        return ImageFont.truetype(str(FONTS / ('DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf')), size)
+    except OSError:
+        return ImageFont.load_default(size)
+
+
+def paint(image, colour, alpha, shape):
+    """`image` with `colour` laid over it at `alpha`, through the mask `shape` draws in white."""
+    from PIL import Image, ImageDraw
+    mask = Image.new('L', image.size, 0)
+    shape(ImageDraw.Draw(mask))
+    if alpha < 255:
+        mask = mask.point(lambda v: v * alpha // 255)
+    top = Image.new('RGBA', image.size, colour + (0,))
+    top.putalpha(mask)
+    return Image.alpha_composite(image, top)
+
+
+def render(p, width=WIDTH, height=HEIGHT):
+    """The panel for `p` (from panel()) as an RGBA image."""
+    from PIL import Image
+    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    image = paint(image, (28, 18, 20), 214, lambda d: d.rounded_rectangle((0, 0, width - 1, height - 1), 10, fill=255))
+    image = paint(image, (235, 222, 201), 89, lambda d: d.rounded_rectangle((0, 0, width - 1, height - 1), 10, outline=255))
+    image = paint(image, INK, 255, lambda d: d.text((16, 25), p['title'], fill=255, font=font(15, True), anchor='ls'))
+    image = paint(image, INK, 179, lambda d: d.text((width - 16, 24), p['phase'], fill=255, font=font(11), anchor='rs'))
     x, y, w, h = 16, 35, width - 32, 18
-    cr.set_source_rgba(1, 1, 1, 0.12)
-    cr.rectangle(x, y, w, h)
-    cr.fill()
-    cr.set_source_rgba(0.80, 0.60, 0.28, 0.95)
-    cr.rectangle(x, y, w * p['fraction'], h)
-    cr.fill()
-    cr.select_font_face('DejaVu Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-    cr.set_font_size(11)
+    image = paint(image, (255, 255, 255), 31, lambda d: d.rectangle((x, y, x + w - 1, y + h - 1), fill=255))
+    done = round(w * p['fraction'])
+    if done > 0:
+        image = paint(image, (204, 153, 71), 242, lambda d: d.rectangle((x, y, x + done - 1, y + h - 1), fill=255))
+    bold = font(11, True)
     for text, right in ((p['used'], False), (p['left'], True)):
-        extents = cr.text_extents(text)
-        tx = x + w - 8 - extents.x_advance if right else x + 8
-        cr.set_source_rgba(0, 0, 0, 0.6)
-        cr.move_to(tx + 1, y + 14)
-        cr.show_text(text)
-        cr.set_source_rgb(*ink)
-        cr.move_to(tx, y + 13)
-        cr.show_text(text)
-    cr.select_font_face('DejaVu Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-    cr.set_font_size(11)
-    cr.set_source_rgba(*ink, 0.85)
-    cr.move_to(16, 74)
-    cr.show_text(p['figures'])
+        tx, anchor = (x + w - 8, 'rs') if right else (x + 8, 'ls')
+        image = paint(image, (0, 0, 0), 153, lambda d: d.text((tx + 1, y + 14), text, fill=255, font=bold, anchor=anchor))
+        image = paint(image, INK, 255, lambda d: d.text((tx, y + 13), text, fill=255, font=bold, anchor=anchor))
+    image = paint(image, INK, 217, lambda d: d.text((16, 74), p['figures'], fill=255, font=font(11), anchor='ls'))
+    return image
+
+
+def pixels(image, depth):
+    """`image` as X image data, least significant byte first (BGRA): with premultiplied alpha
+    for a 32-bit window, which the compositor blends over the game; on an opaque window, over
+    black."""
+    from PIL import Image, ImageChops
+    r, g, b, a = image.split()
+    r, g, b = (ImageChops.multiply(c, a) for c in (r, g, b))
+    if depth != 32:
+        a = Image.new('L', image.size, 255)
+    return Image.merge('RGBA', (b, g, r, a)).tobytes()
+
+
+def argb_visual(screen):
+    """A 32-bit true-colour visual (one with alpha) for a see-through panel, if the screen has one."""
+    from Xlib import X
+    for allowed in screen.allowed_depths:
+        if allowed.depth == 32:
+            for visual in allowed.visuals:
+                if visual.visual_class == X.TrueColor:
+                    return visual.visual_id
+    return None
+
+
+def put(window, gc, data, depth, width=WIDTH, height=HEIGHT):
+    """Draws the image data into the window in strips, each well inside the largest X request."""
+    from Xlib import X
+    row = width * 4
+    for y in range(0, height, 32):
+        rows = min(32, height - y)
+        window.put_image(gc, 0, y, width, rows, X.ZPixmap, depth, 0, data[y * row:(y + rows) * row])
 
 
 def main():
@@ -138,61 +158,50 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         return
-    import gi
-    gi.require_version('Gtk', '3.0')
-    from gi.repository import GLib, Gtk
-    import cairo
-    # A popup is override-redirect: the window manager never gives it focus or a frame.
-    win = Gtk.Window(type=Gtk.WindowType.POPUP)
-    win.set_app_paintable(True)
-    screen = win.get_screen()
-    visual = screen.get_rgba_visual()
-    if visual is not None and screen.is_composited():
-        win.set_visual(visual)
-    win.set_accept_focus(False)
-    win.set_keep_above(True)
-    win.set_default_size(WIDTH, HEIGHT)
-    win.move(max(0, (screen.get_width() - WIDTH) // 2), 6)
-    area = Gtk.DrawingArea()
-    win.add(area)
-    shown = {'panel': None}
-
-    def paint(widget, cr):
-        if shown['panel']:
-            draw(cr, widget.get_allocated_width(), widget.get_allocated_height(), shown['panel'])
-        return False
-
-    def click_through(*_):
-        # An empty input region: every click goes to the window below.
-        win.input_shape_combine_region(cairo.Region())
-
-    area.connect('draw', paint)
-    win.connect('realize', click_through)
-    seen = {'at': time.time()}
-
-    def tick():
+    from Xlib import X, Xutil, display
+    from Xlib.ext import shape
+    shown = display.Display()
+    screen = shown.screen()
+    visual = argb_visual(screen)
+    if visual is not None:
+        depth, colormap = 32, screen.root.create_colormap(visual, X.AllocNone)
+    else:
+        visual, depth, colormap = X.CopyFromParent, screen.root_depth, X.CopyFromParent
+    # Override-redirect: the window manager never frames it or gives it focus.
+    window = screen.root.create_window(
+        max(0, (screen.width_in_pixels - WIDTH) // 2), 6, WIDTH, HEIGHT, 0, depth, X.InputOutput, visual,
+        background_pixel=0, border_pixel=0, colormap=colormap, override_redirect=True, event_mask=X.ExposureMask)
+    window.set_wm_name('Crusader Arena run overlay')
+    window.set_wm_hints(flags=Xutil.InputHint, input=0)
+    # An empty input region: every click goes to the window below.
+    window.shape_rectangles(shape.SO.Set, shape.SK.Input, X.Unsorted, 0, 0, [])
+    gc = window.create_gc()
+    seen, mapped, last, data = time.time(), False, None, b''
+    while True:
         now = time.time()
         status = read(BASE / 'status.json')
         if bridge_live(status, now):
-            seen['at'] = now
-        elif now - seen['at'] > GONE_SECONDS:
-            Gtk.main_quit()
-            return False
-        shown['panel'] = panel(status, now)
-        if shown['panel']:
-            if not win.get_visible():
-                win.show_all()
-                click_through()
-            window = win.get_window()
-            if window is not None:
-                window.raise_()
-            area.queue_draw()
-        elif win.get_visible():
-            win.hide()
-        return True
-
-    GLib.timeout_add(500, tick)
-    Gtk.main()
+            seen = now
+        elif now - seen > GONE_SECONDS:
+            break
+        p = panel(status, now)
+        if p:
+            if p != last:
+                data, last = pixels(render(p), depth), p
+            if not mapped:
+                window.map()
+                mapped = True
+            window.configure(stack_mode=X.Above)
+            put(window, gc, data, depth)
+        elif mapped:
+            window.unmap()
+            mapped, last = False, None
+        while shown.pending_events():
+            shown.next_event()
+        shown.flush()
+        time.sleep(0.5)
+    window.destroy()
+    shown.close()
 
 
 if __name__ == '__main__':

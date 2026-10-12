@@ -282,10 +282,11 @@ the bridge goes.
 
 The agent never sees it. It is a separate window above the game, and the agent's
 screenshots and the run videos copy only the game window's own image (its compositor
-pixmap), not the screen. It cannot take focus (an override-redirect popup) and lets
+pixmap), not the screen. It cannot take focus (an override-redirect window) and lets
 clicks through (an empty input region), and the bridge sends input to the game window
-directly. A recording of the whole screen, such as a stream, shows it. It needs GTK 3 in
-the system Python (`python3-gi`, part of Ubuntu's desktop).
+directly. A recording of the whole screen, such as a stream, shows it. It runs on the
+control venv's Python, drawing the panel with Pillow and showing it with python-xlib, so
+it needs nothing beyond the bridge's own setup.
 
 ## Development checks
 

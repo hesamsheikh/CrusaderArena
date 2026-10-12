@@ -36,5 +36,27 @@ class OverlayTests(unittest.TestCase):
         self.assertNotIn('$', p['figures'])
         self.assertEqual(overlay.clock_text(-3), '0:00')
 
+    def test_the_panel_is_drawn_with_see_through_corners_and_premultiplied_pixels(self):
+        image = overlay.render(overlay.panel(LIVE, 1001.0))
+        self.assertEqual(image.size, (overlay.WIDTH, overlay.HEIGHT))
+        self.assertEqual(image.getpixel((0, 0))[3], 0, 'rounded corner')
+        self.assertEqual(image.getpixel((overlay.WIDTH // 2, overlay.HEIGHT - 6))[3], 214, 'panel')
+        data = overlay.pixels(image, 32)
+        self.assertEqual(len(data), overlay.WIDTH * overlay.HEIGHT * 4)
+        for i in range(0, len(data), 4):
+            b, g, r, a = data[i:i + 4]
+            self.assertLessEqual(max(b, g, r), a)
+        opaque = overlay.pixels(image, 24)
+        self.assertEqual(set(opaque[3::4]), {255})
+
+    def test_the_bar_fills_with_the_game_time_used(self):
+        def filled(used):
+            image = overlay.render(overlay.panel(dict(LIVE, clock=dict(used=used, total=2000.0)), 1001.0))
+            row = [image.getpixel((x, 37)) for x in range(16, overlay.WIDTH - 16)]
+            return sum(1 for r, g, b, a in row if r > 150 and b < 120)
+        self.assertEqual(filled(0), 0)
+        self.assertAlmostEqual(filled(1000) / (overlay.WIDTH - 32), 0.5, delta=0.02)
+        self.assertEqual(filled(2000), overlay.WIDTH - 32)
+
 if __name__ == '__main__':
     unittest.main()

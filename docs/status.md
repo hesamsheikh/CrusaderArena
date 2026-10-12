@@ -64,6 +64,9 @@ between September and October 2026.
 - The game-window capture excludes windows covering the game.
 - Stop from the dashboard and from the control monitor, and the focus check that
   blocks input while another window is active.
+- The run overlay, shown with a test status: on the screen above the game, absent from
+  the game-window capture the agent sees, never active, with an empty input region, and
+  with keys from the host still reaching the game. Not yet watched through a model's run.
 
 **Tools**
 - `market_trade` in the game's own steps (1.5.0), on 2026-10-11. Clicking the
@@ -250,9 +253,8 @@ between September and October 2026.
 ## Tested in code only
 
 - The run overlay on the game machine (`test_overlay.py`, `test_control_status.py`): what it
-  shows from the bridge's status, and the host's status carrying the session's game clock,
-  tool calls, net worth, popularity and cost. Not yet run live: that it shows above the game,
-  stays out of the agent's screenshots and never takes focus is to be checked there.
+  shows from the bridge's status and how it draws it, and the host's status carrying the
+  session's game clock, tool calls, net worth, popularity and cost.
 - The placement fixes of 1.5.5 (`construction-ui.test.ts`, `model-observation.test.ts`,
   `building-types.test.ts`): one more of the player's own buildings of the placed type
   confirms a placement over a refusal message; a second Marketplace is refused before any

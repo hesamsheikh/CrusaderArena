@@ -53,8 +53,8 @@ class Monitor:
             lock.close()
         self.start_overlay()
     def start_overlay(self):
-        """The on-screen run overlay (overlay.py), unless one is already up. It needs GTK, which the
-        system Python has and the control venv does not."""
+        """The on-screen run overlay (overlay.py), unless one is already up, on this venv's Python:
+        it draws with Pillow and shows the panel with python-xlib."""
         lock = (BASE / 'overlay.lock').open('a')
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -62,9 +62,8 @@ class Monitor:
             lock.close()
             return
         lock.close()
-        python = '/usr/bin/python3'
-        if os.environ.get('DISPLAY') and Path(python).exists():
-            subprocess.Popen([python, str(Path(__file__).with_name('overlay.py'))], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        if os.environ.get('DISPLAY'):
+            subprocess.Popen([sys.executable, str(Path(__file__).with_name('overlay.py'))], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     def publish(self):
         self.state['heartbeat'] = time.time()
         atomic(BASE / 'status.json', self.state)
