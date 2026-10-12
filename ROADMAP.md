@@ -41,6 +41,11 @@ two. The project website shows this file, so keep that shape.
   Claude Opus 5.5's storage toward its iron mines: bring the target back into view after
   choosing the building. The rule that ends a run after four replies without tools ended
   GLM 5.3 Flash's run 5 game seconds early, so the last seconds should not count.
+- **Market reports from the 1.5 runs.** `market_trade` reports a trade's gold change as
+  gold after minus gold before, so tax that lands during a trade hides part of its cost
+  (25 cheese bought by Kimi K3 showed as 37 gold, not 200): report units at the market's
+  price instead. Two of Kimi's 47 trades stopped because the purchase did not show in the
+  reader within 2 seconds, when nothing had been bought: wait longer before giving up.
 
 ## Later
 

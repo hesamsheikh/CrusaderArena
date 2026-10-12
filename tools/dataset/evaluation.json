@@ -11,6 +11,7 @@
     { "id": "20261012T101643-b291d04d", "model": "z-ai/glm-5.3-flash", "map": "Large Barren Desert" },
     { "id": "20261012T110247-91bd9173", "model": "claude-sonnet-5-5", "map": "Large Barren Desert" },
     { "id": "20261012T113644-1024a7b0", "model": "claude-opus-5-5", "map": "Large Barren Desert" },
-    { "id": "20261012T123257-cf634001", "model": "openai/gpt-6-luna", "map": "Large Barren Desert" }
+    { "id": "20261012T123257-cf634001", "model": "openai/gpt-6-luna", "map": "Large Barren Desert" },
+    { "id": "20261012T134119-f09e54cb", "model": "kimi-k3", "map": "Large Barren Desert" }
   ]
 }
