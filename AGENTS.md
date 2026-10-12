@@ -44,6 +44,7 @@ git identity or other git configuration.
 | `tools/video/` | Run video renderer | [harness](docs/harness.md#run-videos) |
 | `tools/dataset/` | Packaging, scrubbing and uploading runs to the Hugging Face dataset; the dataset card | [publishing](docs/publishing.md) |
 | `tests/` | C++ and Python tests for the reader and its tools | |
+| `.github/workflows/` | `notify-website.yml`: rebuilds the project website when `docs/`, `ROADMAP.md` or `CHANGELOG.md` change | [publishing](docs/publishing.md#the-website) |
 | `docs/` | The documentation; [docs/status.md](docs/status.md) says what is verified | |
 | `ROADMAP.md` | Planned work. The project website shows it, so keep its format; take an item off when it is done | |
 

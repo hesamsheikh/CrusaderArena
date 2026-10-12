@@ -163,6 +163,24 @@ Readings come from the agent's turns, so a minute without a fresh reading repeat
 before, and `sample_game_seconds` shows when it was taken. Net worth uses the marketplace
 sell prices in `harness/server/market-prices.ts`.
 
+## The website
+
+The project website is a static site built from this dataset and from this repository's
+`ROADMAP.md`, `CHANGELOG.md` and `docs/`, each read at its newest commit when the site is
+built. A Vercel deploy hook rebuilds it. These call it:
+
+- **This repository.** `.github/workflows/notify-website.yml` calls the hook on a push to
+  `main` that changes `docs/`, `ROADMAP.md` or `CHANGELOG.md`, and by hand from the Actions
+  tab. It reads the hook's URL from the Actions secret `WEBSITE_DEPLOY_HOOK` and does nothing
+  in a fork.
+- **The dataset.** A Hugging Face webhook on repository updates calls the same hook, so an
+  upload appears on the site a few minutes later. Each bundle is one commit, so a build never
+  sees half a series.
+- **The website's own repository**, on every push.
+
+The hook can only rebuild the website's `main`; it cannot change its code or content. If its
+URL leaks, make a new hook in Vercel and put it in the secret and the Hugging Face webhook.
+
 ## Checks
 
 ```bash
