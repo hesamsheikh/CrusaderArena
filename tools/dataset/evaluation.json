@@ -1,0 +1,14 @@
+{
+  "about": "The series that count in Crusader Bench's evaluation. A series that is not listed is published but not ranked. Uploaded to the dataset as evaluation.json by `npm run upload -- --evaluation`.",
+  "series": [
+    { "id": "20261011T132054-9bb4d8ae", "model": "z-ai/glm-5.3-flash", "map": "Oasis by the Sea" },
+    { "id": "20261011T141021-5ef84787", "model": "claude-haiku-5-5", "map": "Oasis by the Sea" },
+    { "id": "20261011T144802-e1ba2274", "model": "openai/gpt-6-luna", "map": "Oasis by the Sea" },
+    { "id": "20261011T154946-7bc1b619", "model": "claude-sonnet-5-5", "map": "Oasis by the Sea" },
+    { "id": "20261011T163832-bceb17f2", "model": "kimi-k3", "map": "Oasis by the Sea" },
+    { "id": "20261011T175318-657a6989", "model": "openai/gpt-6.1-sol", "map": "Oasis by the Sea" },
+    { "id": "20261011T211444-de27ae23", "model": "claude-haiku-5-5", "map": "Large Barren Desert" },
+    { "id": "20261011T214835-33796a71", "model": "z-ai/glm-5.3-flash", "map": "Large Barren Desert" },
+    { "id": "20261012T064725-135cbd14", "model": "claude-sonnet-5-5", "map": "Large Barren Desert" }
+  ]
+}

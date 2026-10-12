@@ -19,6 +19,7 @@ npm run episodes -- --record ...          # a series of episodes, recorded (see 
 npm run package -- <series id> --submitter <hugging face user> [--tier official]
 npm run upload -- harness/runtime/publish/v1.0/<benchmark>/<model>/<series id>        # dry run
 npm run upload -- harness/runtime/publish/v1.0/<benchmark>/<model>/<series id> --yes  # upload
+npm run upload -- --evaluation --yes      # after editing tools/dataset/evaluation.json
 ```
 
 1. **Package.** `npm run package` takes learning series ids (`harness/runtime/series/<id>`)
@@ -32,6 +33,10 @@ npm run upload -- harness/runtime/publish/v1.0/<benchmark>/<model>/<series id> -
    write access to the dataset submits runs. `--tier official` is for runs made by the
    maintainers; everyone else's are `community`. `--replace` replaces a bundle already in
    the dataset, for one packaged again after a packaging change.
+4. **Count it.** A published series is not ranked until its id is in
+   `tools/dataset/evaluation.json`, which `--evaluation` uploads to the dataset's root. The
+   upload refuses a list that names a series the dataset does not have. Leave a series out
+   to publish it without ranking it: an early run, a test, or one set aside.
 
 The token is `HF_TOKEN` (environment or `.env`), else the login from `hf auth login`. The
 dataset is `--repo ORG/NAME` or `HF_DATASET_REPO`.
@@ -167,7 +172,9 @@ sell prices in `harness/server/market-prices.ts`.
 
 The project website is a static site built from this dataset and from this repository's
 `ROADMAP.md`, `CHANGELOG.md` and `docs/`, each read at its newest commit when the site is
-built. A Vercel deploy hook rebuilds it. These call it:
+built. Its leaderboards and charts use only the series in `evaluation.json`, and of a model's
+series on one map only those on the newest patch; the others keep their run pages. A Vercel
+deploy hook rebuilds it. These call it:
 
 - **This repository.** `.github/workflows/notify-website.yml` calls the hook on a push to
   `main` that changes `docs/`, `ROADMAP.md` or `CHANGELOG.md`, and by hand from the Actions

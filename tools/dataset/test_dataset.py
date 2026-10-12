@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import random
+import re
 import shutil
 import subprocess
 import tempfile
@@ -453,6 +454,45 @@ class UploadTest(Fixture):
         result = self.package()
         with self.assertRaises(SystemExit), redirect_stdout(io.StringIO()):
             upload.main([str(result.dest), '--repo', 'org/runs', '--yes', '--out', str(self.out)], api=mock.Mock())
+
+    def evaluation(self, *ids):
+        file = self.tmp / 'evaluation.json'
+        file.write_text(json.dumps({'series': [{'id': i} for i in ids]}))
+        return mock.patch.object(upload, 'EVALUATION', file)
+
+    def test_the_evaluation_list_goes_up_alone_once_every_series_it_names_is_published(self):
+        api = mock.Mock()
+        api.list_repo_files.return_value = ['README.md', f'v1.5/oasis/model/{SERIES_ID}/manifest.json']
+        with self.evaluation(SERIES_ID), redirect_stdout(io.StringIO()):
+            upload.main(['--evaluation', '--repo', 'org/runs', '--yes'], api=api)
+        kwargs = api.create_commit.call_args.kwargs
+        self.assertEqual([op.path_in_repo for op in kwargs['operations']], ['evaluation.json'])
+        self.assertEqual(kwargs['commit_message'], 'Update the evaluation list')
+        api.create_commit.reset_mock()
+        with self.evaluation(SERIES_ID, '20261012T000000-00000000'), self.assertRaises(SystemExit) as refused, \
+                redirect_stdout(io.StringIO()):
+            upload.main(['--evaluation', '--repo', 'org/runs', '--yes'], api=api)
+        self.assertIn('20261012T000000-00000000', str(refused.exception))
+        api.create_commit.assert_not_called()
+        with self.evaluation(SERIES_ID, SERIES_ID), self.assertRaises(SystemExit), redirect_stdout(io.StringIO()):
+            upload.main(['--evaluation', '--repo', 'org/runs'], api=api)
+
+    def test_the_evaluation_list_may_name_a_bundle_it_goes_up_with(self):
+        result = self.staged()
+        api = mock.Mock()
+        api.file_exists.return_value = False
+        api.list_repo_files.return_value = []
+        with self.evaluation(SERIES_ID), redirect_stdout(io.StringIO()):
+            upload.main([str(result.dest), '--evaluation', '--repo', 'org/runs', '--yes', '--out', str(self.out)], api=api)
+        api.create_commit.assert_called_once()
+        paths = {op.path_in_repo for op in api.create_commit.call_args.kwargs['operations']}
+        self.assertIn('evaluation.json', paths)
+        self.assertIn(f'{result.rel}/manifest.json', paths)
+
+    def test_the_committed_evaluation_list_names_each_series_once(self):
+        ids = upload.evaluation_ids()
+        self.assertTrue(ids)
+        self.assertTrue(all(re.fullmatch(r'\d{8}T\d{6}-[0-9a-f]{8}', i) for i in ids), ids)
 
     def test_the_card_is_refused_while_it_has_todos(self):
         if 'TODO' in upload.CARD.read_text():

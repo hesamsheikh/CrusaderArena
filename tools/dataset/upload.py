@@ -1,13 +1,16 @@
 """Upload staged bundles to the Hugging Face dataset.
 
-    npm run upload -- <bundle folder> ... [--repo ORG/NAME] [--pr] [--card] [--replace] [--yes]
+    npm run upload -- [<bundle folder> ...] [--repo ORG/NAME] [--pr] [--card] [--evaluation] [--replace] [--yes]
 
 Without --yes it only prints what it would upload. It refuses a bundle that packaging found
 problems in, one without a benchmark version, and one whose files changed after packaging
 (sizes and SHA-256 must match manifest.json). It replaces a bundle already in the dataset
 only with --replace, which deletes the old folder in the same commit: for a bundle packaged
 again after a packaging change. --pr opens a pull request instead of committing; anyone but
-the dataset's maintainers needs it. --card also uploads the dataset card (tools/dataset/card.md).
+the dataset's maintainers needs it. --card also uploads the dataset card (tools/dataset/card.md),
+and --evaluation the list of series that count in the evaluation (tools/dataset/evaluation.json),
+refusing it while it names a series that is in neither the dataset nor this upload. Both go in
+the last bundle's commit, or in a commit of their own when no bundle is given.
 
 The token comes from HF_TOKEN (environment or .env), else from `hf auth login`.
 """
@@ -25,6 +28,7 @@ from scrub import read_env
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'harness/runtime/publish'
 CARD = Path(__file__).with_name('card.md')
+EVALUATION = Path(__file__).with_name('evaluation.json')
 IGNORED = {'.DS_Store'}
 
 
@@ -73,8 +77,31 @@ def card_text(repo: str) -> str:
     return text.replace('{{repo}}', repo)
 
 
-def upload(bundle: Path, manifest: dict, repo: str, *, pr: bool, card: bool, api, replace: bool = False) -> str:
-    """One commit (or pull request) with the bundle's files, its manifest and optionally the card."""
+def evaluation_ids() -> list[str]:
+    """The series ids in tools/dataset/evaluation.json, each once."""
+    ids = [s['id'] for s in json.loads(EVALUATION.read_text(encoding='utf-8'))['series']]
+    repeated = sorted({i for i in ids if ids.count(i) > 1})
+    if repeated:
+        raise SystemExit(f'tools/dataset/evaluation.json lists {", ".join(repeated)} more than once.')
+    return ids
+
+
+def unpublished(ids: list[str], repo: str, api, uploading: set[str]) -> list[str]:
+    """The ids that are neither a series in the dataset nor in this upload."""
+    present = {p.split('/')[-2] for p in api.list_repo_files(repo, repo_type='dataset')
+               if p.endswith('/manifest.json') and p.count('/') >= 2}
+    return [i for i in ids if i not in present | uploading]
+
+
+def root_files(repo: str, *, card: bool, evaluation: bool) -> list[tuple[str, bytes]]:
+    """The files at the dataset's root this upload sends: the card and the evaluation list."""
+    files = [('README.md', card_text(repo).encode('utf-8'))] if card else []
+    return files + ([('evaluation.json', EVALUATION.read_bytes())] if evaluation else [])
+
+
+def upload(bundle: Path, manifest: dict, repo: str, *, pr: bool, api, replace: bool = False,
+           extra: list[tuple[str, bytes]] = ()) -> str:
+    """One commit (or pull request) with the bundle's files, its manifest and any root files."""
     from huggingface_hub import CommitOperationAdd, CommitOperationDelete
 
     rel = manifest['path']
@@ -86,8 +113,7 @@ def upload(bundle: Path, manifest: dict, repo: str, *, pr: bool, card: bool, api
     operations += [CommitOperationAdd(path_in_repo=f'{rel}/{f["path"]}', path_or_fileobj=str(bundle / f['path']))
                    for f in manifest['files']]
     operations.append(CommitOperationAdd(path_in_repo=f'{rel}/manifest.json', path_or_fileobj=str(bundle / 'manifest.json')))
-    if card:
-        operations.append(CommitOperationAdd(path_in_repo='README.md', path_or_fileobj=card_text(repo).encode('utf-8')))
+    operations += [CommitOperationAdd(path_in_repo=path, path_or_fileobj=data) for path, data in extra]
     info = api.create_commit(
         repo_id=repo,
         repo_type='dataset',
@@ -100,18 +126,36 @@ def upload(bundle: Path, manifest: dict, repo: str, *, pr: bool, card: bool, api
     return getattr(info, 'pr_url', None) or getattr(info, 'commit_url', '')
 
 
+def upload_root(repo: str, extra: list[tuple[str, bytes]], *, pr: bool, api) -> str:
+    """One commit (or pull request) with only the root files."""
+    from huggingface_hub import CommitOperationAdd
+
+    names = {'README.md': 'the dataset card', 'evaluation.json': 'the evaluation list'}
+    info = api.create_commit(
+        repo_id=repo,
+        repo_type='dataset',
+        operations=[CommitOperationAdd(path_in_repo=path, path_or_fileobj=data) for path, data in extra],
+        commit_message='Update ' + ' and '.join(names[path] for path, _ in extra),
+        create_pr=pr,
+    )
+    return getattr(info, 'pr_url', None) or getattr(info, 'commit_url', '')
+
+
 def main(argv=None, api=None):
     env = {**read_env(ROOT / '.env'), **os.environ}
     parser = argparse.ArgumentParser(description='Upload staged bundles to the Hugging Face dataset (a dry run without --yes).')
-    parser.add_argument('bundles', nargs='+', help='staged folders, harness/runtime/publish/v<major>.<minor>/<benchmark>/<model>/<id>')
+    parser.add_argument('bundles', nargs='*', help='staged folders, harness/runtime/publish/v<major>.<minor>/<benchmark>/<model>/<id>')
     parser.add_argument('--repo', default=env.get('HF_DATASET_REPO') or None, help='dataset repository, ORG/NAME (default HF_DATASET_REPO)')
     parser.add_argument('--pr', action='store_true', help='open a pull request instead of committing')
     parser.add_argument('--card', action='store_true', help='also upload the dataset card')
+    parser.add_argument('--evaluation', action='store_true', help='also upload the list of series that count in the evaluation')
     parser.add_argument('--replace', action='store_true',
                         help='replace a bundle already in the dataset (packaged again after a packaging change)')
     parser.add_argument('--yes', action='store_true', help='upload; without it nothing is sent')
     parser.add_argument('--out', default=str(OUT), help='staging folder (default harness/runtime/publish)')
     args = parser.parse_args(argv)
+    if not (args.bundles or args.card or args.evaluation):
+        parser.error('give a bundle folder, --card or --evaluation')
 
     checked = []
     failed = False
@@ -128,6 +172,10 @@ def main(argv=None, api=None):
         checked.append((bundle, manifest))
     if args.card:
         card_text(args.repo or '')
+        print(f'README.md: the dataset card -> {args.repo or "(no --repo)"}')
+    if args.evaluation:
+        ids = evaluation_ids()
+        print(f'evaluation.json: {len(ids)} series count in the evaluation -> {args.repo or "(no --repo)"}')
     if failed:
         raise SystemExit(1)
     if not args.yes:
@@ -138,8 +186,16 @@ def main(argv=None, api=None):
     if api is None:
         from huggingface_hub import HfApi
         api = HfApi(token=env.get('HF_TOKEN') or None)
+    if args.evaluation:
+        missing = unpublished(ids, args.repo, api, {m['id'] for _, m in checked})
+        if missing:
+            raise SystemExit(f'tools/dataset/evaluation.json names series that are not in {args.repo}: {", ".join(missing)}')
+    extra = root_files(args.repo, card=args.card, evaluation=args.evaluation)
     for i, (bundle, manifest) in enumerate(checked):
-        print(upload(bundle, manifest, args.repo, pr=args.pr, card=args.card and i == 0, api=api, replace=args.replace))
+        last = i == len(checked) - 1
+        print(upload(bundle, manifest, args.repo, pr=args.pr, api=api, replace=args.replace, extra=extra if last else []))
+    if not checked:
+        print(upload_root(args.repo, extra, pr=args.pr, api=api))
 
 
 if __name__ == '__main__':

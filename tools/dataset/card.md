@@ -110,6 +110,7 @@ screenshots (`images/`) and `final-overview.jpg` were removed, so the paths to t
 ## Layout
 
 ```
+evaluation.json                           the series that count in the evaluation
 v1.0/                                     benchmark version, major.minor
   oasis-by-the-sea-construction/          benchmark
     z-ai--glm-5.3-flash/                  model ID, "/" written as "--"
@@ -151,6 +152,22 @@ holds the attempt the series kept (`attempt`, `outcome`: `valid` or `model_failu
 `tier` is `official` for runs made by the maintainers and `community` for submitted runs.
 A submitted score comes from the submitter's machine; the video, the screenshots in
 `images/` and the reader samples make it checkable, not verified.
+
+## Which runs count
+
+`evaluation.json`, at the top of this repository, lists the series that count in Crusader
+Bench's evaluation, by `series_id`. A series that is not listed is published but not ranked:
+an early run, a test, or one the maintainers set aside. The leaderboard uses only the listed
+series, and of a model's listed series on one map only those on the newest patch.
+
+```python
+import json
+from huggingface_hub import hf_hub_download
+
+listed = json.load(open(hf_hub_download("{{repo}}", "evaluation.json", repo_type="dataset")))
+counted = {s["id"] for s in listed["series"]}
+series = series.filter(lambda row: row["series_id"] in counted)
+```
 
 ## Columns
 
