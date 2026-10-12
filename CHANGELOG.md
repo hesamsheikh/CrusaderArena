@@ -29,6 +29,10 @@ this file lists every version in `benchmark-versions.json`, with its date.
 - `npm run episodes` copies the game machine's helpers and reader sources from the version a
   run plays and rebuilds the reader when they differ, instead of refusing until they are
   synced by hand.
+- A run overlay on the game machine's screen for people watching: the model and benchmark,
+  the game time used and left as a progress bar, and net worth, gold, people, popularity,
+  turns, tool calls and cost. It is a separate window that takes no focus and lets clicks
+  through, so the agent's screenshots and the run videos do not show it.
 
 ## [1.5.6] - 2026-10-12
 

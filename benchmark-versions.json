@@ -168,6 +168,12 @@
       "fingerprint": "409544e6bf11c7e099e322a9db045e0c36d1126c137228436af5ee4f895ad87e",
       "date": "2026-10-12",
       "note": "The episode runner follows each benchmark's round (benchmark-rounds.json): an earlier round's version plays from a worktree of its commit with its own host and runner; and it copies the game machine's helpers and reader sources from the playing version and rebuilds the reader instead of refusing. What a run plays and scores is unchanged."
+    },
+    {
+      "version": "1.5.6",
+      "fingerprint": "11f4e94dba762fd3c6383621aa978924641ceebc2d0c626a470e242cacaf64fc",
+      "date": "2026-10-12",
+      "note": "A run overlay on the game machine's screen (model, benchmark, game time used and left, net worth and run figures), a separate unfocusable click-through window outside the game window's own image; the host's status to the game machine carries the session's game clock, tool calls, net worth, popularity and cost. What the agent sees, plays and scores is unchanged."
     }
   ]
 }

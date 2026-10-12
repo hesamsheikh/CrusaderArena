@@ -34,6 +34,18 @@ class MonitorTests(unittest.TestCase):
     def test_only_one_bridge_can_own_monitor(self):
         with self.assertRaisesRegex(RuntimeError, 'already connected'):
             status.Monitor()
+    def test_run_clock_and_figures_reach_the_status_for_the_overlay(self):
+        self.monitor.update({'clock': {'used': 754.2, 'total': 2000, 'toolCalls': 39}, 'cost': 0.66,
+                             'stats': {'gold': 4522, 'net_worth': 6087, 'popularity': 68, 'secret': 1}})
+        self.assertEqual(self.monitor.state['clock'], {'used': 754.2, 'total': 2000.0})
+        self.assertEqual(self.monitor.state['tool_calls'], 39)
+        self.assertEqual(self.monitor.state['cost'], 0.66)
+        self.assertEqual(self.monitor.state['stats'], {'gold': 4522, 'net_worth': 6087, 'popularity': 68})
+        self.monitor.update({'clock': None, 'cost': None})
+        self.assertIsNone(self.monitor.state['clock'])
+        self.assertIsNone(self.monitor.state['cost'])
+        self.monitor.update({'clock': {'used': 'x', 'total': 2000}})
+        self.assertIsNone(self.monitor.state['clock'], 'a malformed clock is dropped')
     def test_closing_monitor_stops_input(self):
         self.monitor.started -= 10
         self.assertEqual(self.monitor.control(), 'stop')

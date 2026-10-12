@@ -51,7 +51,8 @@ bash tools/ubuntu/setup-control.sh
 ```
 
 This creates `.venv-control` with a pinned Python X11 binding for the window bridge.
-`xterm` is for the control monitor.
+`xterm` is for the control monitor. The run overlay uses GTK 3 from the system Python
+(`python3-gi`, installed with Ubuntu's desktop).
 
 In Steam, start the game once through Proton and set a 16:9 window, ideally
 1920 × 1080.

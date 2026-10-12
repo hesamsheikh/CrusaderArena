@@ -276,6 +276,7 @@ export class RunController {
       this.runtime,
     );
     this.agent.subscribe((event) => {
+      if (event.type === "tool_execution_start") this.toolCalls++;
       if (
         event.type === "message_update" &&
         this.requestStartedAt !== undefined &&
@@ -372,6 +373,8 @@ export class RunController {
     });
   }
   private compact: () => Promise<void>;
+  /** Tool calls the model made in this run, for the game machine's overlay. */
+  toolCalls = 0;
   publish() {
     this.progress.remainingSeconds = this.session.gameRemainingSeconds();
     this.progress.budget = {

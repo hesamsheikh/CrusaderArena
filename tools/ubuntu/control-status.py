@@ -51,6 +51,20 @@ class Monitor:
             pass
         finally:
             lock.close()
+        self.start_overlay()
+    def start_overlay(self):
+        """The on-screen run overlay (overlay.py), unless one is already up. It needs GTK, which the
+        system Python has and the control venv does not."""
+        lock = (BASE / 'overlay.lock').open('a')
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lock.close()
+            return
+        lock.close()
+        python = '/usr/bin/python3'
+        if os.environ.get('DISPLAY') and Path(python).exists():
+            subprocess.Popen([python, str(Path(__file__).with_name('overlay.py'))], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     def publish(self):
         self.state['heartbeat'] = time.time()
         atomic(BASE / 'status.json', self.state)
@@ -100,8 +114,17 @@ class Monitor:
         for key in ('tokens','turns'):
             if isinstance(data.get(key), int):
                 self.state[key] = data[key]
+        if 'clock' in data:
+            clock = data['clock']
+            ok = isinstance(clock, dict) and all(isinstance(clock.get(k), (int, float)) and not isinstance(clock.get(k), bool) for k in ('used', 'total'))
+            self.state['clock'] = {'used': float(clock['used']), 'total': float(clock['total'])} if ok and clock['total'] > 0 else None
+            calls = clock.get('toolCalls') if isinstance(clock, dict) else None
+            self.state['tool_calls'] = calls if isinstance(calls, int) and not isinstance(calls, bool) else None
+        if 'cost' in data:
+            cost = data['cost']
+            self.state['cost'] = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None
         if isinstance(data.get('stats'), dict):
-            self.state['stats'] = {k:v for k,v in data['stats'].items() if k in ('gold','population','troops','paused') and isinstance(v,(int,bool))}
+            self.state['stats'] = {k:v for k,v in data['stats'].items() if k in ('gold','population','troops','paused','popularity','net_worth') and isinstance(v,(int,bool))}
         if data.get('event'):
             self.event(data['event'])
         else:

@@ -12,6 +12,7 @@ import {
   runNameFor,
   actionSchema,
   runConfigSchema,
+  TICKS_PER_GAME_SECOND,
   type State,
   type Frame,
 } from "../shared/protocol.js";
@@ -21,6 +22,7 @@ import { GameDevice } from "./device.js";
 import { testModel, modelConfig } from "./model.js";
 import { renderVideo } from "./video.js";
 import { RunController } from "./controller.js";
+import { netWorth } from "./market-prices.js";
 import { benchmarkStamp, codeVersion } from "./version.js";
 import { atlasHtml, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 const root = path.resolve(
@@ -105,6 +107,8 @@ let stopCurrent: ((reason?: "stopped" | "error") => void) | undefined;
 let interruptCurrent: (() => void) | undefined;
 let currentRun: Promise<void> | undefined;
 let agent: Agent | undefined;
+/** The active run's game time used and budget, live from its session, and its tool calls (for the game machine's overlay). */
+let runClock: (() => { used: number; total: number; toolCalls: number }) | undefined;
 /**
  * The last run to end, with its conversation, kept for the interview after its episode
  * (POST /api/agent/interview) until the next run starts.
@@ -460,6 +464,7 @@ app.post("/api/agent/run", async (req, res) => {
       await controller.prepare();
       state.tokens = run.tokens;
       broadcast();
+      runClock = () => ({ used: controller.session.gameUsedTicks() / TICKS_PER_GAME_SECOND, total: controller.session.gameBudgetSeconds, toolCalls: controller.toolCalls });
       outcome = await controller.runSession();
       state.modelStatus = outcome === "error" ? "error" : "ready";
     } catch (e) {
@@ -475,6 +480,7 @@ app.post("/api/agent/run", async (req, res) => {
       // Clear the busy state whatever happens below, or the host would refuse every later run.
       state.running = false;
       state.streamingText = "";
+      runClock = undefined;
       agent = undefined;
       stopCurrent = undefined;
       interruptCurrent = undefined;
@@ -619,12 +625,16 @@ const tick = setInterval(() => {
     run: run?.name || "",
     turns: state.turns,
     tokens: state.tokens,
+    clock: state.running && runClock ? runClock() : null,
+    cost: run?.cost ?? null,
     stats: stats
       ? {
           gold: stats.gold,
           population: stats.population,
           troops: stats.own_troops?.total,
           paused: stats.paused,
+          popularity: stats.popularity,
+          net_worth: typeof stats.gold === "number" ? Math.round(netWorth(stats.gold, stats.resources_by_name ?? {}).netWorth) : undefined,
         }
       : {},
   });

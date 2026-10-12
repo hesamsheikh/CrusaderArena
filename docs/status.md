@@ -249,6 +249,10 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The run overlay on the game machine (`test_overlay.py`, `test_control_status.py`): what it
+  shows from the bridge's status, and the host's status carrying the session's game clock,
+  tool calls, net worth, popularity and cost. Not yet run live: that it shows above the game,
+  stays out of the agent's screenshots and never takes focus is to be checked there.
 - The placement fixes of 1.5.5 (`construction-ui.test.ts`, `model-observation.test.ts`,
   `building-types.test.ts`): one more of the player's own buildings of the placed type
   confirms a placement over a refusal message; a second Marketplace is refused before any
