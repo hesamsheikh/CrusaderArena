@@ -198,6 +198,12 @@
       "fingerprint": "1f6dd2f4dec94ee2c90011da2fb4fa4764862c98f5950d961280a6745c36c2c1",
       "date": "2026-10-12",
       "note": "The Sinkhole's rules, objective and reference game (45 game minutes); the weapons line in each map's rules says only that they are stored value, as the food line does"
+    },
+    {
+      "version": "1.6.1",
+      "fingerprint": "c62587b2a9adc170fd25ba9e4d696da2cf6e9e5f0be2b820d7fe1aa7281dcd32",
+      "date": "2026-10-12",
+      "note": "The Sinkhole's do-nothing baseline at 45 game minutes (2,195); what runs play is unchanged"
     }
   ]
 }

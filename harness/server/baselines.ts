@@ -12,6 +12,9 @@ export const idleBaselines: Record<string, Record<number, number>> = {
   "Oasis by the Sea benchmark start": { 33.3333333: 1220 },
   // 2026-10-10, speed 40, 2,000 game seconds: 5,000 gold and 192 wood.
   "Large Barren Desert benchmark start": { 33.3333333: 5192 },
+  // 2026-10-12, speed 40, 2,700 game seconds from tick 2,114: 2,000 gold, 55 wood and 20 stone;
+  // the 55 meat was eaten, and 4 people and popularity 0 were left.
+  "The Sinkhole start": { 45: 2195 },
 };
 
 export function idleBaseline(save: unknown, gameMinutes: unknown): number | undefined {

@@ -184,7 +184,8 @@ start`, where the granary is already placed (all the bread is eaten), and 5,192 
 Barren Desert benchmark start`, which starts with 5,000 gold. Left alone, the desert's
 stockpile stays full of wood, so the part of its package that waits for room (stone, iron,
 pitch, ale and more wood, about 1,150 at the sell price) never arrives; a run that frees
-storage receives it, and its growth includes it.
+storage receives it, and its growth includes it. With 45 game minutes doing nothing scores 2,195 on `The Sinkhole
+start`: its 2,000 gold, 55 wood and 20 stone stay, and the 55 meat is eaten.
 
 **Growth** is net worth minus the baseline for the same save and game minutes, so it
 shows what a run achieved beyond leaving the game alone. The measured baselines are in
