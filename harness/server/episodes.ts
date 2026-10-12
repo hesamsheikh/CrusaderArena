@@ -36,7 +36,6 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -48,7 +47,8 @@ import { renderVideo, type VideoResult } from "./video.js";
 import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { MENU_PROBES, menuScreen, type MenuScreen } from "./menu-screen.js";
-import { behaviourFiles } from "./benchmark-version.js";
+import { forwardedArgs, readRounds, roundPlan, writeRound, type Round } from "./rounds.js";
+import { gameMachineDifferences, prepareWorktree, startHost, stopHost, syncGameMachine } from "./version-checkout.js";
 import { classify, counts, episodeSaveName, humanSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
 import { TICKS_PER_GAME_SECOND, costProblem, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
@@ -80,6 +80,7 @@ const { values: opts } = parseArgs({
     restart: { type: "boolean", default: false },
     "keep-game": { type: "boolean", default: false },
     "no-interview": { type: "boolean", default: false },
+    "new-round": { type: "boolean", default: false },
     port: { type: "string", default: process.env.PORT || "4317" },
   },
 });
@@ -803,25 +804,6 @@ async function interview(runId: string, series: RunSeries) {
  * and reader sources run there from a copy synced by hand, so a version needs them to match. (The
  * reader binaries are not compared; rebuild them after syncing the sources.)
  */
-async function gameMachineDifferences() {
-  const files = behaviourFiles().filter((file) => /^(tools\/ubuntu|src|cmake)\//.test(file) || file === "CMakeLists.txt");
-  const local = new Map(files.map((file) => [file, createHash("sha256").update(readFileSync(file)).digest("hex")]));
-  const { host, root } = gameHost();
-  const output = await new Promise<string>((resolve, reject) => {
-    const child = spawn("ssh", ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host,
-      `cd ${quote(root)} && sha256sum -- ${files.map(quote).join(" ")} 2>/dev/null; true`]);
-    let text = "";
-    child.stdout.on("data", (d) => (text += d));
-    child.on("error", reject);
-    child.on("close", () => resolve(text));
-  });
-  const remote = new Map(output.split("\n").filter(Boolean).map((line) => {
-    const [hash, ...name] = line.split("  ");
-    return [name.join("  "), hash] as const;
-  }));
-  return files.filter((file) => remote.get(file) !== local.get(file));
-}
-
 const seriesDir = (id: string) => path.join("harness/runtime/series", id);
 
 function writeSeries(record: SeriesRecord) {
@@ -862,7 +844,7 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     if (!state.benchmark.version) problems.push(`no benchmark version for fingerprint ${state.benchmark.fingerprint.slice(0, 12)} (npm run benchmark-version -- check)`);
     if (state.benchmark.dirty) problems.push("uncommitted changes to the harness, prompt or tools");
   }
-  const remote = await gameMachineDifferences();
+  const remote = await gameMachineDifferences(".");
   if (remote.length) problems.push(`the game machine's copy differs: ${remote.join(", ")}`);
   if (problems.length) {
     if (!opts.unversioned) throw new Error(`Not a versioned benchmark run: ${problems.join("; ")}. Fix it, or pass --unversioned for a trial run.`);
@@ -1011,6 +993,39 @@ async function runPlain(plan: Plan, total: number) {
   }
 }
 
+/**
+ * Plays the run on the round's version instead (rounds.ts): that commit's worktree, its game-machine
+ * files on the game machine, its host on the next port and its own runner with these arguments.
+ * Returns the runner's exit code.
+ */
+async function playElsewhere(round: Round) {
+  log(`${opts.resume ? "This series" : `Benchmark "${setting("benchmark")}"`} plays on its round's version ${round.version} (since ${round.since}), not this checkout's; running it from ${round.commit.slice(0, 7)}. --new-round would move the round to this version.`);
+  const dir = await prepareWorktree(round, log);
+  await syncGameMachine(dir, log);
+  const port = String(Number(opts.port) + 1);
+  const host = await startHost(dir, port, round, log);
+  try {
+    const child = spawn(process.execPath, [path.join(dir, "node_modules/tsx/dist/cli.mjs"), "harness/server/episodes.ts", ...forwardedArgs(process.argv.slice(2), port)],
+      { cwd: dir, env: { ...process.env, PORT: port }, stdio: "inherit" });
+    // A stop goes to the round's runner, which stops its own run.
+    process.removeAllListeners("SIGINT");
+    process.removeAllListeners("SIGTERM");
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => child.kill(signal));
+    return await new Promise<number>((resolve) => child.on("close", (code) => resolve(code ?? 1)));
+  } finally {
+    await stopHost(host);
+    log(`${round.version} host stopped`);
+  }
+}
+
+/** Records the checkout's version as the benchmark's round after a valid run that starts one. */
+function recordRound(state: State, benchmark: string, record: SeriesRecord) {
+  const b = state.benchmark;
+  if (!b?.version || !b.commit || b.dirty || !record.results.some((r) => r.valid)) return;
+  writeRound(benchmark, { version: b.version, fingerprint: b.fingerprint, commit: b.commit, since: new Date().toISOString().slice(0, 10) });
+  log(`Round: "${benchmark}" now plays on ${b.version}; commit benchmark-rounds.json.`);
+}
+
 async function main() {
   const state = await api<State>("state").catch(() => {
     throw new Error(`The dashboard is not reachable on port ${opts.port}; start it with npm run dev.`);
@@ -1018,11 +1033,25 @@ async function main() {
   if (state.running || state.connected) throw new Error("The dashboard is connected or running; disconnect it first.");
   if (opts.idle && opts.human) throw new Error("--idle and --human are different runs; pass one.");
   const agent = !opts["dry-run"] && !opts.idle && !opts.human;
+  if (opts["new-round"] && !agent) throw new Error("--new-round is for agent runs.");
+  // Every agent run on a benchmark plays on its round's version (rounds.ts).
+  const resumed = opts.resume ? loadSeries(opts.resume) : undefined;
+  const benchmark = resumed?.settings?.benchmark ?? setting("benchmark");
+  const decision = agent && !opts.unversioned
+    ? roundPlan(readRounds(), benchmark, { version: state.benchmark?.version ?? null, fingerprint: state.benchmark?.fingerprint ?? "", commit: state.benchmark?.commit ?? null }, !!opts["new-round"])
+    : { kind: "here" as const, startsRound: false };
+  if (decision.kind === "elsewhere") {
+    process.exitCode = await playElsewhere(decision.round);
+    return;
+  }
+  // The game machine plays this checkout's reader and helpers.
+  await syncGameMachine(".", log);
   if (opts.resume) {
     if (!agent) throw new Error("--resume continues an agent series; leave out --idle, --human and --dry-run.");
     const given = SETTING_FLAGS.filter((flag) => opts[flag] !== undefined);
     if (given.length) throw new Error(`--resume runs the series with its own settings; leave out ${given.map((f) => `--${f}`).join(", ")}.`);
-    await runSeries(state, loadSeries(opts.resume), true);
+    await runSeries(state, resumed!, true);
+    if (decision.startsRound) recordRound(state, benchmark, resumed!);
   } else {
     if (!opts.save) throw new Error("--save is required (the save name shown in Load Game).");
     const total = Number(opts.episodes ?? (opts.human ? "1" : DEFAULTS.episodes));
@@ -1046,14 +1075,16 @@ async function main() {
       const prompt = opts.prompt ?? (opts["prompt-file"] ? readFileSync(opts["prompt-file"], "utf8").trim() : "");
       if (!prompt) throw new Error("--prompt or --prompt-file is required for an agent run.");
       const id = `${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "")}-${randomUUID().slice(0, 8)}`;
-      await runSeries(state, {
+      const record: SeriesRecord = {
         id, save: plan.save, map: plan.map, benchmark: plan.benchmark, model: model.name, episodes: total,
         results: [], status: "running",
         settings: {
           save: plan.save, map: plan.map, benchmark: plan.benchmark, prompt, config,
           learning: !!opts.playbook, ...current(state, model.id),
         },
-      }, false);
+      };
+      await runSeries(state, record, false);
+      if (decision.startsRound) recordRound(state, plan.benchmark, record);
     }
   }
   if (renders.length) {

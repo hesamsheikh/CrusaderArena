@@ -41,7 +41,9 @@ bash tools/ubuntu/setup-dev.sh --install
 This installs the compilers (including the MinGW cross-compiler for the Windows
 reader), CMake and Python with `apt` (asks for `sudo`), runs the native tests and
 builds the reader and its test programs. Later builds can drop `--install`. It does
-not touch Steam, the game or its Proton prefix.
+not touch Steam, the game or its Proton prefix. After this first setup, `npm run
+episodes` keeps the copy's helpers and reader sources in step with the version each run
+plays and rebuilds the reader when they change (see [Rounds](benchmark.md#rounds)).
 
 ```bash
 sudo apt install python3-pil xterm

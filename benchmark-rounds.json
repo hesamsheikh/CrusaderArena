@@ -1,0 +1,17 @@
+{
+  "about": "The round of each benchmark: every agent run on it plays on this version, from this commit, so the models on one map stay comparable. A map's first valid run sets its round; npm run episodes -- --new-round moves it to the checkout's version once that run is valid. See docs/benchmark.md#rounds.",
+  "rounds": {
+    "Large Barren Desert construction": {
+      "version": "1.5.6",
+      "fingerprint": "bb6e73f95223c320730c8864d5c112793d8316eb47bb6fe6c3effafc93fb2b26",
+      "commit": "9c34b5058cde1ad32563db789c97a51fc193268f",
+      "since": "2026-10-12"
+    },
+    "Oasis by the Sea construction": {
+      "version": "1.5.1",
+      "fingerprint": "e5d9a165549e00ff5352d4bee185398365f0c48120772bc275ff4d3785bda09d",
+      "commit": "fe9754670075909d183d633615a137602acb47f9",
+      "since": "2026-10-11"
+    }
+  }
+}

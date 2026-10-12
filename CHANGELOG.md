@@ -17,6 +17,19 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- Rounds: every agent run on a benchmark plays on the version of that benchmark's last run,
+  recorded in `benchmark-rounds.json` (Oasis by the Sea at 1.5.1, Large Barren Desert at
+  1.5.6). `npm run episodes` plays an earlier round's version from a git worktree of its
+  commit, with that version's host on the next port and its own runner; `--new-round` plays
+  on the checkout's version and moves the round there once the run is valid.
+- `npm run episodes` copies the game machine's helpers and reader sources from the version a
+  run plays and rebuilds the reader when they differ, instead of refusing until they are
+  synced by hand.
+
 ## [1.5.6] - 2026-10-12
 
 Prompt fixes before rerunning every model on Large Barren Desert. A patch at the maintainers'

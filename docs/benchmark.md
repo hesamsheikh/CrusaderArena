@@ -110,11 +110,39 @@ retried) keeps the version and is recorded as a relock.
   (null when the guide is text only), which are not in the repository and so not in
   the fingerprint. A version also needs committed code: uncommitted behavioural edits
   change the fingerprint.
-- **The game machine** runs its own copy of `tools/ubuntu/` and `src/`. The runner
-  compares those files with this checkout before a series and refuses when they
-  differ. It cannot see the reader binaries: rebuild them after syncing.
+- **The game machine** runs its own copy of `tools/ubuntu/`, `src/` and the CMake files.
+  Before every run `npm run episodes` compares them, file by file, with the checkout that
+  plays the run, copies over the ones that differ and, when the reader's sources are
+  among them, rebuilds the Windows programs the game runs (`build/ubuntu-windows`). A
+  series still refuses to start if they differ afterwards.
 - `npm run episodes` refuses code without a version unless `--unversioned`, for trials.
   `npm run report` shows each run's version.
+
+### Rounds
+
+Every agent run on a benchmark plays on the version of that benchmark's last run, so the
+models on one map stay comparable after later versions change the prompt or the tools.
+[`benchmark-rounds.json`](../benchmark-rounds.json) records each benchmark's round: its
+version, fingerprint and the commit to play it from. It is not in the fingerprint, so
+moving a round changes no version.
+
+- **Same version.** A run whose round is the checkout's version plays here, as before.
+- **An earlier version.** `npm run episodes` plays the run from the round's commit: it
+  makes a git worktree under `.versions/<version>-<commit>` (ignored by git) on first use,
+  links this checkout's `.env`, `harness/runtime/` and `.internal/` into it and installs
+  its dependencies; copies that version's game-machine files over (above); starts that
+  version's host on the next port (`--port` + 1, its log in the worktree's `host.log`);
+  and runs that version's own runner with the same arguments. Runs, series and saves
+  land in this checkout's `harness/runtime/` as usual. This checkout's host stays up but
+  does not list the run until it restarts; do not restart a host while the other one has
+  a run going, since a starting host marks unfinished runs interrupted.
+- **A new round.** A benchmark's first valid run sets its round to the checkout's
+  version. `--new-round` plays on the checkout's version whatever the round, and moves the
+  round there once the run is valid: that is how a new version starts a round, as when
+  every model was run again on Large Barren Desert at 1.5.6. The runner then says to
+  commit `benchmark-rounds.json`.
+- `--unversioned` trials, `--dry-run`, `--idle` and `--human` ignore rounds, and so does
+  the `Custom` benchmark.
 
 ## Scoring: net worth
 
@@ -289,7 +317,8 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--playbook` | off | Run the episodes as a [learning series](#learning-series): the playbook carries over |
 | `--record` | off | Record the run and render a video |
 | `--resume` | | Continue a paused series by its ID, with its own settings |
-| `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs; for trials only |
+| `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs, and ignore [rounds](#rounds); for trials only |
+| `--new-round` | off | Play on this checkout's version even when the benchmark's [round](#rounds) is an earlier one, and move the round here once the run is valid |
 | `--dry-run` | off | Everything except the agent run; no model cost. The scorecard and results go to `harness/runtime/episodes/dry-run-<time>/` |
 | `--idle` | off | The do-nothing baseline: no agent; the game runs untouched at the benchmark speed for the game-time budget |
 | `--human` | off | A [reference game](#scoring-net-worth) played by a person; paused, scored, screenshotted and saved when the budget is used up |

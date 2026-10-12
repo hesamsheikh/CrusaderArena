@@ -79,8 +79,9 @@ git identity or other git configuration.
 ## The live game
 
 - The game runs on a separate Linux machine, reached over SSH with `GAME_SSH_HOST`
-  and `GAME_REMOTE_ROOT` from `.env`. Its copy of this repository is synced by hand,
-  so check it is current before testing there.
+  and `GAME_REMOTE_ROOT` from `.env`. `npm run episodes` copies its helpers and reader
+  sources over from the version a run plays and rebuilds the reader; outside a run its
+  copy may be another version's, so check it is current before testing there.
 - Never assume the game is running, paused or on a given map. Check with the dashboard
   or `python3 tools/ubuntu/run-proton.py watch --samples 3` on the game machine.
 - Never modify installed game files. Restarting the game and loading benchmark saves

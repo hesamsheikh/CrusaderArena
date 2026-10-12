@@ -162,6 +162,12 @@
       "fingerprint": "bb6e73f95223c320730c8864d5c112793d8316eb47bb6fe6c3effafc93fb2b26",
       "date": "2026-10-12",
       "note": "Prompt fixes before rerunning every model on Large Barren Desert: ox tethers described as working the quarries beside them (an ox fetches their stone, carries it to the stockpile and walks back; more distance needs more tethers); net worth counts most, then population and popularity, and runs are a race over the same game time; the sell prices list pitch, wheat and hops; new peasants stop arriving while 24 stand idle; the full-stockpile note says goods still to come wait outside."
+    },
+    {
+      "version": "1.5.6",
+      "fingerprint": "409544e6bf11c7e099e322a9db045e0c36d1126c137228436af5ee4f895ad87e",
+      "date": "2026-10-12",
+      "note": "The episode runner follows each benchmark's round (benchmark-rounds.json): an earlier round's version plays from a worktree of its commit with its own host and runner; and it copies the game machine's helpers and reader sources from the playing version and rebuilds the reader instead of refusing. What a run plays and scores is unchanged."
     }
   ]
 }

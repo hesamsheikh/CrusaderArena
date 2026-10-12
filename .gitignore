@@ -62,6 +62,8 @@ Desktop.ini
 node_modules/
 /harness/dist/
 /harness/runtime/
+# Worktrees of earlier benchmark versions, made by the episode runner for rounds (rounds.ts).
+/.versions/
 .venv-control/
 
 # Private research, design discussions and implementation plans.
