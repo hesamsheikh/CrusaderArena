@@ -35,9 +35,12 @@ two. The project website shows this file, so keep that shape.
   armoury be built: offer it, and say in the rules that weapons and armour stored there count.
 - **Tool fixes from the 1.5 runs.** `find_sites` searches only the current view and
   placing on a tile off screen fails, which cost Claude Haiku 5.5 its iron mines: search
-  the whole map's tile data and let `build_structure` move the camera itself. The rule
-  that ends a run after four replies without tools ended GLM 5.3 Flash's run 5 game
-  seconds early, so the last seconds should not count.
+  the whole map's tile data and let `build_structure` move the camera itself. Choosing
+  the Stockpile also moves the view back to the first stockpile, so a stockpile placed by
+  tile away from it fails and the suggested remedy repeats the failure, which slowed
+  Claude Opus 5.5's storage toward its iron mines: bring the target back into view after
+  choosing the building. The rule that ends a run after four replies without tools ended
+  GLM 5.3 Flash's run 5 game seconds early, so the last seconds should not count.
 
 ## Later
 
