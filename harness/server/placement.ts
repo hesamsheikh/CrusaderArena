@@ -79,15 +79,16 @@ export class Placer {
   }
   /**
    * The settle sample for a terrain click is the first captured SETTLE_MS after the ack, or an
-   * earlier post-click one that already confirms the placement (a new structure or the exact cost).
+   * earlier post-click one that already confirms the placement (one more of `name`, a new
+   * structure or the exact cost).
    */
-  private async settle(ack: Ack, cost: ReturnType<typeof buildingCost>, before: Snapshot | null) {
+  private async settle(ack: Ack, cost: ReturnType<typeof buildingCost>, before: Snapshot | null, name: string) {
     const at = this.ackTime(ack);
     for (let i = 0; i < 2 / SAMPLE_POLL_SECONDS; i++) {
       const stats = this.device.currentStats();
       const captured = stats.captured_unix_ms ?? 0;
       if (stats.status === "ok" && stats.observation && captured >= at &&
-          (captured >= at + SETTLE_MS || confirmPlacement("unverified", cost, before, snapshotOf(stats.observation)).status === "placed"))
+          (captured >= at + SETTLE_MS || confirmPlacement("unverified", cost, before, snapshotOf(stats.observation), name).status === "placed"))
         return stats.observation as Observation;
       await this.io.pause(SAMPLE_POLL_SECONDS);
     }
@@ -131,10 +132,10 @@ export class Placer {
     const cost = buildingCost(name);
     const before = this.readerReady ? snapshotOf(await this.current()) : null;
     const ack = await this.io.send({ type: "click", x: point.x, y: point.y, button: 1 });
-    const after = this.readerReady ? await this.settle(ack, cost, before) : await this.io.pause(0.3).then(() => null);
+    const after = this.readerReady ? await this.settle(ack, cost, before, name) : await this.io.pause(0.3).then(() => null);
     const feedback = placementFeedback(this.device.events.since(eventStart));
     const visible = visiblePlacementFeedback(this.device.currentStats().observation);
-    const outcome = confirmPlacement(placementStatus(feedback, visible, carried), cost, before, snapshotOf(after));
+    const outcome = confirmPlacement(placementStatus(feedback, visible, carried), cost, before, snapshotOf(after), name);
     return { outcome, feedback, visible, after };
   }
 }

@@ -23,7 +23,7 @@ test("the game's refusals map to the tool that addresses them", () => {
 });
 
 test("every failed placement status has a remedy, and a placed one has none", () => {
-  for (const status of ["not_on_screen", "not_selected", "camera_moved", "invalid_target", "rejected", "possibly_rejected", "unverified", "not_placed"])
+  for (const status of ["not_on_screen", "not_selected", "camera_moved", "invalid_target", "rejected", "possibly_rejected", "unverified", "not_placed", "already_built"])
     assert.ok(placementRemedy({ building: "Hovel", status, feedback: [] }), status);
   assert.equal(placementRemedy({ building: "Hovel", status: "placed" }), undefined);
   assert.match(placementRemedy({ building: "Hovel", status: "not_on_screen", tile_x: 5, tile_y: 7 })!, /go_to_tile \(x 5, y 7\)/);
@@ -38,5 +38,7 @@ test("a missing anchor names the building that makes one", () => {
   assert.match(anchorRemedy("granary"), /build_structure places a Granary/);
   assert.match(anchorRemedy("stockpile"), /go_to_tile/);
   assert.match(adjacentRemedy({ stopped: "no_free_spot_in_view", anchor: "keep" }, "Hovel"), /flush against the keep/);
+  assert.match(placementRemedy({ building: "Marketplace", status: "already_built" })!, /market_trade uses it/);
+  assert.match(adjacentRemedy({ stopped: "already_built", anchor: "stockpile" }, "Marketplace"), /allows one/);
   assert.match(adjacentRemedy({ missing: { wood: 4 } }, "Hovel"), /wait_and_observe/);
 });

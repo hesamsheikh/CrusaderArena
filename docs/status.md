@@ -118,6 +118,18 @@ between September and October 2026.
   In a GLM 5.3 Flash run the rest
   (50 stone, 15 iron, 20 pitch, 20 ale) arrived within 90 game seconds, once building had
   used some wood; the total wood (about 245) is read from the screen's list, not counted.
+- Placing next to the desert stockpile, on 2026-10-12, by replaying Kimi K3's clicks on
+  "Large Barren Desert benchmark start" through the host without an agent: with the camera
+  on the stockpile (tile 506,373), the first flush Marketplace click built it on the
+  stockpile's up-right side, and the reader's own-building counts showed it (type 26) at
+  the next check. The tile map then had it and offered `expand_storage` two flush spots
+  (tiles 513,375 and 508,380). Kimi's run had clicked pixels that match those spots seen
+  through a camera one tile away, and the game refused both without a message. Clicked
+  again here, the first of Kimi's pixels placed a pile and the second was refused, so a
+  one-tile error can go either way; the map's second spot then placed a pile (its first
+  was covered by the new pile by then). Kimi's recorded frames show that
+  choosing the Marketplace again with one standing centres the view on it, and that later
+  Marketplace clicks placed nothing.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
@@ -226,6 +238,14 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The placement fixes of 1.5.5 (`construction-ui.test.ts`, `model-observation.test.ts`,
+  `building-types.test.ts`): one more of the player's own buildings of the placed type
+  confirms a placement over a refusal message; a second Marketplace is refused before any
+  input; `place_near` aims its tile-map spots through the live camera and probes the view
+  when every spot it gave was refused without a message; `build_structure`'s closing
+  right-click stays on screen when selecting moved the view. Not yet run live in an
+  agent's run; that the own-building count changes within the 120 ms settle sample, as the
+  structure count does, is assumed from both coming from the same reader sample.
 - Trees told from cacti by the ring of 0x2000 tiles a tree has around it (`tile-map.test.ts`
   for `find_sites`' tree counts), from tile data read live on 2026-10-11: on Oasis by the
   Sea every trunk tile on a palm had a ring tile within 3 tiles and every one on a cactus had
@@ -233,7 +253,8 @@ between September and October 2026.
   trunks without a ring as cacti (`c`) instead of trees.
 - Clearing the Save dialog's whole name field when the click lands inside a long loaded
   name (`game-save.test.ts`), the cause of the failed saves on Large Barren Desert, where
-  the game saved "glm 5-3 flash 1-5-3 ea2895rt". Not yet saved live with the fix.
+  the game saved "glm 5-3 flash 1-5-3 ea2895rt". Since the fix, every desert run of
+  2026-10-11 and 2026-10-12 saved under its own name.
 - A Moonshot profile's reasoning level sent as Kimi K3's `reasoning_effort` (`low`, `high`,
   `max`), with `default` still sending none and other levels refused
   (`model-config.test.ts`, `store.test.ts`). Moonshot's guide lists those three values;

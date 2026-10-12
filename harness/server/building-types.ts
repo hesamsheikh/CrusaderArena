@@ -96,6 +96,25 @@ export const buildingTypes: Record<number, string> = {
 /** Records that are parts of another building, or the map's own, not buildings the player placed. */
 const parts = new Set(["Quarry pile", "Keep door", "Campfire", "Signpost"]);
 
+/** The engine types whose records placing `name` adds: a Stockpile adds piles. */
+export function typesOf(name: string): number[] {
+  const wanted = name === "Stockpile" ? "Stockpile pile" : name;
+  return Object.entries(buildingTypes).filter(([, n]) => n === wanted).map(([t]) => Number(t));
+}
+
+/**
+ * Buildings a lord can have only one of. With a Marketplace standing, choosing it again in the
+ * menu centres the view on it, and clicks on open ground place nothing (a recorded run, 2026-10-12).
+ */
+const singleBuildings = new Set(["Marketplace"]);
+
+/** Whether `name` is a one-only building the player already has, from the reader's counts by type. */
+export function alreadyBuilt(name: string, observation: Record<string, unknown> | null | undefined) {
+  if (!singleBuildings.has(name)) return false;
+  const counts = observation?.buildings as Record<string, number> | undefined;
+  return !!counts && typeof counts === "object" && typesOf(name).some((t) => (counts[String(t)] ?? 0) > 0);
+}
+
 /**
  * The player's buildings by name from the reader's counts by type: a stockpile's four piles
  * count as one stockpile, parts of other buildings are left out, and unnamed types appear as

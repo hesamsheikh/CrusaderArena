@@ -2,6 +2,7 @@ import type { Frame, GameAction } from "../shared/protocol.js";
 import { atlasPages } from "./visual-atlas.js";
 import { buildingInfo } from "./building-info.js";
 import { decorationNames, decorations } from "./decorations.js";
+import { typesOf } from "./building-types.js";
 
 // The tested atlas is a 1920 × 1080 game-window capture. These categories use
 // one building-button click followed by one world click; good and bad things add
@@ -124,7 +125,8 @@ export function placementStatus(fresh: string[], visible: string[], carried: str
 
 type Observation = Record<string, unknown> | null | undefined;
 type Placement = { action: number; sub_action: number };
-export type Snapshot = { wood?: number; gold?: number; structures?: number };
+/** Stock, map-wide structure count and the player's own building records by engine type. */
+export type Snapshot = { wood?: number; gold?: number; structures?: number; own?: Record<string, number> };
 
 /** Manual default cost (a good or bad thing's tooltip price); null when unknown or ambiguous. Current game tooltips may differ. */
 export function buildingCost(name: string): { wood: number; gold: number } | null {
@@ -223,7 +225,8 @@ export function snapshotOf(observation: Observation): Snapshot | null {
   if (!observation) return null;
   const resources = observation.resources_by_name as Record<string, number> | undefined;
   const structures = observation.structures as { count?: number } | undefined;
-  return { wood: resources?.wood_planks, gold: observation.gold as number | undefined, structures: structures?.count };
+  const own = observation.buildings && typeof observation.buildings === "object" ? observation.buildings as Record<string, number> : undefined;
+  return { wood: resources?.wood_planks, gold: observation.gold as number | undefined, structures: structures?.count, ...(own ? { own } : {}) };
 }
 
 const delta = (before?: number, after?: number) =>
@@ -231,28 +234,34 @@ const delta = (before?: number, after?: number) =>
 
 /**
  * Refine a feedback status with reader evidence from just before and after the
- * terrain click. The manual cost (±2) is the strong signal. The structure count
- * also confirms, but it is map-wide, so other players can move it; `evidence`
- * says which one was used. No cost, no new structure and no message means
- * nothing was placed. Starting-goods deliveries can mask the cost; the count
- * still works then.
+ * terrain click. One more of the player's own records of `building`'s type is
+ * proof, and outweighs a refusal message, which can be an earlier click's
+ * still on screen. The manual cost (±2) is the strong signal otherwise. The
+ * structure count also confirms, but it is map-wide, so other players can move
+ * it; `evidence` says which one was used. No cost, no new structure and no
+ * message means nothing was placed. Starting-goods deliveries can mask the
+ * cost; the counts still work then.
  */
 export function confirmPlacement(
   status: PlacementStatus,
   cost: { wood: number; gold: number } | null,
   before: Snapshot | null,
   after: Snapshot | null,
+  building?: string,
 ): {
   status: PlacementStatus | "placed" | "not_placed";
-  evidence?: "cost" | "structure_count";
+  evidence?: "own_buildings" | "cost" | "structure_count";
   change?: Record<string, number | undefined>;
 } {
   if (!before || !after) return { status };
+  const types = building && before.own && after.own ? typesOf(building) : [];
   const change = {
     wood: delta(before.wood, after.wood),
     gold: delta(before.gold, after.gold),
     structures: delta(before.structures, after.structures),
+    ...(types.length ? { own: types.reduce((sum, t) => sum + (after.own![String(t)] ?? 0) - (before.own![String(t)] ?? 0), 0) } : {}),
   };
+  if ((change.own ?? 0) >= 1) return { status: "placed", evidence: "own_buildings", change };
   if (status === "rejected" || status === "feedback") return { status, change };
   const paid = (amount: number, d?: number) => amount === 0 || (d !== undefined && Math.abs(-d - amount) <= 2);
   if (cost && cost.wood + cost.gold > 0 && paid(cost.wood, change.wood) && paid(cost.gold, change.gold))

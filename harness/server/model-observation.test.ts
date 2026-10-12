@@ -453,6 +453,8 @@ function simulatedGame(options: {
   /** Whether a click in demolish mode hits one of the player's buildings; the demolish button works unless `demolishIgnored`. */
   demolishable?: (x: number, y: number) => boolean;
   demolishIgnored?: boolean;
+  /** The player's building records by engine type, as the reader counts them. */
+  buildings?: Record<string, number>;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -477,6 +479,7 @@ function simulatedGame(options: {
     captured_unix_ms: Date.now(), valid_until_unix_ms: Date.now() + 1500,
     observation: {
       map_name: "m", visible_messages: state.messages, gold: 600, population: 2, popularity: 90,
+      ...(options.buildings ? { buildings: options.buildings } : {}),
       resources_by_name: { wood_planks: state.wood },
       structures: { count: state.structures, limit: 3999 },
       placement: { action: state.action, sub_action: state.sub },
@@ -1016,6 +1019,76 @@ test("place_near moves on past a spot refused by a rule the tile map does not mo
   assert.equal(r.stopped, "not_enough_resources");
   assert.deepEqual(r.missing, { wood: 3 });
   assert.equal(r.probes, 0);
+});
+
+test("place_near aims each flush spot through the live camera, not the map's", async () => {
+  // The view moves a tile while the building is selected, after the map was read; clicking the
+  // map's pixels would land a tile off (Kimi K3's stockpile, 2026-10-12).
+  const game = simulatedGame({
+    anchors: { HomeKeep: { camera: 5, type: 41 } },
+    tiles: (set, c) => { for (let x = c.x - 3; x <= c.x + 3; x++) for (let y = c.y - 3; y <= c.y + 3; y++) set("structure", x, y, 4); },
+    onButton: (state) => { if (state.camera === 5) state.camera = 6; },
+  });
+  await game.observe();
+  const { json } = await game.run("place_near", { building: "Hovel", anchor: "keep", count: 1, side: "down-left" });
+  assert.equal(json.status, "placed", JSON.stringify(json));
+  const keep = { x1: 101, y1: 97, x2: 107, y2: 103 };
+  // The map's spot, centred on the keep's side: through the view the click landed in, it is the
+  // same tiles (a click on the map's pixels would land one tile to the -x side).
+  const r = footprintRect(tileView(6).tileAt(json.placed[0]), 4);
+  assert.deepEqual(r, { x1: 102, y1: keep.y2 + 1, x2: 105, y2: keep.y2 + 4 });
+});
+
+test("place_near probes the view when every spot the map gave is refused without a word", async () => {
+  // Trees everywhere but one hovel spot flush against the keep, which the game refuses silently.
+  const view = tileView(5);
+  const spot = { x1: 103, y1: 104, x2: 106, y2: 107 };
+  let mapPixel: { x: number; y: number } | undefined;
+  const game = simulatedGame({
+    anchors: { HomeKeep: { camera: 5, type: 41 } },
+    tiles: (set, c) => {
+      for (let x = c.x - 20; x <= c.x + 20; x++) for (let y = c.y - 20; y <= c.y + 20; y++) {
+        const inKeep = Math.abs(x - c.x) <= 3 && Math.abs(y - c.y) <= 3;
+        const inSpot = x >= spot.x1 && x <= spot.x2 && y >= spot.y1 && y <= spot.y2;
+        set(inKeep ? "structure" : "organism", x, y, inKeep ? 4 : inSpot ? 0 : 1);
+      }
+    },
+    blocked: (x, y) => {
+      mapPixel ??= { x, y };
+      return x === mapPixel.x && y === mapPixel.y;
+    },
+  });
+  await game.observe();
+  const { json } = await game.run("place_near", { building: "Hovel", anchor: "keep", count: 1, side: "down-left" });
+  assert.equal(json.method, "tile_map_then_probing", JSON.stringify(json));
+  assert.equal(json.status, "placed");
+  assert.ok(json.probes >= 2, "the map's spot, then at least one probe");
+  assert.deepEqual(footprintRect(view.tileAt(mapPixel!), 4), spot, "the first click was the map's only spot");
+});
+
+test("a second Marketplace is refused before the menu, which would move the view to the first", async () => {
+  const game = simulatedGame({ buildings: { "26": 1 } });
+  const report = await game.build([{ name: "Marketplace", x: 900, y: 400 }]);
+  assert.equal(report.placements[0].status, "already_built", JSON.stringify(report));
+  assert.match(report.placements[0].remedy, /market_trade uses it/);
+  assert.equal(game.actions.length, 0, "nothing is clicked, not even the menu");
+  const near = simulatedGame({ buildings: { "26": 1 }, anchors: { HomeKeep: { camera: 5, type: 41 } } });
+  await near.observe();
+  const { json } = await near.run("place_near", { building: "Marketplace", anchor: "keep" });
+  assert.equal(json.stopped, "already_built");
+  assert.equal(near.actions.length + near.hotkeys.length, 0);
+});
+
+test("build_structure leaves placement mode with an on-screen right-click when selecting moved the view", async () => {
+  const game = simulatedGame({
+    tiles: () => {},
+    onButton: (state) => { state.camera += 40; },
+  });
+  const [p] = (await game.build([{ name: "Hovel", tile_x: 101, tile_y: 100 }])).placements;
+  assert.equal(p.status, "not_on_screen", JSON.stringify(p));
+  const exit = game.actions.at(-1);
+  assert.equal(exit.button, 3);
+  assert.ok(exit.x >= 0 && exit.x < 1920 && exit.y >= 0 && exit.y < 1080, JSON.stringify(exit));
 });
 
 // --- Tile targeting (find_sites and build_structure work without an observed screenshot) ---

@@ -135,6 +135,21 @@ test("reader evidence confirms or refutes a placement", () => {
     { wood: -6, gold: 0, structures: 1 });
 });
 
+test("one more of the building's own type proves a placement, over a refusal message", () => {
+  // Live case (Kimi K3, 2026-10-12): the stockpile-locating click's "Needs to be placed adjacent to
+  // the stockpile." came back after a Marketplace click that built it, while deliveries hid its cost.
+  const market = { wood: 5, gold: 0 };
+  const before = { wood: 149, gold: 4924, structures: 18, own: { "10": 4, "19": 1, "26": 0 } };
+  const after = { wood: 152, gold: 4930, structures: 19, own: { "10": 4, "19": 1, "26": 1 } };
+  assert.deepEqual(confirmPlacement("rejected", market, before, after, "Marketplace"),
+    { status: "placed", evidence: "own_buildings", change: { wood: 3, gold: 6, structures: 1, own: 1 } });
+  assert.equal(confirmPlacement("rejected", market, before, { ...after, own: before.own }, "Marketplace").status, "rejected");
+  // Without the building's name or the counts, the rules are as before.
+  assert.equal(confirmPlacement("rejected", market, before, after).status, "rejected");
+  // A stockpile adds piles (type 10).
+  assert.equal(confirmPlacement("possibly_rejected", { wood: 0, gold: 0 }, before, { ...before, own: { ...before.own, "10": 8 } }, "Stockpile").evidence, "own_buildings");
+});
+
 test("nearby retry targets step half, then a whole footprint along each isometric axis", () => {
   const frame = { width: 1920, height: 1080 };
   // 30 × 68 tiles at 1920 × 1080: a diamond is 64 px wide and one row is ~15.9 px.

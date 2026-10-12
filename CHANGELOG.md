@@ -17,6 +17,30 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.5] - 2026-10-12
+
+Placement fixes after Kimi K3's Large Barren Desert run, whose first Marketplace was built
+but reported refused. Runs on 1.5.4 that never met these cases play the same.
+
+### Benchmark
+
+- One more of the player's own buildings of the placed type, from the reader's counts by
+  type, confirms a placement (`evidence: own_buildings`), even when a refusal message shows:
+  the stockpile-locating click's "Needs to be placed adjacent to the stockpile." reappeared
+  0.4 s after a Marketplace click that built it, while the starting deliveries hid its cost,
+  and the Marketplace was reported refused.
+- A second Marketplace is refused before the menu is touched (`already_built`, with
+  `market_trade` as the remedy). The game allows one; choosing it again centred the view on
+  the first, and later clicks placed nothing.
+- `place_near` and `expand_storage` aim each tile-map spot through the camera as it is at the
+  click, not as it was when the map was read. Kimi K3's two `expand_storage` clicks matched the
+  stockpile's flush spots seen through a camera one tile away, and both were refused without a
+  message. When every spot the map gave is refused that way, they now probe the view from the
+  anchor outward instead of stopping (`method: tile_map_then_probing`).
+- `build_structure`'s closing right-click goes near the top of the view when selecting moved
+  the view and left the last target off screen; it had been sent off the window, and the call
+  failed with "Coordinates must be inside the game window", leaving placement mode on.
+
 ## [1.5.4] - 2026-10-11
 
 A patch at the maintainers' choice, though what the model is shown changed on every map: a

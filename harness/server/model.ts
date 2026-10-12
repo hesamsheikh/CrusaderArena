@@ -154,6 +154,7 @@ function withAdjacentRemedy<T extends { status: string; note?: string; stopped?:
   return { ...result, remedy };
 }
 import { shortfall } from "./building-info.js";
+import { alreadyBuilt } from "./building-types.js";
 import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, needsOpenSide, onScreen, resourceGroundNames, tilePixel, type TileCamera } from "./tile-map.js";
 import type { GameDevice } from "./device.js";
 import {
@@ -734,7 +735,7 @@ export function makeAgent(
       name: "build_structure",
       label: "Build a named structure",
       description:
-        "Place 1–4 named buildings, each targeted by pixel (x/y, the same coordinates as game_action, in the latest screenshot) or by map tile (tile_x/tile_y, as named by map_overview or find_sites): give exactly one of the two pairs per placement, never both. A pixel target needs the latest screenshot and its camera. A tile target needs neither: the host reads the live camera and projects the tile to a pixel itself when that placement's turn comes, and again after selecting the building if the view moved. It opens the construction menu and selects each building for you. Returns text only, one status per placement: placed (evidence: cost deducted, or the map-wide structure count rose), not_placed (nothing happened: the spot was blocked, or you cannot pay for it — see retrySkipped and missing), rejected (new game error text), possibly_rejected (error text that may be older), not_selected (the menu did not select it; nothing clicked), invalid_target (a pixel target is outside the screenshot or over the bottom HUD, or the coordinate fields given are not exactly one whole pair; `reason` says which; nothing was sent and it does not count toward the 8 actions), not_on_screen (a tile target is not clickable right now — off screen, over the bottom HUD, or no live camera; `camera` gives the live centre tile when known; its terrain was not clicked), camera_moved (a pixel target's view changed since the screenshot; the rest of the pixel targets were skipped, tile targets still ran), unverified (no evidence either way). A blocked target, a farm or a quarry/iron mine/pitch rig refused for its ground, or a building too close to the signpost is retried at the nearest spots where the game's tile data shows the footprint free, off the ground other buildings need (oasis grass for farms; stone, iron ore, oil for quarries, iron mines, pitch rigs) (up to 6 per placement and 12 per call; exact: true forbids it); `at` (pixel) and `offsetTiles` then say where it went, `retries` how many spots were tried, and `retrySkipped: not_enough_resources` with `missing` that you cannot pay (checked from the reader before the first click too, so an unaffordable target costs no click). A clicked placement also reports the map `tile` it went to, when known. A building with workers needs one whole side of open ground for them: a target that would leave it none, or take a neighbour's last one, is moved the same way without clicking it (`access` says why; with exact: true it is placed as asked and `access` warns). Ends with a right-click to leave placement mode, if any placement was attempted. Also places the setup-phase Granary. Needs the 16:9 game layout.",
+        "Place 1–4 named buildings, each targeted by pixel (x/y, the same coordinates as game_action, in the latest screenshot) or by map tile (tile_x/tile_y, as named by map_overview or find_sites): give exactly one of the two pairs per placement, never both. A pixel target needs the latest screenshot and its camera. A tile target needs neither: the host reads the live camera and projects the tile to a pixel itself when that placement's turn comes, and again after selecting the building if the view moved. It opens the construction menu and selects each building for you. Returns text only, one status per placement: placed (evidence: one more of your own buildings of that type, cost deducted, or the map-wide structure count rose), not_placed (nothing happened: the spot was blocked, or you cannot pay for it — see retrySkipped and missing), rejected (new game error text), possibly_rejected (error text that may be older), not_selected (the menu did not select it; nothing clicked), invalid_target (a pixel target is outside the screenshot or over the bottom HUD, or the coordinate fields given are not exactly one whole pair; `reason` says which; nothing was sent and it does not count toward the 8 actions), not_on_screen (a tile target is not clickable right now — off screen, over the bottom HUD, or no live camera; `camera` gives the live centre tile when known; its terrain was not clicked), camera_moved (a pixel target's view changed since the screenshot; the rest of the pixel targets were skipped, tile targets still ran), unverified (no evidence either way), already_built (a Marketplace while you have one: the game allows one; nothing was sent). A blocked target, a farm or a quarry/iron mine/pitch rig refused for its ground, or a building too close to the signpost is retried at the nearest spots where the game's tile data shows the footprint free, off the ground other buildings need (oasis grass for farms; stone, iron ore, oil for quarries, iron mines, pitch rigs) (up to 6 per placement and 12 per call; exact: true forbids it); `at` (pixel) and `offsetTiles` then say where it went, `retries` how many spots were tried, and `retrySkipped: not_enough_resources` with `missing` that you cannot pay (checked from the reader before the first click too, so an unaffordable target costs no click). A clicked placement also reports the map `tile` it went to, when known. A building with workers needs one whole side of open ground for them: a target that would leave it none, or take a neighbour's last one, is moved the same way without clicking it (`access` says why; with exact: true it is placed as asked and `access` warns). Ends with a right-click to leave placement mode, if any placement was attempted. Also places the setup-phase Granary. Needs the 16:9 game layout.",
       parameters: Type.Object({
         placements: Type.Array(
           Type.Object({
@@ -845,6 +846,15 @@ export function makeAgent(
             }
             if (kind.status === "pixel" && pixelCameraMoved) {
               results.push({ building: plan.name, x: kind.x, y: kind.y, status: "camera_moved" });
+              continue;
+            }
+            // Choosing a second Marketplace in the menu would only move the view to the first.
+            if (alreadyBuilt(plan.name, device.currentStats().observation)) {
+              results.push({
+                building: plan.name,
+                ...(kind.status === "tile" ? { tile_x: kind.x, tile_y: kind.y } : { x: kind.x, y: kind.y }),
+                status: "already_built",
+              });
               continue;
             }
             // The world pixel to click, and (for a tile target) the tile it names.
@@ -1075,7 +1085,12 @@ export function makeAgent(
           }
           // Only if a placement was actually attempted: an all-invalid_target batch never
           // selected anything, so there is no placement mode to leave.
-          if (lastAttempted) await send({ type: "click", x: lastAttempted.x, y: lastAttempted.y, button: 3 });
+          // A selection can move the view and leave the last target off screen; the right-click
+          // then goes near the top of the view.
+          if (lastAttempted) {
+            const exit = onScreen(frame, lastAttempted) ? lastAttempted : { x: Math.round(frame.width / 2), y: Math.round(frame.height * 0.12) };
+            await send({ type: "click", x: exit.x, y: exit.y, button: 3 });
+          }
           // Remember the tray's open category (if any) for the next build_structure call, together
           // with the input count as of now so that call can tell whether anything else touched it.
           menuMemory = { category: placer.category, serial: device.inputSerial };
@@ -1385,7 +1400,7 @@ export function makeAgent(
       name: "place_near",
       label: "Place a building next to an anchor",
       description:
-        "Centre on an anchor building (as center_on) and place 1–3 of a named click-to-place building flush against it. The harness reads the game's tile data and clicks spots whose whole footprint is free and off the ground other buildings need (oasis grass, stone, iron ore, oil), your preferred side first (probing outward one tile at a time only if the tile data is unavailable); a refused spot is skipped for the next one, and it stops when you cannot pay (missing resources). Spots leave a building with workers, and each neighbour, one whole side of open ground. Returns text only (placed spots in the new view's pixels, side, clicks used); the camera stays on the anchor and your next observation shows it.",
+        "Centre on an anchor building (as center_on) and place 1–3 of a named click-to-place building flush against it. The harness reads the game's tile data and clicks spots whose whole footprint is free and off the ground other buildings need (oasis grass, stone, iron ore, oil), your preferred side first (probing outward one tile at a time if the tile data is unavailable, or if every spot it gave was refused without a message); a refused spot is skipped for the next one, and it stops when you cannot pay (missing resources). Spots leave a building with workers, and each neighbour, one whole side of open ground. Returns text only (placed spots in the new view's pixels, side, clicks used); the camera stays on the anchor and your next observation shows it.",
       parameters: Type.Object({
         building: oneOf(buildableNames),
         anchor: oneOf(anchorNames),
@@ -1395,6 +1410,11 @@ export function makeAgent(
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
+        // Choosing a second Marketplace in the menu would only move the view to the first; no input is sent.
+        if (alreadyBuilt(args.building, device.currentStats().observation)) {
+          const refused = withAdjacentRemedy({ status: "not_placed", anchor: args.anchor, placed: [], probes: 0, stopped: "already_built" }, args.building, args.anchor);
+          return { content: [{ type: "text" as const, text: JSON.stringify(refused) }], details: {} };
+        }
         runtime?.cycle.action();
         observed = null;
         observedClearedBy = "place_near";

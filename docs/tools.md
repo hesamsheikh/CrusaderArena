@@ -52,7 +52,7 @@ Brewery, Inn. Castle and military buildings are not offered.
 | Tool | Parameters | What it does | Returns | Action |
 | --- | --- | --- | --- | --- |
 | `build_structure` | `placements`: 1–4 of `{name, x?, y?, tile_x?, tile_y?, exact?}`, exactly one of the pixel pair or the tile pair | For each placement: opens the menu (for a good or bad thing, the Town page's good-factor or fear-factor subpage), selects the building, clicks the target pixel, then checks with the reader whether it was placed. A pixel target (`x`, `y`) needs the latest screenshot; a tile target (`tile_x`, `tile_y`, as named by `map_overview` or `find_sites`) needs none — right before its click the host reads the live camera and projects the tile to a pixel itself. Retries a silently blocked spot nearby, and moves a target that would close a building with workers in (see Open sides), unless `exact` is set. Right-clicks at the end to leave placement mode | A status per placement (see below) | Yes, one per placement (a pixel target reported `invalid_target`, or a tile target reported `not_on_screen`, does not count) |
-| `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward | What was placed, where, and why it stopped | Yes, one |
+| `place_near` | `building`, `anchor` (as for `center_on`), optional `side`, `count` 1–3 | Centres on an existing building and places new ones flush against it, using the tile map or probing outward (see Tile map). A second Marketplace is refused without any input (`stopped: already_built`) | What was placed, where, and why it stopped | Yes, one |
 | `expand_storage` | `kind`: `stockpile` or `granary`, optional `count` 1–3, `side` | Places more stockpiles or granaries touching the existing ones: the one it centres on, or any of the same kind joined to it | As `place_near` | Yes, one |
 | `demolish_building` | one target: `x`, `y` (pixels of the latest screenshot) or `tile_x`, `tile_y` (a tile of the building's footprint) | Selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. A tile target is projected from the live camera, as for `build_structure` | `demolished`, `not_demolished`, `not_selected`, `unverified`, `invalid_target`, `camera_moved` or `not_on_screen`, with a remedy when it did not go through | Yes, one |
 | `find_sites` | `building`, optional `count` 1–5, `near_x`, `near_y` | Uses the tile map and the live camera for the current view (no observation needed) and lists free spots where the building fits and keeps an open side (see Open sides), grouped by the ground under them (see Special ground), each as a map tile and, while the latest screenshot shows the live view, its pixel too. Farms report their share of oasis ground. Woodcutter spots come closest to trees first, each with the trees within 12 tiles. A tree is a trunk tile with the ring of tiles a tree has around it; cacti carry the same trunk marks without a ring and do not count | Spots by ground, as tiles (and pixels) | No |
@@ -70,7 +70,7 @@ tile map is available):
 
 | Status | Meaning |
 | --- | --- |
-| `placed` | Confirmed: the building's cost left the stock, or the structure count rose (`evidence` says which) |
+| `placed` | Confirmed: the reader counts one more of the player's own buildings of that type, the building's cost left the stock, or the structure count rose (`evidence`: `own_buildings`, `cost` or `structure_count`). One more of its own type counts even with a refusal message on screen, which can be an earlier click's |
 | `not_placed` | Nothing happened: no cost, no new structure, no message. Usually a silently blocked spot or, with `retrySkipped: not_enough_resources`, an unaffordable one |
 | `rejected` | The game showed a new refusal message (its text is in `feedback`) |
 | `possibly_rejected` | A refusal message was visible, but it may be an old one |
@@ -79,13 +79,16 @@ tile map is available):
 | `not_on_screen` | A tile target is not clickable right now: off screen, over the bottom HUD, or no live camera; `camera` names the live centre tile when known. Nothing was sent, and it does not count toward the 8 actions, unless the view moved while the building was being selected (`reason` says so) |
 | `camera_moved` | A pixel target's view changed since the screenshot, so the rest of the pixel targets in the batch were skipped; tile targets in the same batch still ran |
 | `unverified` | No confirmation either way |
+| `already_built` | A Marketplace while the player has one: the game allows one, and choosing it again only centres the view on it. Nothing was sent, and it does not count toward the 8 actions; the remedy names `market_trade` |
 
 A `placed` building also reports `cost`, its cost from the game reference. The stock
 change around the click is kept in the run's events only, not shown to the model: the
 starting goods still arriving, production and food show in it too. An `invalid_target`
 or `not_on_screen` placement is reported on its own, without a terrain click, so the
 rest of the batch still runs; the final right-click that leaves placement
-mode is skipped only if no placement in the call was attempted.
+mode is skipped only if no placement in the call was attempted. If selecting a building
+moved the view and left the last target off screen, the right-click goes near the top of
+the view instead.
 
 **Tile targets.** `tile_x`/`tile_y` name a map tile instead of a screenshot pixel (flat
 optional fields rather than a schema union, for providers that reject one). Such a
@@ -145,7 +148,11 @@ it. Each observation starts a read for its view in the background while the game
 paused for the model; `find_sites` and `build_structure` use that read, and
 `build_structure` waits for it before the game is unpaused, so it costs no game time.
 `place_near` and `expand_storage` read the view they centre on, starting the read
-while they select the building so the two overlap.
+while they select the building so the two overlap. They aim each spot the map gives
+through the camera as it is at the click, so a view that moved a tile after the read
+does not push a flush spot into the anchor. If every spot the map gave is refused
+without a message, they probe the view from the anchor outward, as they do without a
+tile map (`method: tile_map_then_probing`).
 Without a screenshot of the live view, `find_sites` reads the map for the live camera in
 the call itself and reports tiles only, ignoring `near_x`/`near_y` (they are pixels of
 a screenshot); the next `build_structure` call reuses that read for tile targets in the

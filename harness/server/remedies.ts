@@ -43,6 +43,13 @@ export function feedbackRemedy(building: string, feedback: readonly string[]) {
   return `Do what the game's message asks, or choose another spot (find_sites lists spots where "${building}" fits); placing the same target again is refused again.`;
 }
 
+/** For a one-only building the player already has (building-types.ts alreadyBuilt). */
+export function alreadyBuiltRemedy(building: string) {
+  return building === "Marketplace"
+    ? "You already have a Marketplace, and the game allows one: market_trade uses it, and center_on (target market) shows it."
+    : `You already have a ${building}, and the game allows one.`;
+}
+
 /** For one build_structure placement result; undefined when it needs nothing. */
 export function placementRemedy(result: Record<string, unknown>) {
   const building = String(result.building);
@@ -63,6 +70,8 @@ export function placementRemedy(result: Record<string, unknown>) {
       return "The construction menu did not select it: right-click open ground with game_action to close any open panel, observe, then place it again.";
     case "camera_moved":
       return "Observe, then target it by pixel from the new screenshot, or by tile_x/tile_y.";
+    case "already_built":
+      return alreadyBuiltRemedy(building);
     case "invalid_target":
       return "Give a pixel inside the latest screenshot and above the bottom HUD, or a tile as tile_x/tile_y (one pair, not both).";
     case "rejected":
@@ -103,6 +112,8 @@ export const READER_RETRY = "The game reader had no reading just then: observe, 
 export function adjacentRemedy(result: { stopped?: string; missing?: Record<string, number>; anchor?: string }, building: string) {
   if (result.missing) return missingRemedy(building, result.missing);
   switch (result.stopped) {
+    case "already_built":
+      return alreadyBuiltRemedy(building);
     case "camera_moved":
       return "The view moved while placing: call it again.";
     case "no_free_spot_in_view":

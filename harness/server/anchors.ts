@@ -3,7 +3,7 @@ import type { GameDevice, GameHotkey } from "./device.js";
 import { cameraKey, cameraSpanOf, minimapClick, placementOf, visiblePlacementFeedback } from "./construction-ui.js";
 import { Placer, SAMPLE_POLL_SECONDS, type Ack, type Observation } from "./placement.js";
 import { anchorFootprintTiles, footprintOf } from "./footprints.js";
-import { footprintRect, STRUCTURE_TYPES, type Rect, type TileMap } from "./tile-map.js";
+import { footprintRect, onScreen, STRUCTURE_TYPES, tilePixel as projectTile, type Rect, type TileMap } from "./tile-map.js";
 import { shortfall } from "./building-info.js";
 
 /**
@@ -98,6 +98,8 @@ async function placeFromMap(
   const size = footprintOf(building);
   const touching: Rect[] = storage ? map.cluster(anchorRect, map.storageRects(building)) : [anchorRect];
   let attempts = 0;
+  // Refusals with no message and nothing spent: the spot was blocked where the click landed.
+  let silent = 0;
   let stopped: string | undefined;
   let feedback: string[] = [];
   let missing: Record<string, number> | undefined;
@@ -107,19 +109,27 @@ async function placeFromMap(
     if (missing) { stopped = "not_enough_resources"; break; }
     const site = touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, storage ? 0 : 3))[0];
     if (!site) { stopped = attempts ? "no_more_free_spots" : "no_free_spot_in_view"; break; }
-    const camera = cameraKey(await sampleAfter(ctx, 0, () => true, 1));
+    const sample = await sampleAfter(ctx, 0, () => true, 1);
+    const camera = cameraKey(sample);
     if (cameraShift(camera, anchorCamera) > 1) { stopped = "camera_moved"; break; }
+    // The spot's tile through the camera as it is now: the map's camera can be a tile off from
+    // the view the click lands in, and a tile pushes a flush spot into the anchor (both of a
+    // stockpile's flush spots refused after a bookmark return, Kimi K3, 2026-10-12).
+    const live = sample?.camera as Parameters<typeof projectTile>[0] | undefined;
+    const at = live ? projectTile(live, map.frame, site.tile) : site;
+    if (!onScreen(map.frame, at)) { stopped = "camera_moved"; break; }
     attempts++;
     const carried = visiblePlacementFeedback(ctx.device.currentStats().observation);
-    const result = await placer.click(building, site, carried, ctx.device.events.cursor());
+    const result = await placer.click(building, at, carried, ctx.device.events.cursor());
     // Placed or refused, the spot is used up for this call; a "Too close to …" refusal also rules
     // out its surroundings.
     map.claim(building, site.tile, result.feedback.some((f) => /too close/i.test(f)) ? TOO_CLOSE_MARGIN : 0, result.outcome.status === "placed");
     if (result.outcome.status === "placed") {
-      placed.push({ x: site.x, y: site.y, side: site.side as Side, tilesOut: site.gap });
+      placed.push({ x: at.x, y: at.y, side: site.side as Side, tilesOut: site.gap });
       if (storage) touching.push(footprintRect(site.tile, size));
       continue;
     }
+    if (!result.feedback.length) silent++;
     // The map showed this footprint free. Short of resources, stop; otherwise a rule the map does
     // not model refused it ("Too close to signpost to build.", run 7), so the next spot may work.
     feedback = result.feedback.length ? result.feedback : feedback;
@@ -132,6 +142,7 @@ async function placeFromMap(
     placed,
     probes: attempts,
     method: "tile_map" as const,
+    silent,
     ...(stopped && placed.length < count ? { stopped } : {}),
     ...(feedback.length ? { feedback } : {}),
     ...(missing ? { missing } : {}),
@@ -380,12 +391,18 @@ export async function placeAdjacent(
   if ((await placer.select(building)) === "failed")
     return { status: "not_selected" as const, anchor, placed, probes: 0 };
   const map = await reading;
+  let mapProbes = 0;
   if (map) {
     const viaMap = await placeFromMap(ctx, map, placer, building, anchor, count, preferred, placed, anchorCamera);
-    if (viaMap) {
+    // Every spot the map gave was refused without a word: the map and the game disagree about
+    // where the click landed, so probe the view from the anchor outward instead of giving up.
+    const probeOn = viaMap && viaMap.stopped === "no_more_free_spots" && viaMap.silent === viaMap.probes;
+    if (viaMap && !probeOn) {
       await dismiss(ctx, frame);
-      return viaMap;
+      const { silent: _silent, ...result } = viaMap;
+      return result;
     }
+    if (viaMap) mapProbes = viaMap.probes;
   }
   let probes = 0;
   let stopped: string | undefined;
@@ -432,7 +449,8 @@ export async function placeAdjacent(
     status: placed.length >= count ? "placed" as const : placed.length ? "partly_placed" as const : "not_placed" as const,
     anchor,
     placed,
-    probes,
+    probes: mapProbes + probes,
+    ...(mapProbes ? { method: "tile_map_then_probing" as const } : {}),
     ...(stopped ? { stopped } : {}),
   };
 }
