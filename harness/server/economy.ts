@@ -196,11 +196,12 @@ async function tradeShown(
  */
 const TRADE_WAIT_SECONDS = 5;
 
-/** Room for `units` more of a good in the reader's storage: its piles and the empty ones, or the granaries. */
+/** Room for `units` more of a good in the reader's storage: its piles and the empty ones, the granaries, or the armories. */
 function roomFor(o: Observation | null, good: string, units: number) {
   const storage = o ? storageOf(o as Parameters<typeof storageOf>[0]) : undefined;
   if (!storage) return true;
   if ((inventoryGroups.granary as readonly string[]).includes(good)) return storage.granary.room >= units;
+  if ((inventoryGroups.armory as readonly string[]).includes(good)) return storage.armory ? storage.armory.room >= units : true;
   const own = storage.stockpile.goods[good];
   return own ? own.room >= units : storage.stockpile.empty_piles > 0;
 }
@@ -243,6 +244,9 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
     const step = unitsPerClick(action, last.stock);
     if (step === 0) break;
     if (step > wanted - traded) { tooLarge = step; break; }
+    // A purchase the reader shows no room for is refused by the game (a full armory, live
+    // 2026-10-12): stop before clicking, and say why below.
+    if (action === "buy" && !roomFor(lastSeen, good, step)) break;
     const ack = await click(ctx, action === "buy" ? BUY : SELL);
     const seen = await tradeShown(ctx, ackTime(ack), values, { stock: last.stock, gold: last.gold }, step * way, -step * price * way, TRADE_WAIT_SECONDS);
     if (!seen) break;
@@ -260,6 +264,7 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
   const noGold = last.gold !== null && last.gold < (buyPrice[good] ?? Infinity) * 5;
   const roomOut = !noGold && !roomFor(lastSeen, good, 5);
   const food = (inventoryGroups.granary as readonly string[]).includes(good);
+  const arms = (inventoryGroups.armory as readonly string[]).includes(good);
   const stopped = traded >= wanted
     ? {}
     : tooLarge
@@ -274,7 +279,9 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
         : roomOut
           ? {
               note: "Stopped: no storage room for this good (see storage in status).",
-              remedy: food ? "Make room: expand_storage (kind granary) adds granaries." : "Make room: expand_storage (kind stockpile) adds stockpile piles.",
+              remedy: food ? "Make room: expand_storage (kind granary) adds granaries."
+                : arms ? "Make room: expand_storage (kind armory) adds an armory; one holds 50 weapons and armour."
+                : "Make room: expand_storage (kind stockpile) adds stockpile piles.",
             }
           : noGold
             ? { note: "Stopped: not enough gold.", remedy: "Buy fewer lots; gold comes from taxes (set_tax) and from selling goods (market_trade)." }

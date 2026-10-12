@@ -61,6 +61,8 @@ class ObservationStream:
                           for x, y, good, amount, capacity in storage['piles']],
                 'granaries': [{'tile': [x, y], 'amount': amount, 'capacity': capacity}
                               for x, y, amount, capacity in storage['granaries']],
+                'armories': [{'tile': [x, y], 'amount': amount, 'capacity': capacity}
+                             for x, y, amount, capacity in storage.get('armories', [])],
                 'truncated': storage['truncated']}
         # 'structures', 'placement', 'camera', 'managed_heap' and 'buildings' (the local player's
         # building records counted by engine type) pass through unchanged; all but the first are

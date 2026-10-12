@@ -175,3 +175,22 @@ test("storage counts room per good and empty piles, and says when the stockpile 
   assert.equal(spare.granary.full, undefined);
   assert.equal(storageOf({ ...observation([]), storage: null }), undefined, "no reading: absent, not empty");
 });
+
+test("storage reports the armories' weapons and room, and says when they are full", () => {
+  // Live on The Sinkhole (2026-10-12): an armory holds 50 weapons and armour of any mix and an empty
+  // one reads amount 0 and capacity 0; GLM 5.3 Flash's filled up mid-run with 14 workshops.
+  const armory = (amount: number) => ({ tile: [0, 0] as [number, number], amount, capacity: amount ? 50 : 0 });
+  const observation = (armories?: ReturnType<typeof armory>[]) => ({
+    gold: 0, population: 0, popularity: 0, map_name: "m", wood_planks: 0,
+    storage: { piles: [], granaries: [], ...(armories ? { armories } : {}), truncated: false },
+  });
+  const full = storageOf(observation([armory(50)]))!;
+  assert.deepEqual({ ...full.armory, full: undefined }, { armories: 1, stored: 50, room: 0, full: undefined });
+  assert.match(full.armory!.full!, /Armory full: workshops cannot deliver/);
+  assert.match(full.armory!.full!, /expand_storage, kind armory/);
+  // A second, empty armory adds its 50.
+  assert.deepEqual(storageOf(observation([armory(50), armory(0)]))!.armory, { armories: 2, stored: 50, room: 50 });
+  // No armory, or a reader from before armories, shows nothing for it.
+  assert.equal(storageOf(observation([]))!.armory, undefined);
+  assert.equal(storageOf(observation())!.armory, undefined);
+});

@@ -1638,9 +1638,9 @@ export function makeAgent(
       name: "expand_storage",
       label: "Expand stockpile or granary",
       description:
-        "Add 1–3 stockpiles or granaries touching the existing ones (the game requires adjacency). Same spot finding as place_near with the storage building as its own anchor; new ones may touch any of the same kind joined to it, including those just placed. Returns text only; the camera stays on the storage.",
+        "Add 1–3 stockpiles, granaries or armories touching the existing ones (the game requires adjacency; an armory holds 50 weapons and armour, so more need another). Same spot finding as place_near with the storage building as its own anchor; new ones may touch any of the same kind joined to it, including those just placed. Returns text only; the camera stays on the storage.",
       parameters: Type.Object({
-        kind: oneOf(["stockpile", "granary"]),
+        kind: oneOf(["stockpile", "granary", "armory"]),
         count: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })),
         side: Type.Optional(oneOf(sides)),
       }),
@@ -1650,8 +1650,9 @@ export function makeAgent(
         runtime?.cycle.action();
         observed = null;
         observedClearedBy = "expand_storage";
-        const building = args.kind === "stockpile" ? "Stockpile" : "Granary";
-        const result = withAdjacentRemedy(await placeAdjacent(anchorContext(signal), building, args.kind, args.count ?? 1, args.side), building, args.kind);
+        const building = args.kind === "stockpile" ? "Stockpile" : args.kind === "granary" ? "Granary" : "Armory";
+        const anchor = args.kind === "armory" ? "armoury" : args.kind;
+        const result = withAdjacentRemedy(await placeAdjacent(anchorContext(signal), building, anchor, args.count ?? 1, args.side), building, anchor);
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       },
     }),

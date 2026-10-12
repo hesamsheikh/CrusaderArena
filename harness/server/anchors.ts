@@ -63,6 +63,7 @@ const MAX_MAP_ATTEMPTS = 6;
 /** Engine types of the anchors whose type is known (STRUCTURE_TYPES). */
 const anchorTypes: Partial<Record<Anchor, number>> = {
   keep: STRUCTURE_TYPES.keep, granary: STRUCTURE_TYPES.granary, market: STRUCTURE_TYPES.market, signpost: STRUCTURE_TYPES.signpost,
+  armoury: STRUCTURE_TYPES.armory,
 };
 /**
  * The anchor's footprint in the map: the stockpile or the nearest building of the anchor's type,
@@ -94,7 +95,9 @@ async function placeFromMap(
   placed: { x: number; y: number; side?: Side; lateral?: number; tilesOut?: number }[],
   anchorCamera: string,
 ) {
-  const storage = building === "Stockpile" || building === "Granary";
+  // Storage must touch storage of its kind: a new armory too ("Needs to be placed adjacent to the
+  // armory.", live 2026-10-12).
+  const storage = building === "Stockpile" || building === "Granary" || building === "Armory";
   // Storage goes against the stockpile (or granary) nearest the camera centre or any joined to it:
   // centring always returns to the first one, so with its sides alone expand_storage ran out of
   // spots after 4 to 6. A stockpile is four piles, not one building, so the building nearest the
@@ -113,7 +116,11 @@ async function placeFromMap(
     if (attempts >= MAX_MAP_ATTEMPTS) { stopped = "attempt_limit"; break; }
     missing = shortfall(building, ctx.device.currentStats().observation) ?? undefined;
     if (missing) { stopped = "not_enough_resources"; break; }
-    const site = touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, storage ? 0 : 3))[0];
+    // Storage must touch its kind, so when no spot beside it keeps the tile of open ground around
+    // granaries and armories, one that does not is taken rather than none (a full armory in a
+    // crowded town had two flush spots, both touching other buildings, live 2026-10-12).
+    const site = touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, storage ? 0 : 3))[0]
+      ?? (storage ? touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, 0, { spaced: false }))[0] : undefined);
     if (!site) { stopped = attempts ? "no_more_free_spots" : "no_free_spot_in_view"; break; }
     const sample = await sampleAfter(ctx, 0, () => true, 1);
     const camera = cameraKey(sample);
@@ -122,7 +129,7 @@ async function placeFromMap(
     // the view the click lands in, and a tile pushes a flush spot into the anchor (both of a
     // stockpile's flush spots refused after a bookmark return, Kimi K3, 2026-10-12).
     const live = sample?.camera as Parameters<typeof projectTile>[0] | undefined;
-    const at = live ? projectTile(live, map.frame, site.tile) : site;
+    const at = live ? projectTile(live, map.frame, site.tile, map.heightAt(site.tile)) : site;
     if (!onScreen(map.frame, at)) { stopped = "camera_moved"; break; }
     attempts++;
     const carried = visiblePlacementFeedback(ctx.device.currentStats().observation);

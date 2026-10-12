@@ -32,6 +32,8 @@ export function feedbackRemedy(building: string, feedback: readonly string[]) {
     return "A stockpile must touch an existing one: expand_storage (kind stockpile) places it flush.";
   if (/adjacent to the granary/i.test(text))
     return "A granary must touch an existing one: expand_storage (kind granary) places it flush.";
+  if (/adjacent to the armou?ry/i.test(text))
+    return "An armory must touch an existing one: expand_storage (kind armory) places it flush.";
   if (/must be built on/i.test(text))
     return `find_sites (building "${building}") lists spots on its ground in this view; map_overview shows the deposits and go_to_tile moves there.`;
   if (/oasis|fertile/i.test(text))
@@ -123,13 +125,16 @@ export function adjacentRemedy(result: { stopped?: string; missing?: Record<stri
     case "camera_moved":
       return "The view moved while placing: call it again.";
     case "view_jumps":
-      return building === "Armory"
-        ? "Choosing an Armory centres the view on your first one, so it cannot go against another anchor: place_near with anchor armoury puts it beside the existing one, or build_structure places it by tile anywhere."
-        : `Choosing a ${building} centres the view on your first one, and a new one must touch the existing ones: expand_storage (kind ${building.toLowerCase()}) places it.`;
+      return `Choosing a ${building} centres the view on your first one, and a new one must touch the existing ones: expand_storage (kind ${building.toLowerCase()}) places it.`;
     case "no_free_spot_in_view":
     case "no_more_free_spots":
     case "probe_limit":
     case "attempt_limit":
+      // Storage must touch its own kind, so another anchor is no way out.
+      if (building === "Stockpile" || building === "Granary" || building === "Armory") {
+        const held = building === "Stockpile" ? "goods" : building === "Granary" ? "food" : "weapons and armour";
+        return `No room around your ${building.toLowerCase()}: no free ground touches it on any side. Make room either by selling some of the ${held} it holds (market_trade) or by demolishing buildings beside it (demolish_building), then expand it.`;
+      }
       return `No more room flush against the ${result.anchor ?? "anchor"} here: another side (side), another anchor, or find_sites (building "${building}") for free spots elsewhere.`;
     default:
       return `Nothing more could be placed there: find_sites (building "${building}") lists free spots in this view.`;

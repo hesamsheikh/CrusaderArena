@@ -111,7 +111,7 @@ export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side
  * spots the harness picks itself. Without it, as find_sites offers spots for the model to choose
  * among, anything the game allows, and `ground` keeps only spots on that ground (groundOf).
  */
-export type SiteOptions = { reserve?: boolean; ground?: string };
+export type SiteOptions = { reserve?: boolean; ground?: string; spaced?: boolean };
 /** Tiles around a woodcutter site in which find_sites counts trees. */
 export const WOODCUTTER_REACH = 12;
 
@@ -257,10 +257,10 @@ export class TileMap {
    * neighbour with workers that has one now: built, placed during this call, or `planned` (about to
    * be placed, not in the map yet).
    */
-  access(building: string, centre: Tile, planned: readonly Footprint[] = []): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" } {
+  access(building: string, centre: Tile, planned: readonly Footprint[] = [], spaced = true): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" } {
     const rect = footprintRect(centre, footprintOf(building));
     if (needsOpenSide(building) && !this.openSides(rect, planned)) return { ok: false, reason: "no_open_side" };
-    if (this.touchesStorage(building, rect, planned)) return { ok: false, reason: "touches_storage" };
+    if (spaced && this.touchesStorage(building, rect, planned)) return { ok: false, reason: "touches_storage" };
     const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
     for (const n of [...this.existing(), ...this.claimed, ...planned]) {
       if (!n.needsOpenSide || !overlaps(n, ring) || overlaps(n, rect)) continue;
@@ -301,8 +301,9 @@ export class TileMap {
    * Stockpile or granary footprints in the region. A stockpile's square starts at a pile, or three
    * tiles before it when a pile of the same square lies there; a granary is one 4×4 building.
    */
-  storageRects(kind: "Stockpile" | "Granary"): Rect[] {
+  storageRects(kind: "Stockpile" | "Granary" | "Armory"): Rect[] {
     if (kind === "Granary") return this.rectsOfType(STRUCTURE_TYPES.granary);
+    if (kind === "Armory") return this.rectsOfType(STRUCTURE_TYPES.armory);
     const piles = this.rectsOfType(STRUCTURE_TYPES.pile);
     const at = new Set(piles.map((r) => `${r.x1},${r.y1}`));
     const squares = new Map<string, Rect>();
@@ -345,9 +346,13 @@ export class TileMap {
       }
     return best.id;
   }
+  /** Terrain height at tile t, or DEFAULT_HEIGHT outside the region. */
+  heightAt(t: Tile) {
+    return this.value("height", t) ?? DEFAULT_HEIGHT;
+  }
   /** The pixel a click must hit for the game to pick tile t, at its own terrain height (see tilePixel). */
   pixel(t: Tile) {
-    return tilePixel(this.camera, this.frame, t, this.value("height", t) ?? DEFAULT_HEIGHT);
+    return tilePixel(this.camera, this.frame, t, this.heightAt(t));
   }
   /**
    * The tile the game picks for a click at pixel p (inverse of pixel): of the tiles drawn in p's
@@ -455,7 +460,7 @@ export class TileMap {
   private site(building: string, t: Tile, planned: readonly Footprint[] = [], options: SiteOptions = {}): Site | null {
     if (!this.clickable(t)) return null;
     const fit = this.fits(building, t, options.reserve ?? true);
-    if (!fit.ok || !this.access(building, t, planned).ok) return null;
+    if (!fit.ok || !this.access(building, t, planned, options.spaced ?? true).ok) return null;
     if (options.ground !== undefined && this.groundOf(building, t) !== options.ground) return null;
     return { tile: t, ...this.pixel(t), ...(fit.oasisShare !== undefined ? { oasisShare: fit.oasisShare } : {}) };
   }
@@ -552,7 +557,7 @@ export class TileMap {
    * up to `maxGap` tiles. Sides are named by screen direction: +x is down-right, +y is
    * down-left. The preferred side comes first; within a side, the smallest sideways shift.
    */
-  sitesBeside(building: string, anchor: Rect, count: number, preferred?: string, maxGap = 0): Site[] {
+  sitesBeside(building: string, anchor: Rect, count: number, preferred?: string, maxGap = 0, options: SiteOptions = {}): Site[] {
     const size = footprintOf(building), a = Math.floor(size / 2);
     const sides = ["down-right", "down-left", "up-right", "up-left"];
     const order = preferred ? [preferred, ...sides.filter((s) => s !== preferred)] : sides;
@@ -572,7 +577,7 @@ export class TileMap {
           .sort((p, q) => Math.abs(p - mid) - Math.abs(q - mid));
         for (const other of shifts) {
           const t = along === "x" ? { x: fixed, y: other } : { x: other, y: fixed };
-          const s = this.site(building, t);
+          const s = this.site(building, t, [], options);
           if (s) found.push({ ...s, side, gap });
         }
       }

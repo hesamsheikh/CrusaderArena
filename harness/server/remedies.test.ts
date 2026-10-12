@@ -18,6 +18,14 @@ test("the game's refusals map to the tool that addresses them", () => {
   assert.match(feedbackRemedy("Iron Mine", ["Iron mine must be built on Iron ore."]), /find_sites \(building "Iron Mine"\).*map_overview shows the deposits/);
   assert.match(feedbackRemedy("Stockpile", ["Needs to be placed adjacent to the stockpile."]), /expand_storage \(kind stockpile\)/);
   assert.match(feedbackRemedy("Wheat Farm", ["Must be placed on an oasis."]), /oasis grass/);
+  // Storage with no free ground beside it: sell what it holds or demolish a neighbour, not another anchor.
+  const crowded = adjacentRemedy({ stopped: "no_free_spot_in_view", anchor: "armoury" }, "Armory");
+  assert.match(crowded, /No room around your armory/);
+  assert.match(crowded, /selling some of the weapons and armour it holds \(market_trade\)/);
+  assert.match(crowded, /demolish_building/);
+  assert.doesNotMatch(crowded, /another anchor/);
+  // The game's own refusal of a second armory away from the first (live 2026-10-12).
+  assert.match(feedbackRemedy("Armory", ["Needs to be placed adjacent to the armory."]), /expand_storage \(kind armory\)/);
   assert.match(feedbackRemedy("Hovel", ["Too close to signpost to build."]), /further from what it names/);
   assert.match(feedbackRemedy("Hovel", ["Something new."]), /Do what the game's message asks, or choose another spot/);
 });

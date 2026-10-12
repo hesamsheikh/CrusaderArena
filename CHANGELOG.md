@@ -17,6 +17,27 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.6.2] - 2026-10-12
+
+The armory's storage, found missing in GLM 5.3 Flash's first run on The Sinkhole: its armory
+filled up with 14 workshops behind it, and nothing told it. A patch; the round on The Sinkhole
+starts again on this version.
+
+### Benchmark
+
+- The reader reads each armory's weapons and capacity, and `storage` in the stats shows them
+  with a `full` note once there is no room: workshops then stop and the market sells no
+  weapons. An armory holds 50 weapons and armour of any mix (live 2026-10-12); the game
+  reference says so, and that a new armory must touch an existing one.
+- `expand_storage` adds armories (`kind: armory`); `place_near` places a second Armory flush
+  against the first, as the game requires. When no spot beside a stockpile, granary or armory
+  keeps the tile of open ground around it, one that does not is taken rather than none, and
+  with no free ground beside it at all the remedy says to sell some of what it holds or
+  demolish a building beside it.
+- `market_trade` does not buy into storage the reader shows full, and says so, instead of
+  waiting for a purchase the game refuses.
+- `place_near` aims its spots at their terrain height, as `build_structure` does since 1.6.0.
+
 ## [1.6.1] - 2026-10-12
 
 A new map, and one line of the rules reworded. A patch: tools and scoring are unchanged.

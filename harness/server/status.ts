@@ -49,6 +49,8 @@ const cameraOf = (o: Observation) =>
 
 /** What a granary holds, of all foods together (live 2026-10-09); an empty one reads capacity 0. */
 const GRANARY_CAPACITY = 250;
+/** Weapons and armour of any mix one armory holds (live on The Sinkhole, 2026-10-12). */
+export const ARMORY_CAPACITY = 50;
 
 /**
  * Stockpile and granary room. Each stockpile has four piles and each pile holds one good, so a
@@ -58,6 +60,19 @@ const GRANARY_CAPACITY = 250;
  * run on 2026-10-11 sold its wood at "room 1" with 13 empty piles). Empty piles are shared, so
  * the goods' rooms overlap. Absent when the reader has no storage reading.
  */
+/** Armories hold all weapons and armour together; like a granary, an empty one reads capacity 0 until something arrives. */
+function armoryOf(armories: { amount: number; capacity: number }[]) {
+  const stocked = armories.filter((a) => a.amount > 0);
+  const stored = stocked.reduce((n, a) => n + a.amount, 0);
+  const room = stocked.reduce((n, a) => n + Math.max(0, a.capacity - a.amount), 0) + (armories.length - stocked.length) * ARMORY_CAPACITY;
+  return {
+    armories: armories.length,
+    stored,
+    room,
+    ...(room === 0 ? { full: "Armory full: workshops cannot deliver their weapons or armour, so they stop, and none can be bought at the market. Add an armory (expand_storage, kind armory) or sell some." } : {}),
+  };
+}
+
 export function storageOf(o: Observation) {
   const st = o.storage;
   if (!st) return undefined;
@@ -93,6 +108,7 @@ export function storageOf(o: Observation) {
       room,
       ...(stocked.length && !emptyGranaries && !room ? { full: "Granaries full: food producers stop delivering. Add a granary (expand_storage) or sell food." } : {}),
     },
+    ...(st.armories?.length ? { armory: armoryOf(st.armories) } : {}),
   };
 }
 

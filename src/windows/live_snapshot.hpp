@@ -194,21 +194,27 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
     // The local player's stockpile piles (type 10: a stockpile is four 2x2 piles, each holding one
     // good) and granaries (type 19). An empty pile has amount 0 and capacity 0 and keeps its last
     // good. Optional.
+    // Armories (type 11) the same way as granaries: all weapons and armour together, the amount and
+    // capacity at the same offsets (live on The Sinkhole, 2026-10-12: 50 items of any mix, then the
+    // market refused more; an empty armory reads 0 and 0).
     const auto storage=optional([&]()->std::string {
         const auto [limit,at]=building_records();
-        std::ostringstream piles,granaries;int pile_count=0,granary_count=0;bool truncated=false;
+        std::ostringstream piles,granaries,armories;int pile_count=0,granary_count=0,armory_count=0;bool truncated=false;
         for(int id=1;id<=limit;++id) {
             const int type=at(id,0);
-            if((type!=10 && type!=19) || at(id,0x04)!=player)continue;
+            if((type!=10 && type!=19 && type!=11) || at(id,0x04)!=player)continue;
             if(type==10) {
                 if(pile_count==128){truncated=true;continue;}
                 piles<<(pile_count++?",":"")<<'['<<at(id,0x1c)<<','<<at(id,0x1e)<<','<<at(id,0xba)<<','<<at(id,0xb2)<<','<<at(id,0xb6)<<']';
-            } else {
+            } else if(type==19) {
                 if(granary_count==32){truncated=true;continue;}
                 granaries<<(granary_count++?",":"")<<'['<<at(id,0x1c)<<','<<at(id,0x1e)<<','<<at(id,0xb2)<<','<<at(id,0xb6)<<']';
+            } else {
+                if(armory_count==32){truncated=true;continue;}
+                armories<<(armory_count++?",":"")<<'['<<at(id,0x1c)<<','<<at(id,0x1e)<<','<<at(id,0xb2)<<','<<at(id,0xb6)<<']';
             }
         }
-        return "{\"piles\":["+piles.str()+"],\"granaries\":["+granaries.str()+"],\"truncated\":"+(truncated?"true":"false")+"}";
+        return "{\"piles\":["+piles.str()+"],\"granaries\":["+granaries.str()+"],\"armories\":["+armories.str()+"],\"truncated\":"+(truncated?"true":"false")+"}";
     });
     // The local player's building records counted by engine type, keyed by the type number. Parts
     // the engine keeps as records of their own count too: a stockpile's four piles, a quarry's

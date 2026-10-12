@@ -147,6 +147,8 @@ export type Stats = {
     storage?: {
       piles: { tile: [number, number]; good: string | null; amount: number; capacity: number }[];
       granaries: { tile: [number, number]; amount: number; capacity: number }[];
+      /** Absent from readers before 1.6.2. */
+      armories?: { tile: [number, number]; amount: number; capacity: number }[];
       truncated: boolean;
     } | null;
     /**

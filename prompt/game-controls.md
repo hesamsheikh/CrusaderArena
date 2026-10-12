@@ -59,8 +59,8 @@ return the game only once it has passed, so act first and look last.
   the game's popularity points), `tax_level`, food, the `goods` in stock by name (a good
   not listed there has none), `storage` (stockpile piles, empty piles and, for each
   stored good, how much more of it can be delivered, counting the empty piles that any
-  good can take; granary food and room, with a `full` note when something can no longer
-  be delivered), the placement mode and the camera's centre tile. `status:
+  good can take; granary food and room; armory weapons and room, once one stands; with a
+  `full` note when something can no longer be delivered), the placement mode and the camera's centre tile. `status:
   "unavailable"` or any other missing value means unknown, not zero.
 - **`game_events`:** game messages that appeared since your previous screenshot, each
   once with `seconds_ago`, such as placement warnings ("Too close to signpost to
@@ -156,8 +156,8 @@ Game rules for placement:
   bakery, brewery and workshops 4; stockpile, marketplace and inn 5; quarry and apothecary 6;
   wheat and hops farm 9; apple orchard and dairy farm 10. Space targets in one call at
   least a footprint apart.
-- A new stockpile must touch an existing stockpile, and a new granary the granary: use
-  `expand_storage`. A failed stockpile placement makes the game jump the camera to the
+- A new stockpile must touch an existing stockpile, a new granary the granary, and a new
+  armory the armory: use `expand_storage`. A failed stockpile placement makes the game jump the camera to the
   existing stockpile.
 - Hovels, workshops, food processors, the marketplace, inn and military buildings cannot
   be built within about 12 tiles of the signpost (the wooden board the road leads to).
@@ -183,7 +183,7 @@ Game rules for placement:
   shows its workers and whether it has access to the keep.
 - The harness keeps one tile of open ground around granaries and armories: other
   buildings are not placed touching them, though a new granary touches the granary and
-  a new armory may touch the armory.
+  a new armory the armory.
 - Leave walking routes between buildings and their storage, and room to expand storage.
 
 ## Camera and keys

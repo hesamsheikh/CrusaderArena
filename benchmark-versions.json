@@ -1,5 +1,5 @@
 {
-  "current": "1.6.1",
+  "current": "1.6.2",
   "history": [
     {
       "version": "1.0.0",
@@ -204,6 +204,12 @@
       "fingerprint": "c62587b2a9adc170fd25ba9e4d696da2cf6e9e5f0be2b820d7fe1aa7281dcd32",
       "date": "2026-10-12",
       "note": "The Sinkhole's do-nothing baseline at 45 game minutes (2,195); what runs play is unchanged"
+    },
+    {
+      "version": "1.6.2",
+      "fingerprint": "6cc0c01622622bde8e5bc0a271af08f8413efd4576a44c1060182f4e21b8ba56",
+      "date": "2026-10-12",
+      "note": "Armories in storage: the reader reads their weapons and room, the stats warn when they are full, market_trade does not buy into one, expand_storage adds armories; place_near re-aims at terrain height"
     }
   ]
 }

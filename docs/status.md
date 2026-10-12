@@ -130,6 +130,23 @@ between September and October 2026.
     Fletcher opened no panel in two clicks; on its end save the same call worked at every
     try. A panel shows in the reader about 0.6 s after the click, so each click now waits
     4 s and a reader without readings is reported as such.
+  - Armories, on "The Sinkhole start" on 2026-10-12: one holds 50 weapons and armour of any
+    mix, counted singly. Buying a lot of each of the eight types stored 40; 20 spears and
+    5 of six other types filled it at 50 (the record's amount and capacity at +0xb2 and
+    +0xb6 read 50 and 50); then the market refused another lot of spears with gold to
+    pay. GLM 5.3 Flash's armory held 11 bows, 25 spears, 11 swords, 2 leather and 1 metal
+    armour at 50 and 50 too, and a person's test with 43 swords and 5 leather armour got
+    "No space in the armory." for 5 more. An empty armory reads 0 and 0. A second armory
+    away from the first was refused: "Needs to be placed adjacent to the armory." No game
+    message reached GLM while its 14 workshops stood at a full armory: the game says "The
+    armory is full, my lord" aloud (a person's observation), and spoken lines without
+    text are not read, so the stats' `full` note stands in for it.
+  - The 1.6.2 reader on a person's end save with 45 leather armour and 2 swords: the stats
+    showed the armory at 47 of 50; with the game running, the blacksmiths' swords took it
+    to 50, where the `full` note appeared, and `market_trade` then bought no swords and
+    named `expand_storage`. In that crowded town the only two spots touching the armory
+    also touched other buildings; `expand_storage` (kind armory) placed a second armory on
+    one of them, and the stats read two armories with room 49.
   - A click on a building's middle can open a neighbour's panel: a Hovel in front of a
     Blacksmith is drawn over the Blacksmith's middle. `set_workshop` now checks the
     opened building against the tile map and then clicks the back corner of the

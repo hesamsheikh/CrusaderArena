@@ -79,7 +79,9 @@ test("market_trade without a marketplace says to build one with build_structure"
 function fakeMarket(
   goods: Record<string, number>,
   gold: number,
-  { meanwhile = () => {}, delay = () => 0, everyPoll = () => {} }: {
+  { meanwhile = () => {}, delay = () => 0, everyPoll = () => {}, storage }: {
+    /** The reader's storage reading, when a test needs one (none: room is not checked). */
+    storage?: Record<string, unknown>;
     meanwhile?: (game: { goods: Record<string, number>; gold: number }, click: number) => void;
     /** Runs at every reader poll, before the sample is taken: a woodcutter unloading, say. */
     everyPoll?: (game: { goods: Record<string, number>; gold: number }, poll: number) => void;
@@ -100,7 +102,7 @@ function fakeMarket(
       captured_unix_ms: Date.now(),
       observation: {
         selected_building: game.panel, placement: { action: 0, sub_action: 0 }, gold: game.gold, resources_by_name: { ...game.goods },
-        settlement: { tax_amount: 37 },
+        settlement: { tax_amount: 37 }, ...(storage ? { storage } : {}),
       },
     };
   };
@@ -226,6 +228,17 @@ test("market_trade counts a click only when the reader shows that trade", async 
   const food = fakeMarket({ apples: 40 }, 500);
   const bought = await marketTrade(food.ctx, "apples", "buy", 3) as any;
   assert.deepEqual([bought.status, bought.units, bought.clicks, food.game.goods.apples, food.game.gold], ["traded", 15, 3, 55, 500 - 15 * 8]);
+});
+
+test("market_trade does not buy weapons into a full armory, and names expand_storage", async () => {
+  // Live on The Sinkhole (2026-10-12): at 50 the game refused a lot of spears while gold sufficed.
+  const { ctx, game } = fakeMarket({ spears: 20 }, 500, {
+    storage: { piles: [], granaries: [], armories: [{ tile: [0, 0], amount: 50, capacity: 50 }], truncated: false },
+  });
+  const result = await marketTrade(ctx, "spears", "buy", 1) as any;
+  assert.deepEqual([result.status, result.clicks, game.gold], ["not_traded", 0, 500]);
+  assert.match(result.note, /no storage room/);
+  assert.match(result.remedy, /expand_storage \(kind armory\)/);
 });
 
 const TAX_UP = "1517,985";

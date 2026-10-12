@@ -42,9 +42,9 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
   spread over several piles. Once no pile is empty, a good with no room left in its
   piles and any good not stored yet cannot be delivered: their workers stand waiting
   and production stops, with no message from the game. Each granary holds 250 food in
-  total. Make room before storage fills: sell surplus at the marketplace or add
-  stockpiles or granaries with `expand_storage` (new ones must touch the existing
-  ones). Keep stockpile space contiguous and leave room beside it to expand.
+  total, and each armory 50 weapons and armour in total, of any mix. Make room before
+  storage fills: sell surplus at the marketplace or add stockpiles, granaries or
+  armories with `expand_storage` (new ones must touch the existing ones). Keep stockpile space contiguous and leave room beside it to expand.
 - **Trade:** A marketplace buys and sells goods for gold, including equipment.
   Auto-buy replenishes below a threshold; auto-sell sells above one. Avoid selling
   resources reserved for construction/recruitment or setting unaffordable imports.
