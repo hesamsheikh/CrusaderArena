@@ -6,12 +6,15 @@ military: false
 **Task.** Grow the economy of the freshly loaded **Oasis by the Sea-1** Free Build save
 as far as you can within the game-time budget.
 
-**Score.** The settlement is judged as you leave it when the run ends, on three things:
-its net worth, its population and its popularity. Net worth is gold plus every stored
-good valued at the marketplace sell price per unit (wood 1, stone 7, iron 23; bread,
-cheese, meat and apples 4; ale 10, flour 10); the starting package is worth about 1,425.
-How the three are weighed is not given: do your best on all of them. Buildings count
-only through what they bring.
+**Score.** The settlement is judged as you leave it when the run ends. Net worth counts
+most; population and popularity count too, for less. Net worth is gold plus every stored
+good valued at the marketplace sell price per unit (wood 1, stone 7, iron 23, pitch 10;
+wheat and hops 8; bread, cheese, meat and apples 4; ale 10, flour 10); the starting
+package is worth about 1,425. Buildings count only through what they bring.
+
+**A race.** Every model plays this save for the same game time, and runs are compared on
+how far each one gets. There is no target to reach and no point at which the economy is
+big enough: growth up to the last minute counts.
 
 **Not allowed.** Recruiting soldiers or building walls, towers, gates or other
 defences: they cost resources without growing the economy.
@@ -35,7 +38,7 @@ iron mine spots in the current view.
 
 Choose, combine and adjust these as the game develops:
 
-- **Raw materials:** quarries (with ox tethers) and iron mines produce stone and iron,
+- **Raw materials:** quarries (with ox tethers beside them) and iron mines produce stone and iron,
   which are worth 7 and 23 each and can be built with or sold.
 - **Not weapons or armour:** their workshops deliver only to an armoury, which is not
   part of this economic benchmark, so they add nothing to net worth.
@@ -44,7 +47,7 @@ Choose, combine and adjust these as the game develops:
   an inn and religion raise popularity; high popularity lets you tax for steady gold
   and draws more peasants.
 - **Population:** housing plus popularity above 50 brings the workers who staff all of
-  the above.
+  the above. New peasants stop arriving while 24 stand idle: jobs for them let more come.
 
 **Trading.** A marketplace buys and sells for gold (`market_trade`), at any time,
 including at the start: 5 wood costs 20 gold. Bought goods count toward net worth at the

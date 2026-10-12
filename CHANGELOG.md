@@ -17,6 +17,32 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.5.6] - 2026-10-12
+
+Prompt fixes before rerunning every model on Large Barren Desert. A patch at the maintainers'
+choice, though what the model is told changed on both maps.
+
+### Benchmark
+
+- Ox tethers belong beside the quarries: an ox walks from its tether to the quarries near it,
+  loads the stone, carries it to the stockpile and walks back, and the farther the stockpile,
+  the more tethers it takes. Kimi K3 put five tethers beside the stockpile, about 100 tiles
+  from its quarries, and no stone arrived in over 7 game minutes; every other run had put
+  them next to the quarries.
+- The score: net worth counts most, then population and popularity (no weights given), and
+  every model plays the same save for the same game time, so there is no point at which the
+  economy is big enough. Before, all three counted with their weights not given, and Claude
+  Sonnet 5.5 and Claude Haiku 5.5 stopped building early on Large Barren Desert. The
+  objective says the same.
+- The sell prices in each map's rules list pitch 10 and wheat and hops 8 each, which were
+  missing; Kimi K3 had taken wheat and hops for worthless.
+- The game reference and the rules say that new peasants stop arriving while 24 stand idle,
+  and that jobs for them let more come: every model's population stalled there in the 1.5
+  runs.
+- The full-stockpile note adds that goods still to come, such as the rest of a starting
+  package listed at the top left of the screen, wait outside. Claude Sonnet 5.5 read that
+  list as a stale wood count and did not make room for 8 game minutes.
+
 ## [1.5.5] - 2026-10-12
 
 Placement fixes after Kimi K3's Large Barren Desert run, whose first Marketplace was built

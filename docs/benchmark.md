@@ -184,9 +184,10 @@ played for 25 real minutes at speed 40 (about 2,000 game seconds):
 
 The agent sees them only in [the interview](#the-interview) after its episode.
 
-Since 1.2.0 the agent is told that its population and popularity at the end count
-as well as its net worth, but not how they are weighed (the Oasis by the Sea rules file
-and objective). How the three combine into one score is still being decided: until then
+Since 1.5.6 the agent is told that net worth counts most and population and popularity
+less, without the weights, and that every model plays the same save for the same game
+time, so growth up to the last minute counts (each map's rules file and objective). From
+1.2.0 to 1.5.5 it was told that all three count, without how they are weighed. How the three combine into one score is still being decided: until then
 reports rank runs by net worth, and the scorecard records population and popularity
 beside it. Buying at the marketplace lowers net worth (the buy price is higher than the
 sell price); selling leaves it unchanged.

@@ -155,6 +155,9 @@ test("storage counts room per good and empty piles, and says when the stockpile 
   assert.deepEqual(full.stockpile.goods, { wood_planks: { stored: 96, room: 0 }, stone: { stored: 25, room: 71 } });
   assert.equal(full.stockpile.empty_piles, 0);
   assert.match(full.stockpile.full!, /wood_planks and any good not stored yet cannot be delivered/);
+  // Claude Sonnet 5.5 read the game's list of the starting package still to come as a stale wood
+  // count and never made room (Large Barren Desert, 2026-10-12): the warning names that list.
+  assert.match(full.stockpile.full!, /still to come \(such as the rest of a starting package, listed at the top left of the screen\) wait outside/);
   assert.deepEqual(full.granary, { granaries: 1, empty_granaries: 0, food: 28, room: 222 });
   // An empty pile takes any good: nothing is full, and every good's room counts it at what one of
   // its piles holds (a GLM run on 2026-10-11 sold its wood at "room 1" with 13 empty piles). A

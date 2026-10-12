@@ -82,7 +82,7 @@ export function storageOf(o: Observation) {
       empty_piles: empty,
       goods,
       ...(empty === 0 && st.piles.length
-        ? { full: `No empty pile: ${blocked.length ? `${blocked.join(", ")} and ` : ""}any good not stored yet cannot be delivered, so their producers stop. Sell surplus or expand_storage.` }
+        ? { full: `No empty pile: ${blocked.length ? `${blocked.join(", ")} and ` : ""}any good not stored yet cannot be delivered, so their producers stop, and goods still to come (such as the rest of a starting package, listed at the top left of the screen) wait outside. Sell surplus or expand_storage.` }
         : {}),
     },
     granary: {

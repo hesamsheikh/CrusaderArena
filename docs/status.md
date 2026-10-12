@@ -130,6 +130,17 @@ between September and October 2026.
   was covered by the new pile by then). Kimi's recorded frames show that
   choosing the Marketplace again with one standing centres the view on it, and that later
   Marketplace clicks placed nothing.
+- Ox tethers away from the quarries, on 2026-10-12 (Kimi K3, benchmark 1.5.5, run 8ef9720b,
+  stopped at 9 game minutes): five tethers beside the stockpile, about 100 tiles from three
+  staffed and working quarries, delivered no stone in over 7 game minutes; the oxen stood at
+  their tethers. In every other run the tethers stood 4 to 12 tiles from a quarry and stone
+  arrived. Seen in that run, not tested apart; from 1.5.6 the prompt says to build tethers
+  beside the quarries.
+- New peasants stop arriving while 24 stand idle: in the 1.5 runs on both maps the
+  population stopped with 24 idle, and grew again only when jobs took some of them
+  (Claude Sonnet 5.5's four iron mines brought 8 people on Large Barren Desert, GPT-6 Luna's
+  quarries 5 to 11 each time). Seen in runs, not read from the game; the prompt says it from
+  1.5.6.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.

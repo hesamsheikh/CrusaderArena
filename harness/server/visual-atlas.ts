@@ -56,7 +56,7 @@ export const atlasPages = [
       { name: "Stockpile", detail: "Stores resources.", box: [826, 909, 91, 49] },
       { name: "Woodcutter", detail: "Produces wood near trees.", box: [824, 958, 112, 68] },
       { name: "Quarry", detail: "Produces stone on a deposit; needs an Ox Tether.", box: [945, 917, 112, 110] },
-      { name: "Ox Tether", detail: "Moves quarry stone to the Stockpile.", box: [1062, 939, 74, 82] },
+      { name: "Ox Tether", detail: "Its ox carries stone from the quarries beside it to the Stockpile.", box: [1062, 939, 74, 82] },
       { name: "Iron Mine", detail: "Produces iron on an iron deposit.", box: [1145, 920, 105, 104] },
       { name: "Pitch Rig", detail: "Produces pitch on marshland.", box: [1250, 931, 130, 91] },
       { name: "Marketplace", detail: "Buy and sell food, resources and weapons.", box: [1384, 917, 109, 110] },

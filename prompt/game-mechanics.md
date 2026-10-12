@@ -24,7 +24,9 @@ and troop recruitment costs. A worker count means civilian jobs, not soldiers.
   gather at its campfire.
 - **Population:** Hovels add housing, but do not instantly create workers.
   Popularity above 50 attracts peasants when housing is available; below 50,
-  peasants leave. Check both free housing and idle peasants before expanding.
+  peasants leave. New peasants stop arriving while 24 stand idle at the campfire:
+  each job that takes one of them lets another come. Check both free housing and
+  idle peasants before expanding.
 - **Popularity:** Taxes reduce it; rations, food variety, religion and ale can
   improve it. Bribes spend gold to improve it. More generous rations also drain
   food faster. Inspect the popularity breakdown rather than guessing the cause.
@@ -75,8 +77,8 @@ everything else on plain ground.
 | Granary | 5 W; none | Stores meat, cheese, apples and bread. Select to set rations and permitted foods. |
 | Marketplace | Free / 5 W in manual; none | Buys/sells commodities and sets automatic trade. Check the placement cost shown. |
 | Woodcutter | 3 W; 1 | Cuts nearby trees and delivers wood to stockpile. Essential for most early construction. |
-| Quarry | 20 W; 3 | Cuts stone from a stone deposit. The stone waits at the quarry until an ox carries it to the stockpile: needs at least one ox tether. |
-| Ox tether | 5 W; 1 | Its ox carries quarry stone to the stockpile. Oxen are not tied to one quarry: each takes whatever stone is ready. One quarry can use several; a quarry far from the stockpile needs more, so stone does not pile up while an ox makes the round trip. Stone piling up at a quarry means more ox tethers are needed. Only quarries use oxen. |
+| Quarry | 20 W; 3 | Cuts stone from a stone deposit. The stone waits at the quarry until an ox carries it to the stockpile: needs ox tethers beside it. |
+| Ox tether | 5 W; 1 | Its ox walks from the tether to the quarries near it, loads the stone piled there, carries it to the stockpile and walks back: build tethers beside the quarries. An ox is not tied to one quarry and takes whatever stone is ready. The farther the stockpile, the longer each round trip, and stone piles up at the quarries until the oxen come back, so more distance needs more tethers; stone piling up at a quarry means more are needed. Only quarries use oxen. |
 | Iron mine | 20 W; 2 | Place on iron ore; its workers carry the iron to the stockpile themselves, with no ox tether. Supplies iron for metal weapons and armor. |
 | Pitch rig | 20 W; 1 | Place on suitable marsh; supplies pitch for fire defenses and oil smelters. |
 | Hunter's post | 5 W; 1 | Hunts nearby deer and delivers meat directly to granary; depends on available animals. |
@@ -101,7 +103,7 @@ everything else on plain ground.
 
 - **Bread:** wheat farm → stockpiled wheat → mill → stockpiled flour → bakery → granary.
 - **Ale:** hops farm → stockpiled hops → brewery → stockpiled ale → inn → popularity.
-- **Stone:** quarry → oxen from ox tethers → stockpile → walls/towers/buildings.
+- **Stone:** quarry → ox from a tether beside the quarries → stockpile → walls/towers/buildings.
 - **Iron:** iron mine → stockpile (the miners carry it; no oxen).
 <!-- military -->
 - **Leather armor:** dairy cows → tanner → armory. Tanning consumes cows and can

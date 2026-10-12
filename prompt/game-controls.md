@@ -158,10 +158,11 @@ Game rules for placement:
 - Farms need their whole square free, only oasis grass or scrub under it (no gravel or
   bare earth) and at least 50 oasis tiles: most of a wheat or hops farm, half of an
   orchard or dairy farm. Oasis grass is scarce: group farms closely on it.
-- A quarry needs stone ground under part of its square and at least one ox tether: oxen
-  carry its stone to the stockpile, taking whatever is ready at any quarry. Add tethers
-  when the quarry is far from the stockpile or stone piles up at it. An iron mine needs
-  iron ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
+- A quarry needs stone ground under part of its square and ox tethers beside it: an ox
+  walks from its tether to the quarries near it, loads whatever stone is ready, carries
+  it to the stockpile and walks back. The farther the stockpile, the more tethers it
+  takes to keep stone from piling up while the oxen are away. An iron mine needs iron
+  ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
 - A building with workers (everything but hovels, the marketplace, stockpiles,
   granaries and the good and bad things) needs at least one whole side of open ground:
   its workers go in and out there, and one closed in on all four sides by buildings,
