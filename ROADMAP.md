@@ -36,11 +36,12 @@ two. The project website shows this file, so keep that shape.
 - **Tool fixes from the 1.5 runs.** `find_sites` searches only the current view and
   placing on a tile off screen fails, which cost Claude Haiku 5.5 its iron mines: search
   the whole map's tile data and let `build_structure` move the camera itself. Choosing
-  the Stockpile also moves the view back to the first stockpile, so a stockpile placed by
-  tile away from it fails and the suggested remedy repeats the failure, which slowed
-  Claude Opus 5.5's storage toward its iron mines: bring the target back into view after
-  choosing the building. The rule that ends a run after four replies without tools ended
-  GLM 5.3 Flash's run 5 game seconds early, so the last seconds should not count.
+  the Stockpile or the Granary also moves the view back to the first one, so one placed
+  by tile away from it fails and the suggested remedy repeats the failure, which slowed
+  Claude Opus 5.5's storage toward its iron mines and GPT-6.1 Sol's granaries: bring the
+  target back into view after choosing the building. The rule that ends a run after four
+  replies without tools ended GLM 5.3 Flash's run 5 game seconds early, so the last
+  seconds should not count.
 - **Market reports from the 1.5 runs.** `market_trade` reports a trade's gold change as
   gold after minus gold before, so tax that lands during a trade hides part of its cost
   (25 cheese bought by Kimi K3 showed as 37 gold, not 200): report units at the market's
