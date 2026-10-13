@@ -20,6 +20,7 @@
     { "id": "20261013T114929-fd6cd415", "model": "meta/muse-wonder", "map": "Large Barren Desert" },
     { "id": "20261013T125243-bbf6d292", "model": "meta/muse-wonder", "map": "Large Barren Desert" },
     { "id": "20261013T145911-ba9a8dc7", "model": "meta/muse-wonder", "map": "Large Barren Desert" },
+    { "id": "20261013T191602-69ff6166", "model": "google/gemini-4-argon", "map": "Large Barren Desert" },
     { "id": "20261012T233119-e8fb78d0", "model": "z-ai/glm-5.3-flash", "map": "The Sinkhole" },
     { "id": "20261013T002522-ef6aa9c5", "model": "claude-haiku-5-5", "map": "The Sinkhole" },
     { "id": "20261013T011208-7dbd615d", "model": "openai/gpt-6-luna", "map": "The Sinkhole" },
