@@ -10,6 +10,7 @@
   <a href="docs/setup.md"><img src="docs/assets/button-start.png" alt="Get started" width="192" height="48"></a>
   <a href="docs/README.md"><img src="docs/assets/button-docs.png" alt="Documentation" width="192" height="48"></a>
   <a href="docs/benchmark.md"><img src="docs/assets/button-benchmark.png" alt="The benchmark" width="192" height="48"></a>
+  <a href="https://crusbench.com/#score"><img src="docs/assets/button-results.png" alt="See the results" width="192" height="48"></a>
 </p>
 
 Crusader Arena tests AI models by having them play **Stronghold Crusader: Definitive
