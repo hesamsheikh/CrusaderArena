@@ -12,6 +12,12 @@
       "fingerprint": "e5d9a165549e00ff5352d4bee185398365f0c48120772bc275ff4d3785bda09d",
       "commit": "fe9754670075909d183d633615a137602acb47f9",
       "since": "2026-10-11"
+    },
+    "The Sinkhole construction": {
+      "version": "1.6.2",
+      "fingerprint": "6cc0c01622622bde8e5bc0a271af08f8413efd4576a44c1060182f4e21b8ba56",
+      "commit": "1e52aca02de415323e1034aebb724746b5770941",
+      "since": "2026-10-13"
     }
   }
 }
