@@ -9,6 +9,7 @@
     { "id": "20261011T175318-657a6989", "model": "openai/gpt-6.1-sol", "map": "Oasis by the Sea" },
     { "id": "20261012T154553-38bd30ef", "model": "claude-opus-5-5", "map": "Oasis by the Sea" },
     { "id": "20261013T103842-22858aa0", "model": "meta/muse-wonder", "map": "Oasis by the Sea" },
+    { "id": "20261013T170242-f04ff873", "model": "google/gemini-4-argon", "map": "Oasis by the Sea" },
     { "id": "20261012T094211-1fcf305a", "model": "claude-haiku-5-5", "map": "Large Barren Desert" },
     { "id": "20261012T101643-b291d04d", "model": "z-ai/glm-5.3-flash", "map": "Large Barren Desert" },
     { "id": "20261012T110247-91bd9173", "model": "claude-sonnet-5-5", "map": "Large Barren Desert" },
