@@ -216,6 +216,20 @@ between September and October 2026.
 - Timed runs with game-time budgets, pausing during thinking, compaction and the
   final pause, with several models including Kimi K3 and GLM 5.3 Flash.
 - Unattended episodes end to end: launch, load by name, run, scorecard, close.
+- The 21 runs in the evaluation (seven models on each of Oasis by the Sea, Large Barren
+  Desert and The Sinkhole, benchmarks 1.5.0 to 1.6.2, 2026-10-11 to 2026-10-13), from
+  their event logs:
+  - All played their whole budget (33⅓ game minutes, 45 on The Sinkhole) except GLM 5.3
+    Flash's on Oasis by the Sea, which four replies without tool calls ended about 5 game
+    seconds early (from 1.6.0 the rest of the budget passes instead). None was cut short by
+    the game.
+  - The host's game-speed step ran before every budget and measured 39.4 to 40.4 ticks a
+    second. The saves already run at 40, so it pressed no key.
+  - `observe` waited out the rest of the minimum turn 31 times in 14 runs and said so in
+    its result. Every reply's last tool result carried the "Game time left" line.
+  - The collector watchdog broke 16 stalls in 12 runs. Each showed the wrapped
+    thread-stack total of the Wine bug (see Reader), and each forced collection set the
+    collection count moving again.
 - The [results](benchmark.md#the-results) and the [interview](benchmark.md#the-interview),
   on 2026-10-10: three dry runs of "Oasis by the Sea benchmark start" wrote their
   scorecards and results in folders of their own, and a 3-game-minute GLM 5.3 Flash
@@ -408,11 +422,12 @@ between September and October 2026.
   offline encoding experiments, not reproduced by this test suite. Neither the
   compaction nor the decode-from-video path has run against a real recorded run or a
   live episode.
-- The fixed game speed in an agent run: the host setting it before the budget starts,
-  and failing when the keys do nothing or step past 40. The same setting worked live
-  for the idle baseline (above); an agent run has not used it yet.
-- `observe` and `wait_and_observe` waiting out the minimum turn length, and the "Game
-  time left" line after the last tool result of each reply. Not yet run live.
+- The fixed game speed's key presses in an agent run, and its failures when the keys do
+  nothing or step past 40. Live, the idle baseline pressed the keys (above), and every
+  agent run so far started at 40 and pressed none.
+- `wait_and_observe` waiting out the minimum turn length when asked to wait less than the
+  turn still owes. No live run has asked for that yet; `observe`'s wait has run live
+  (above).
 - Context compaction across many turns, stop and deadline handling, and failure
   paths, with fake models and game devices (`npm test`). This includes the retries
   added before the first 25-game-minute run: failed handoff and playbook requests,
@@ -590,10 +605,10 @@ between September and October 2026.
 - **Mouse-wheel camera zoom** does not work through the bridge (use `Z` and `X`).
 - **Other setups:** other Linux distributions and desktops, native Wayland, Windows
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
-- **Long runs:** three 25-game-minute episodes have run in full with the collector
-  watchdog (above), too few to call full-length runs reliable.
-- **The current prompt** has been used only in runs of up to 5 game minutes, and no
-  model has yet played with the text-only menu guide.
+- **Agent runs on the NVIDIA GPU:** none yet. Only a 45-game-minute do-nothing run has
+  played there (above).
+- **The text-only menu guide** that a fresh checkout uses: no model has played with it
+  yet.
 - **Benchmark:** there is no military scoring. Early single-model pilots used older
   harness versions and are not comparable.
 

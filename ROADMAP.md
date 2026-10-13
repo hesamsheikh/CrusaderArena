@@ -11,20 +11,27 @@ two. The project website shows this file, so keep that shape.
 ## Now
 
 - **Find the bugs we have not hit yet.** Run more models for longer, and try in the live
-  game what is so far only tested in code: the fixed game speed in an agent run and the
-  minimum turn length while waiting.
-- **Full-length runs.** Keep long runs reliable. The game's garbage collector can stall
-  under Proton, which ended earlier long runs; with the reader's watchdog against it, no
-  published episode on version 1.5 has been cut short by the game.
+  game what is so far only tested in code, starting with the 1.6.3 fixes: `place_near`
+  placing a first Armory, purchases counted while the town eats and pays taxes, and the
+  second try at the end-of-run save.
+- **Full-length runs.** Keep long runs reliable. None of the 21 runs in the evaluation was
+  cut short by the game: the reader's watchdog broke 16 garbage-collector stalls in 12 of
+  them. The game now renders on the game machine's NVIDIA GPU, where only a do-nothing run
+  has played so far.
 - **A better harness.** Improve the tools, prompt and context where recorded runs show
   models getting stuck, make the two machines easier to set up, and play with the
   text-only menu guide that a fresh checkout uses, which no model has used yet.
 
 ## Next
 
-- **Other maps.** Scored benchmarks on more of the game's maps, beyond Oasis by the Sea
-  and Large Barren Desert, starting with the two diagnostic scenarios already defined
-  (Cactus Valley and A Mightier Oasis).
+- **Tool fixes from the 1.6.2 runs.** `set_workshop` still opened a building drawn in
+  front of the workshop four times on The Sinkhole (three times a tall Armory), after
+  trying the footprint's back corner and roof: try its side corners too.
+  `demolish_building` by tile may hit a building in front of its target the same way,
+  which needs a live test first.
+- **Other maps.** Scored benchmarks on more of the game's maps beyond Oasis by the Sea,
+  Large Barren Desert and The Sinkhole, each with a person's reference game and a
+  do-nothing baseline.
 
 ## Later
 
