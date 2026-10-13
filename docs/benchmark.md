@@ -140,6 +140,15 @@ moving a round changes no version.
   land in this checkout's `harness/runtime/` as usual. This checkout's host stays up but
   does not list the run until it restarts; do not restart a host while the other one has
   a run going, since a starting host marks unfinished runs interrupted.
+- **What an earlier version gets from this checkout.** The round's code plays as its
+  version recorded it, with two additions that change how a run is carried, not what it
+  plays or scores:
+  - Its host starts with [`round-preload.ts`](../harness/server/round-preload.ts), which
+    adds the [prompt cache key](context.md#tokens-and-caching) to its requests for models
+    that need one. The key is part of the request, not of what the model reads.
+  - A version made before the [run overlay](harness.md#run-overlay) (1.5.6 and earlier)
+    gets this checkout's `overlay.py` on the game machine, which that version's files do
+    not include, and this checkout's runner feeds it from the round's host.
 - **A new round.** A benchmark's first valid run sets its round to the checkout's
   version. `--new-round` plays on the checkout's version whatever the round, and moves the
   round there once the run is valid: that is how a new version starts a round, as when

@@ -29,6 +29,13 @@ two. The project website shows this file, so keep that shape.
   trying the footprint's back corner and roof: try its side corners too.
   `demolish_building` by tile may hit a building in front of its target the same way,
   which needs a live test first.
+- **Version only the benchmark.** Split what a run plays and scores (the prompt, the
+  tools and what they do, the run rules, scoring and what the reader observes) from the
+  harness that carries it (model requests and caching, cost, the host and dashboard,
+  recording, the overlay), fingerprint only the first, and play a round from the newest
+  checkout with only its benchmark files taken from the round's commit. Earlier rounds
+  would then get harness fixes without changing version, instead of the shims that bring
+  the prompt cache key and the run overlay to 1.5.1, 1.5.6 and 1.6.2 today.
 - **Other maps.** Scored benchmarks on more of the game's maps beyond Oasis by the Sea,
   Large Barren Desert and The Sinkhole, each with a person's reference game and a
   do-nothing baseline.

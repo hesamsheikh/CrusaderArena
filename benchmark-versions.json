@@ -216,6 +216,12 @@
       "fingerprint": "f3b1a121ed6b496355791be1164c70617a49a31074ba17fcd79a2d49f972540b",
       "date": "2026-10-13",
       "note": "First Armory by place_near from the tile map, fresh frames while probing, storage no-room remedy only for its own anchor, purchases counted when stock rose and gold fell, a second end-of-run save try"
+    },
+    {
+      "version": "1.6.3",
+      "fingerprint": "96c4682877ca393cfbdbe24694ecef8c225e721cf0a11a8a580a1675caf13a95",
+      "date": "2026-10-13",
+      "note": "Meta models get a prompt cache key, and rounds on earlier versions get it and the run overlay through a host preload and a runner feed; what a run plays and scores is unchanged"
     }
   ]
 }

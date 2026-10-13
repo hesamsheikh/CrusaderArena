@@ -244,6 +244,16 @@ separate from provider pinning (the "Providers, allow fallbacks" model setting, 
 upstream providers; session affinity additionally favors the same connection among
 whichever providers are allowed.
 
+Meta's models (model IDs starting `meta/`, such as Muse Wonder) need more: Meta keeps
+the prompt cache on each of its server replicas and sends requests that share a
+`prompt_cache_key` to the same replica, and without one a run's requests spread over
+replicas. The host adds the run's id as the key to those requests
+([`cache-key.ts`](../harness/server/cache-key.ts)); a round played on an earlier version
+gets it too ([Rounds](benchmark.md#rounds)). Checked against OpenRouter on 2026-10-13:
+without the key, 3 of a Muse Wonder run's first 11 requests read nothing from the cache,
+and a 15-turn test conversation had 79% of its input cached; with it, every follow-up in
+the same test read the cache.
+
 Most providers cache repeated prompt prefixes on their own, which the fixed system
 prompt, the pinned opening and the unchanged history are designed to benefit. Claude
 models through OpenRouter (model IDs starting `anthropic/`) cache only what the

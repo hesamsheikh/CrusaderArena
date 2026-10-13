@@ -67,6 +67,12 @@ between September and October 2026.
 - The run overlay, shown with a test status: on the screen above the game, absent from
   the game-window capture the agent sees, never active, with an empty input region, and
   with keys from the host still reaching the game. Not yet watched through a model's run.
+- The runner's overlay feed for a round on an earlier version, on 2026-10-13 through
+  Muse Wonder's run on Oasis by the Sea at 1.5.1 (checked over SSH, not on the screen):
+  this checkout's `overlay.py` copied to the game machine before the run, one feed and
+  one overlay process running, and the feed's clock, tool calls, cost and figures under
+  a second old. A feed left by a start that failed earlier the same day was still
+  running with its runner gone; feeds now exit after 60 seconds without a line.
 
 **Tools**
 - `market_trade` in the game's own steps (1.5.0), on 2026-10-11. Clicking the
@@ -180,6 +186,10 @@ between September and October 2026.
     its name. The other six saved normally.
 
 **Runs**
+- The prompt cache key for Meta's models, on 2026-10-13: Muse Wonder's run on Oasis by
+  the Sea at 1.5.1, its host given the key by `round-preload.ts`, read the cache on all
+  106 requests, 96.9% of its input tokens. Its run the same morning without the key
+  missed on 3 of its first 11 requests (67% of input tokens cached).
 - The Large Barren Desert scenario's map facts, on 2026-10-11, from "Large Barren Desert
   benchmark start" loaded without an agent: 5,000 gold, 192 wood (the stockpile's four
   piles of 48 full) and 55 meat about 27 game seconds after load, with the rest of the
@@ -347,6 +357,14 @@ between September and October 2026.
   the display path was FreeRDP, which GNOME's remote desktop uses.
 
 ## Tested in code only
+
+- The shims that bring two harness changes to rounds played on earlier versions
+  (`cache-key.test.ts`, `overlay-feed.test.ts`, `test_overlay.py`; both also used in a
+  run, above): the key added to the harness's own requests as Pi sends them and by the
+  preload through an earlier host's global fetch, with none for other models; the
+  overlay's figures read from an earlier host's state, its clock run on from the game
+  tick between that host's updates, tool calls counted from the run's events, and the
+  feed's figures used only while fresh.
 
 - The 1.6.3 fixes (`model-observation.test.ts`, `remedies.test.ts`, `economy.test.ts`,
   `game-save.test.ts`), not yet run live:

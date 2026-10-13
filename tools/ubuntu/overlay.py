@@ -8,16 +8,28 @@ screenshots and the run videos copy only the game window's own image (its compos
 the overlay is in neither, and the bridge sends input to the game window directly. Started by the
 bridge's monitor (control-status.py) with the control venv's Python: Pillow draws the panel and
 python-xlib shows it. It reads the bridge's status.json, shows itself while a run has a game
-clock, and exits once the bridge has been gone for 30 seconds."""
+clock, and exits once the bridge has been gone for 30 seconds.
+
+A round played on a version made before the overlay has a monitor that neither starts it nor
+passes on a game clock. For those the runner feeds it (`overlay.py --feed`, from
+harness/server/overlay-feed.ts): status lines on stdin, kept in overlay-feed.json, whose figures
+replace status.json's while fresh; the feed starts the overlay when a run's clock appears."""
 import fcntl
 import json
 import os
 from pathlib import Path
+import select
+import subprocess
+import sys
 import time
 
 BASE = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'crusader-arena'
 WIDTH, HEIGHT = 660, 88
 GONE_SECONDS = 30
+FEED_SECONDS = 4
+FEED_KEYS = ('phase', 'model', 'run', 'turns', 'tokens', 'clock', 'tool_calls', 'cost', 'stats')
+START_EVERY_SECONDS = 10
+FEED_IDLE_SECONDS = 60
 FONTS = Path('/usr/share/fonts/truetype/dejavu')
 INK = (237, 224, 204)
 
@@ -36,6 +48,88 @@ def clock_text(seconds):
 
 def bridge_live(status, now):
     return bool(status.get('connected')) and now - status.get('heartbeat', 0) < 4
+
+
+def with_feed(status, feed, now):
+    """The bridge's status with the runner's feed figures over it while the feed is fresh; the
+    bridge's own fields (connected, heartbeat) still say whether it is there."""
+    at = feed.get('at')
+    if not isinstance(at, (int, float)) or now - at >= FEED_SECONDS:
+        return status
+    return {**status, **{k: feed[k] for k in FEED_KEYS if k in feed}}
+
+
+def atomic(file, data):
+    tmp = file.with_suffix('.tmp')
+    tmp.write_text(json.dumps(data))
+    tmp.chmod(0o600)
+    tmp.replace(file)
+
+
+def overlay_running():
+    with (BASE / 'overlay.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        return False
+
+
+def stdin_lines(idle=FEED_IDLE_SECONDS, fd=0):
+    """The runner's lines as they arrive, ending at end of input or after `idle` seconds without
+    any: a feed whose runner went away without closing its connection still exits (one from a
+    failed start outlived its runner, 2026-10-13)."""
+    rest = b''
+    while True:
+        ready, _, _ = select.select([fd], [], [], idle)
+        if not ready:
+            return
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            return
+        *lines, rest = (rest + chunk).split(b'\n')
+        for line in lines:
+            yield line.decode('utf-8', 'replace')
+
+
+def feed(lines=None, start=None):
+    """Keeps each status line from the runner in overlay-feed.json and starts the overlay, at most
+    every START_EVERY_SECONDS, while a run has a clock and none is up. On its way out it removes
+    the file only if it was the last to write it."""
+    BASE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    start = start or (lambda: subprocess.Popen([sys.executable, str(Path(__file__).resolve())], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True))
+    file, started, me = BASE / 'overlay-feed.json', 0.0, os.getpid()
+    try:
+        for line in stdin_lines() if lines is None else lines:
+            try:
+                data = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(data, dict):
+                continue
+            now = time.time()
+            atomic(file, {**{k: data[k] for k in FEED_KEYS if k in data}, 'at': now, 'feed': me})
+            if isinstance(data.get('clock'), dict) and now - started >= START_EVERY_SECONDS and not overlay_running():
+                started = now
+                start()
+    finally:
+        if read(file).get('feed') == me:
+            file.unlink(missing_ok=True)
+
+
+def adopt_game_display():
+    """DISPLAY and XAUTHORITY from the game process, found as the bridge finds them, for an
+    overlay the feed started over SSH without them."""
+    from runpy import run_path
+    _, env = run_path(str(Path(__file__).with_name('run-proton.py')))['game_environment']()
+    for key in ('DISPLAY', 'XAUTHORITY'):
+        if key in env:
+            os.environ[key] = env[key]
+    if not Path(os.environ.get('XAUTHORITY', '/missing')).is_file():
+        auths = list(Path(f'/run/user/{os.getuid()}').glob('.mutter-Xwaylandauth.*'))
+        if len(auths) == 1:
+            os.environ['XAUTHORITY'] = str(auths[0])
 
 
 def number(value):
@@ -158,6 +252,8 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         return
+    if not os.environ.get('DISPLAY'):
+        adopt_game_display()
     from Xlib import X, Xutil, display
     from Xlib.ext import shape
     shown = display.Display()
@@ -179,7 +275,7 @@ def main():
     seen, mapped, last, data = time.time(), False, None, b''
     while True:
         now = time.time()
-        status = read(BASE / 'status.json')
+        status = with_feed(read(BASE / 'status.json'), read(BASE / 'overlay-feed.json'), now)
         if bridge_live(status, now):
             seen = now
         elif now - seen > GONE_SECONDS:
@@ -205,4 +301,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['--feed']:
+        feed()
+    else:
+        main()

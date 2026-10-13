@@ -288,6 +288,19 @@ directly. A recording of the whole screen, such as a stream, shows it. It runs o
 control venv's Python, drawing the panel with Pillow and showing it with python-xlib, so
 it needs nothing beyond the bridge's own setup.
 
+A [round](benchmark.md#rounds) played on a version made before the overlay (1.5.6 and
+earlier) has a host that sends no game clock and a monitor that starts no overlay. For
+those, `npm run episodes` copies this checkout's `overlay.py` to the game machine and
+feeds it itself ([`overlay-feed.ts`](../harness/server/overlay-feed.ts)): once a second it
+reads the round's host state and sends the panel's figures over its own SSH connection to
+`overlay.py --feed`, which keeps the latest in `overlay-feed.json` and starts the overlay
+when a run's clock appears, and exits after 60 seconds without a line; the overlay takes
+the display from the game process, as the bridge does. While that feed is fresh (4
+seconds) its figures replace the status file's; the bridge's own status still decides
+whether the overlay shows. That host updates the run's game time only when a turn or
+tool changes it, so in between the feed runs the clock on from the reader's game tick.
+Tool calls are counted from the run's `events.jsonl`.
+
 ## Development checks
 
 ```bash

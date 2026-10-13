@@ -12,6 +12,7 @@ import type { ObservationCycle, Session } from "./session.js";
 import { minutesSeconds, requestTimeout } from "./session.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
+import { cacheKeyFetch } from "./cache-key.js";
 import {
   buildableNames,
   buildingCost,
@@ -301,8 +302,10 @@ export function costReader(
   onCost: (dollars: number, upstream?: string) => void,
   inner: typeof fetch = fetch,
 ): typeof fetch {
+  // Every OpenRouter request passes here: models that need a prompt cache key get the run's (cache-key.ts).
+  const send = cacheKeyFetch(inner);
   return async (input, init) => {
-    const response = await inner(input, init);
+    const response = await send(input, init);
     if (!response.ok || !response.body) return response;
     const [copy, body] = response.body.tee();
     void readCost(copy, onCost);

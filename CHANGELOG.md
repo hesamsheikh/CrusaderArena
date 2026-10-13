@@ -26,6 +26,12 @@ this file lists every version in `benchmark-versions.json`, with its date.
   GPU. That stall no longer occurs (see [Status](docs/status.md#checked-in-the-live-game)).
   A do-nothing run on The Sinkhole scores the same on both GPUs at the same game speed, and
   the machine has about 3 GB more memory available while the game runs.
+- Requests to Meta's models through OpenRouter carry the run's id as a prompt cache key.
+  Meta keeps its cache per server replica and routes by the key; without it, 3 of a Muse
+  Wonder run's first 11 requests missed the cache. Rounds played on earlier versions get
+  the key too, from a preload their host starts with.
+- The run overlay shows on rounds played on versions made before it (1.5.6 and earlier):
+  the runner copies its overlay to the game machine and feeds it from the round's host.
 
 ## [1.6.3] - 2026-10-13
 

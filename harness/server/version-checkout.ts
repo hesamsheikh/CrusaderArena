@@ -104,13 +104,17 @@ export async function freePort(from: number, tries = 20) {
   throw new Error(`No free port between ${from} and ${from + tries - 1} for the round's host.`);
 }
 
+/** This checkout's request handling for an earlier round's host (round-preload.ts). */
+export const ROUND_PRELOAD = path.join(root, "harness/server/round-preload.ts");
+
 /**
  * Starts the worktree's host on `port`, its output in `host.log` there, and waits until it answers
- * with the round's version.
+ * with the round's version. It loads ROUND_PRELOAD first, which changes how requests travel
+ * (the prompt cache key), never what the round plays.
  */
 export async function startHost(dir: string, port: string, round: Round, log: (line: string) => void) {
   const out = openSync(path.join(dir, "host.log"), "a");
-  const child = spawn(process.execPath, [path.join(dir, "node_modules/tsx/dist/cli.mjs"), "harness/server/index.ts"], {
+  const child = spawn(process.execPath, [path.join(dir, "node_modules/tsx/dist/cli.mjs"), "--import", ROUND_PRELOAD, "harness/server/index.ts"], {
     cwd: dir, env: { ...process.env, PORT: port }, stdio: ["ignore", out, out],
   });
   const stop = () => stopHost(child);
@@ -162,11 +166,11 @@ function ssh(command: string, input?: Buffer) {
   });
 }
 
-/** The checkout's game-machine files whose copy on the game machine is missing or different. */
-export async function gameMachineDifferences(dir: string) {
+/** The checkout's game-machine files (or those of `only`) whose copy on the game machine is missing or different. */
+export async function gameMachineDifferences(dir: string, only?: string[]) {
   const local = gameMachineFiles(dir);
   const { root: remoteRoot } = gameHost();
-  const files = [...local.keys()];
+  const files = [...local.keys()].filter((file) => !only || only.includes(file));
   const { out } = await ssh(`cd ${quote(remoteRoot)} && sha256sum -- ${files.map(quote).join(" ")} 2>/dev/null; true`);
   const remote = new Map(out.split("\n").filter((line) => /^[0-9a-f]{64}  /.test(line)).map((line) => [line.slice(66), line.slice(0, 64)] as const));
   return files.filter((file) => remote.get(file) !== local.get(file));
@@ -181,11 +185,8 @@ export async function syncGameMachine(dir: string, log: (line: string) => void) 
   const differ = await gameMachineDifferences(dir);
   if (!differ.length) return differ;
   log(`Game machine: copying ${differ.length} file(s) from ${path.relative(root, dir) || "this checkout"}: ${differ.slice(0, 6).join(", ")}${differ.length > 6 ? ", …" : ""}`);
-  const tar = spawnSync("tar", ["-C", dir, "-cf", "-", ...differ], { maxBuffer: 256 * 1024 * 1024 });
-  if (tar.status !== 0) throw new Error(`tar failed: ${tar.stderr.toString().trim()}`);
+  await copyToGameMachine(dir, differ);
   const { root: remoteRoot } = gameHost();
-  const copied = await ssh(`mkdir -p ${quote(remoteRoot)} && tar -C ${quote(remoteRoot)} -xf -`, tar.stdout);
-  if (copied.code !== 0) throw new Error(`Copying to the game machine failed: ${copied.out.trim().slice(-300)}`);
   if (differ.some((file) => !file.startsWith("tools/ubuntu/"))) {
     log("Game machine: rebuilding the reader (build/ubuntu-windows)");
     const r = quote(remoteRoot);
@@ -195,4 +196,32 @@ export async function syncGameMachine(dir: string, log: (line: string) => void) 
   const left = await gameMachineDifferences(dir);
   if (left.length) throw new Error(`The game machine still differs after copying: ${left.join(", ")}`);
   return differ;
+}
+
+/** Copies `files` from the checkout at `dir` to the same paths on the game machine. */
+async function copyToGameMachine(dir: string, files: string[]) {
+  const tar = spawnSync("tar", ["-C", dir, "-cf", "-", ...files], { maxBuffer: 256 * 1024 * 1024 });
+  if (tar.status !== 0) throw new Error(`tar failed: ${tar.stderr.toString().trim()}`);
+  const { root: remoteRoot } = gameHost();
+  const copied = await ssh(`mkdir -p ${quote(remoteRoot)} && tar -C ${quote(remoteRoot)} -xf -`, tar.stdout);
+  if (copied.code !== 0) throw new Error(`Copying to the game machine failed: ${copied.out.trim().slice(-300)}`);
+}
+
+/** The run overlay on the game machine (docs/harness.md#run-overlay). */
+export const OVERLAY_FILE = "tools/ubuntu/overlay.py";
+
+/**
+ * Whether the round's version, checked out at `dir`, has no run overlay of its own: its host sends
+ * no game clock and its monitor starts none, so this checkout's runner feeds one (overlay-feed.ts).
+ */
+export const needsOverlayFeed = (dir: string) => !gameMachineFiles(dir).has(OVERLAY_FILE);
+
+/**
+ * Copies this checkout's overlay to the game machine for a round without its own. That version's
+ * files do not include it, so its sync and its runner's check leave it alone.
+ */
+export async function installOverlay(log: (line: string) => void) {
+  if (!(await gameMachineDifferences(root, [OVERLAY_FILE])).length) return;
+  log(`Game machine: copying this checkout's ${OVERLAY_FILE} for the run overlay`);
+  await copyToGameMachine(root, [OVERLAY_FILE]);
 }

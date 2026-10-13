@@ -48,7 +48,8 @@ import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { MENU_PROBES, menuScreen, type MenuScreen } from "./menu-screen.js";
 import { forwardedArgs, readRounds, roundPlan, writeRound, type Round } from "./rounds.js";
-import { freePort, gameMachineDifferences, prepareWorktree, startHost, stopHost, syncGameMachine } from "./version-checkout.js";
+import { freePort, gameMachineDifferences, installOverlay, needsOverlayFeed, prepareWorktree, startHost, stopHost, syncGameMachine } from "./version-checkout.js";
+import { startOverlayFeed } from "./overlay-feed.js";
 import { classify, counts, episodeSaveName, humanSaveName, nextAttempt, nextEpisode, resultOf, settingsDifferences, type Attempt, type SeriesRecord, type SeriesSettings } from "./series.js";
 import { TICKS_PER_GAME_SECOND, costProblem, modelSettings, runConfigSchema, type Frame, type GameAction, type GameSpeedSetting, type ModelProfile, type Run, type RunConfig, type RunSeries, type State } from "../shared/protocol.js";
 
@@ -1003,8 +1004,12 @@ async function playElsewhere(round: Round) {
   log(`${opts.resume ? "This series" : `Benchmark "${setting("benchmark")}"`} plays on its round's version ${round.version} (since ${round.since}), not this checkout's; running it from ${round.commit.slice(0, 7)}. --new-round would move the round to this version.`);
   const dir = await prepareWorktree(round, log);
   await syncGameMachine(dir, log);
+  // A version made before the run overlay gets this checkout's, fed by this runner.
+  const feedOverlay = needsOverlayFeed(dir);
+  if (feedOverlay) await installOverlay(log).catch((e) => log(`Run overlay not installed: ${e instanceof Error ? e.message : e}`));
   const port = String(await freePort(Number(opts.port) + 1));
   const host = await startHost(dir, port, round, log);
+  const stopFeed = feedOverlay ? startOverlayFeed(port, path.resolve("harness/runtime/runs"), log) : undefined;
   try {
     const child = spawn(process.execPath, [path.join(dir, "node_modules/tsx/dist/cli.mjs"), "harness/server/episodes.ts", ...forwardedArgs(process.argv.slice(2), port)],
       { cwd: dir, env: { ...process.env, PORT: port }, stdio: "inherit" });
@@ -1014,6 +1019,7 @@ async function playElsewhere(round: Round) {
     for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => child.kill(signal));
     return await new Promise<number>((resolve) => child.on("close", (code) => resolve(code ?? 1)));
   } finally {
+    stopFeed?.();
     await stopHost(host);
     log(`${round.version} host stopped`);
   }
