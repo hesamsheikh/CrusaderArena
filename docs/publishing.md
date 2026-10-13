@@ -173,8 +173,10 @@ sell prices in `harness/server/market-prices.ts`.
 The project website is a static site built from this dataset and from this repository's
 `ROADMAP.md`, `CHANGELOG.md` and `docs/`, each read at its newest commit when the site is
 built. Its leaderboards and charts use only the series in `evaluation.json`, and of a model's
-series on one map only those on the newest patch; the others keep their run pages. A Vercel
-deploy hook rebuilds it. These call it:
+series on one map only those on the newest patch; the others keep their run pages. A model can
+have several listed series on one map (each played with no memory of the others): they make one
+row, scored on the mean of their episodes, and the overall score still counts each map once. A
+Vercel deploy hook rebuilds it. These call it:
 
 - **This repository.** `.github/workflows/notify-website.yml` calls the hook on a push to
   `main` that changes `docs/`, `ROADMAP.md` or `CHANGELOG.md`, and by hand from the Actions
