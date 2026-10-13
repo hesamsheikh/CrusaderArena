@@ -28,6 +28,7 @@
     { "id": "20261013T043028-24600200", "model": "claude-opus-5-5", "map": "The Sinkhole" },
     { "id": "20261013T155349-d59dad1a", "model": "claude-opus-5-5", "map": "The Sinkhole" },
     { "id": "20261013T052713-e8ad024c", "model": "kimi-k3", "map": "The Sinkhole" },
-    { "id": "20261013T134313-e5587f6f", "model": "meta/muse-wonder", "map": "The Sinkhole" }
+    { "id": "20261013T134313-e5587f6f", "model": "meta/muse-wonder", "map": "The Sinkhole" },
+    { "id": "20261013T175755-f862e633", "model": "google/gemini-4-argon", "map": "The Sinkhole" }
   ]
 }
