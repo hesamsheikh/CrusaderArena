@@ -318,6 +318,19 @@ between September and October 2026.
   was run again), not checked against Anthropic's billing. A 60,000-token
   budget is too small for Claude: its fresh conversation after a compaction (about
   39,300 tokens) did not fit under 65% of it, which ended that run with an error.
+- The game on the test laptop's NVIDIA GPU, on 2026-10-13 with Ubuntu kernel 7.0.0-38
+  and NVIDIA driver 610.57.04, the harness disconnected except where named: it reached
+  the main menu with DXVK (three launches on Proton Experimental 11, one on Proton
+  9.0-4) and with WineD3D/OpenGL, and `nvidia-smi` listed it as a graphics client with
+  about 3 GB. A dry run loaded "The Sinkhole start" 52 seconds after launch, and a
+  45-game-minute do-nothing run on it scored 2,195 at 39.9 ticks a second, as on the
+  Intel GPU the day before. In September, with kernel 7.0.0-31, the game stalled at the
+  end of loading on the NVIDIA GPU with both APIs, on Proton 9.0-4 and Proton
+  Experimental alike, with or without the reader. The cause was not found. Proton is
+  ruled out (the same Proton 9.0-4 build stalled then and loads now), and so are the
+  game, the NVIDIA driver, Mesa, Mutter, Xwayland and the Steam client, which did not
+  change in between. The kernel update is the likeliest fix; the only other change near
+  the display path was FreeRDP, which GNOME's remote desktop uses.
 
 ## Tested in code only
 
@@ -600,8 +613,6 @@ between September and October 2026.
   [collector watchdog](reader.md#collector-watchdog) forces a collection after 20
   seconds of stall, which ended that stall at no cost to the run. The memory guard
   stays as the backstop.
-- **NVIDIA graphics.** On the test laptop the game stalled at startup on the NVIDIA
-  GPU; the Intel GPU with Vulkan works. See [Setup](setup.md#known-issues).
 - **Map-wide structure count.** The reader's structure count includes other players,
   so it cannot attribute a change to the agent on maps with opponents.
 - **Reads are not atomic.** Each sample is read twice and checked, but it is not a

@@ -154,13 +154,19 @@ For unattended benchmark episodes, see [The benchmark](benchmark.md#running-epis
 
 - **Start the host from a terminal on macOS.** Started inside another app, it can be
   denied local network access and fail with "No route to host".
-- **NVIDIA graphics on hybrid laptops.** On the test laptop (Intel and NVIDIA RTX 2060
-  graphics, NVIDIA driver 610.57.04, GNOME Wayland), the game often stalled on its
-  loading screen when it ran on the NVIDIA GPU, with both OpenGL and Vulkan. Running
-  it on the Intel GPU with Vulkan worked. The test used Mesa's
+- **NVIDIA graphics on hybrid laptops.** The game renders on the NVIDIA GPU by default,
+  and the test laptop (Intel and NVIDIA RTX 2060 graphics, NVIDIA driver 610.57.04,
+  GNOME Wayland) runs it that way, with no launch options. With Ubuntu's kernel
+  7.0.0-31 the game stalled at the end of its loading screen whenever it ran on the
+  NVIDIA GPU, with both Vulkan and OpenGL; with 7.0.0-38 it loads normally (see
+  [Status](status.md#checked-in-the-live-game)). If it stalls there, run it on the
+  integrated GPU with Mesa's
   [device selection variables](https://docs.mesa3d.org/envvars.html#vulkan-mesa-device-select-layer-environment-variables)
-  (`MESA_VK_DEVICE_SELECT=<vendor>:<device>` and
-  `MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE=1`) with that laptop's Intel IDs.
+  as Steam launch options:
+  `MESA_VK_DEVICE_SELECT=<vendor>:<device> MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE=1 %command%`,
+  with the integrated GPU's PCI IDs from `lspci -nn`. On the integrated GPU the game's
+  graphics memory comes out of system RAM: at the main menu the test laptop had about
+  3 GB less memory available than with the NVIDIA GPU.
 - **Garbage-collector stalls.** The game's garbage collector can stop collecting, and
   its memory then grows 300–470 MiB a minute, paused or running (see
   [Status](status.md#known-issues)). The reader's

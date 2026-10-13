@@ -17,6 +17,16 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- The game machine renders the game on its NVIDIA GPU instead of the integrated Intel GPU,
+  which it used since September because the game stalled at the end of loading on the NVIDIA
+  GPU. That stall no longer occurs (see [Status](docs/status.md#checked-in-the-live-game)).
+  A do-nothing run on The Sinkhole scores the same on both GPUs at the same game speed, and
+  the machine has about 3 GB more memory available while the game runs.
+
 ## [1.6.3] - 2026-10-13
 
 Fixes for what the seven 1.6.2 runs on The Sinkhole showed: none made a run invalid, but they
