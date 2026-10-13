@@ -23,8 +23,9 @@ game accepts, keep workers fed and housed, and grow.
   run.
 - **Same version.** Every run records its [benchmark version](#versions) (such as
   `1.0.0`), which fixes the prompts, tools, run rules, scoring and the code behind
-  them. Compare runs that share a major and minor version. Each run also records the harness commit,
-  hashes of its prompt and tools, the preparation images and the model's settings.
+  them. Each run also records the harness commit, hashes of its prompt and tools, the
+  preparation images and the model's settings. The website's leaderboard averages a model's
+  listed games on a map whatever their version ([publishing](publishing.md#the-website)).
 
 ## Scenarios
 
@@ -70,11 +71,11 @@ A benchmark version names one fixed benchmark: the same prompts, tools, run rule
 scoring and the code that carries them out. Versions follow semantic versioning,
 `MAJOR.MINOR.PATCH`, starting at `1.0.0`:
 
-| Part | Raised when | Comparable runs |
-| --- | --- | --- |
-| Major | The task or the scoring changes | Not across majors |
-| Minor | What the model is told or can do changes: prompts, tool definitions, run rules | Within one minor version |
-| Patch | A fix to the harness, or to what the model is shown on one map; the task and the scoring stay the same | Across patches of one minor version, unless the changelog says a map's runs were played again |
+| Part | Raised when |
+| --- | --- |
+| Major | The task or the scoring changes |
+| Minor | What the model is told or can do changes: prompts, tool definitions, run rules |
+| Patch | A fix to the harness, or to what the model is shown on one map; the task and the scoring stay the same |
 
 A change that leaves behaviour as it was (comments, refactors, how a failed request is
 retried) keeps the version and is recorded as a relock.
