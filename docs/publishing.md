@@ -180,13 +180,17 @@ deploy hook rebuilds it. These call it:
   `main` that changes `docs/`, `ROADMAP.md` or `CHANGELOG.md`, and by hand from the Actions
   tab. It reads the hook's URL from the Actions secret `WEBSITE_DEPLOY_HOOK` and does nothing
   in a fork.
-- **The dataset.** A Hugging Face webhook on repository updates calls the same hook, so an
-  upload appears on the site a few minutes later. Each bundle is one commit, so a build never
-  sees half a series.
+- **The upload.** `npm run upload -- --yes` to `hesamation/crusader-arena-runs` calls it once,
+  after its last commit, so an upload appears on the site a minute or two later and a build
+  never sees half of one. It uses `WEBSITE_DEPLOY_HOOK` from `.env` when it is set, and
+  otherwise runs the workflow above with the GitHub CLI (`gh`, signed in with the `workflow`
+  scope). A dry run, a pull request (`--pr`) and an upload to another dataset do not. The
+  dataset has no webhook: one fires on every commit and again on each of the Hub's own Parquet
+  conversions, about ten builds an upload.
 - **The website's own repository**, on every push.
 
 The hook can only rebuild the website's `main`; it cannot change its code or content. If its
-URL leaks, make a new hook in Vercel and put it in the secret and the Hugging Face webhook.
+URL leaks, make a new hook in Vercel and put it in the secret, and in `.env` where it is set.
 
 ## Checks
 

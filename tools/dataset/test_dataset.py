@@ -489,6 +489,25 @@ class UploadTest(Fixture):
         self.assertIn('evaluation.json', paths)
         self.assertIn(f'{result.rel}/manifest.json', paths)
 
+    def test_only_a_committed_upload_to_the_website_dataset_rebuilds_the_website_once(self):
+        result = self.staged()
+        api = mock.Mock()
+        api.file_exists.return_value = False
+        api.list_repo_files.return_value = []
+        rebuild = mock.Mock(return_value='The website is rebuilding.')
+        site = upload.WEBSITE_DATASET
+        with self.evaluation(SERIES_ID), redirect_stdout(io.StringIO()) as out:
+            upload.main([str(result.dest), '--evaluation', '--repo', site, '--yes', '--out', str(self.out)], api=api, rebuild=rebuild)
+        rebuild.assert_called_once()
+        self.assertIn('The website is rebuilding.', out.getvalue())
+        for argv in ([str(result.dest), '--repo', site, '--out', str(self.out)],  # a dry run
+                     [str(result.dest), '--repo', site, '--pr', '--yes', '--out', str(self.out)],
+                     [str(result.dest), '--repo', 'org/runs', '--yes', '--out', str(self.out)]):
+            rebuild.reset_mock()
+            with redirect_stdout(io.StringIO()):
+                upload.main(argv, api=api, rebuild=rebuild)
+            rebuild.assert_not_called()
+
     def test_the_committed_evaluation_list_names_each_series_once(self):
         ids = upload.evaluation_ids()
         self.assertTrue(ids)

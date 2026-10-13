@@ -12,6 +12,12 @@ and --evaluation the list of series that count in the evaluation (tools/dataset/
 refusing it while it names a series that is in neither the dataset nor this upload. Both go in
 the last bundle's commit, or in a commit of their own when no bundle is given.
 
+An upload to the website's dataset (WEBSITE_DATASET) rebuilds the website once it is done: with
+the deploy hook in WEBSITE_DEPLOY_HOOK (environment or .env) when it is set, else by running
+this repository's Notify website workflow with the GitHub CLI, which holds the hook as a secret.
+The dataset has no webhook for this: one fires on every commit and again on each of the Hub's
+own Parquet conversions, about ten builds an upload.
+
 The token comes from HF_TOKEN (environment or .env), else from `hf auth login`.
 """
 from __future__ import annotations
@@ -21,6 +27,9 @@ import hashlib
 import json
 import os
 import re
+import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from scrub import read_env
@@ -30,6 +39,9 @@ OUT = ROOT / 'harness/runtime/publish'
 CARD = Path(__file__).with_name('card.md')
 EVALUATION = Path(__file__).with_name('evaluation.json')
 IGNORED = {'.DS_Store'}
+# The dataset the website is built from, and the repository whose workflow rebuilds it.
+WEBSITE_DATASET = 'hesamation/crusader-arena-runs'
+WEBSITE_REPO = 'hesamsheikh/CrusaderArena'
 
 
 def sha256(path: Path) -> str:
@@ -141,7 +153,22 @@ def upload_root(repo: str, extra: list[tuple[str, bytes]], *, pr: bool, api) -> 
     return getattr(info, 'pr_url', None) or getattr(info, 'commit_url', '')
 
 
-def main(argv=None, api=None):
+def rebuild_website(env: dict) -> str:
+    """Asks the website to rebuild, and says whether it did; the hook's URL is never printed."""
+    hook = (env.get('WEBSITE_DEPLOY_HOOK') or '').strip()
+    try:
+        if hook:
+            urllib.request.urlopen(urllib.request.Request(hook, method='POST'), timeout=30).close()
+            return 'The website is rebuilding.'
+        subprocess.run(['gh', 'workflow', 'run', 'notify-website.yml', '--repo', WEBSITE_REPO],
+                       check=True, capture_output=True, text=True, timeout=60)
+        return 'The website is rebuilding (Notify website workflow).'
+    except (OSError, subprocess.SubprocessError, urllib.error.URLError) as err:
+        return (f'The website was not rebuilt ({type(err).__name__}): run the Notify website workflow '
+                f'from the Actions tab, or set WEBSITE_DEPLOY_HOOK.')
+
+
+def main(argv=None, api=None, rebuild=rebuild_website):
     env = {**read_env(ROOT / '.env'), **os.environ}
     parser = argparse.ArgumentParser(description='Upload staged bundles to the Hugging Face dataset (a dry run without --yes).')
     parser.add_argument('bundles', nargs='*', help='staged folders, harness/runtime/publish/v<major>.<minor>/<benchmark>/<model>/<id>')
@@ -196,6 +223,9 @@ def main(argv=None, api=None):
         print(upload(bundle, manifest, args.repo, pr=args.pr, api=api, replace=args.replace, extra=extra if last else []))
     if not checked:
         print(upload_root(args.repo, extra, pr=args.pr, api=api))
+    # Once, after every commit, so the site is built a single time and never sees half an upload.
+    if args.repo == WEBSITE_DATASET and not args.pr:
+        print(rebuild(env))
 
 
 if __name__ == '__main__':

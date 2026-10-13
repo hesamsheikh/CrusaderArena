@@ -1,4 +1,5 @@
-# Rebuilds the project website when a file it shows changes here. The site reads ROADMAP.md,
+# Rebuilds the project website when a file it shows changes here, and when an upload to its
+# dataset is done (tools/dataset/upload.py runs it by hand). The site reads ROADMAP.md,
 # CHANGELOG.md and docs/ at build time (scripts/fetch-docs.mjs in the website's repository);
 # keep the paths below in step with that script. The Actions secret WEBSITE_DEPLOY_HOOK holds
 # the URL of the website's Vercel deploy hook. See docs/publishing.md#the-website.
