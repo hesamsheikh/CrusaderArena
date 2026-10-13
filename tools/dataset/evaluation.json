@@ -14,6 +14,13 @@
     { "id": "20261012T113644-1024a7b0", "model": "claude-opus-5-5", "map": "Large Barren Desert" },
     { "id": "20261012T123257-cf634001", "model": "openai/gpt-6-luna", "map": "Large Barren Desert" },
     { "id": "20261012T134119-f09e54cb", "model": "kimi-k3", "map": "Large Barren Desert" },
-    { "id": "20261012T144338-060ec42e", "model": "openai/gpt-6.1-sol", "map": "Large Barren Desert" }
+    { "id": "20261012T144338-060ec42e", "model": "openai/gpt-6.1-sol", "map": "Large Barren Desert" },
+    { "id": "20261012T233119-e8fb78d0", "model": "z-ai/glm-5.3-flash", "map": "The Sinkhole" },
+    { "id": "20261013T002522-ef6aa9c5", "model": "claude-haiku-5-5", "map": "The Sinkhole" },
+    { "id": "20261013T011208-7dbd615d", "model": "openai/gpt-6-luna", "map": "The Sinkhole" },
+    { "id": "20261013T023616-1529e12f", "model": "claude-sonnet-5-5", "map": "The Sinkhole" },
+    { "id": "20261013T032320-2db24416", "model": "openai/gpt-6.1-sol", "map": "The Sinkhole" },
+    { "id": "20261013T043028-24600200", "model": "claude-opus-5-5", "map": "The Sinkhole" },
+    { "id": "20261013T052713-e8ad024c", "model": "kimi-k3", "map": "The Sinkhole" }
   ]
 }
