@@ -391,7 +391,7 @@ figure, and three little-used tools were removed.
   addresses it, for example `market_trade`'s `no_market` says to build a Marketplace
   with `build_structure`, and a placement that cannot be paid names the
   `wait_and_observe` `until` covering its cost. Thrown errors end with the fix the same
-  way. See [Failures](docs/tools.md#tools).
+  way. See [Failures](docs/tools.md).
 - `find_sites` groups its spots by the ground under them (plain, oasis grass, stone,
   iron ore, oil), so the agent sees which spots would take farmland or a deposit and
   chooses; it had offered woodcutters and hovels spots on the oasis grass, and the
