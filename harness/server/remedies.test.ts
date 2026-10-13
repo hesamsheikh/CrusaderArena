@@ -24,6 +24,10 @@ test("the game's refusals map to the tool that addresses them", () => {
   assert.match(crowded, /selling some of the weapons and armour it holds \(market_trade\)/);
   assert.match(crowded, /demolish_building/);
   assert.doesNotMatch(crowded, /another anchor/);
+  // The first armory against another anchor is placed like any building: another side or anchor helps.
+  const first = adjacentRemedy({ stopped: "probe_limit", anchor: "stockpile" }, "Armory");
+  assert.match(first, /No more room flush against the stockpile/);
+  assert.doesNotMatch(first, /No room around your armory/);
   // The game's own refusal of a second armory away from the first (live 2026-10-12).
   assert.match(feedbackRemedy("Armory", ["Needs to be placed adjacent to the armory."]), /expand_storage \(kind armory\)/);
   assert.match(feedbackRemedy("Hovel", ["Too close to signpost to build."]), /further from what it names/);

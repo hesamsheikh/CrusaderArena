@@ -64,7 +64,8 @@ A stockpile is not one building in the tile map but four 2×2 piles at the corne
 5×5 square; the tile map joins each four into its square. `place_near` and
 `expand_storage` anchor on the stockpile's square, on the granary, the keep, the market
 or the signpost by building type, and on the building nearest the camera centre for the
-other anchors.
+other anchors. A stockpile, granary or armory must touch one of its kind only once one
+stands: the first armory goes against any anchor like other buildings.
 
 **Placement statuses** returned by `build_structure`. A placement whose terrain was
 clicked also reports the map `tile` it was placed or tried at, whether it came from
@@ -175,7 +176,9 @@ while they select the building so the two overlap. They aim each spot the map gi
 through the camera as it is at the click, so a view that moved a tile after the read
 does not push a flush spot into the anchor. If every spot the map gave is refused
 without a message, they probe the view from the anchor outward, as they do without a
-tile map (`method: tile_map_then_probing`).
+tile map (`method: tile_map_then_probing`). Their clicks go through a frame captured
+afresh once the one they started with is 20 s old, so long probing never meets the 30 s
+age limit on input.
 Without a screenshot of the live view, `find_sites` reads the map for the live camera in
 the call itself and reports tiles only, ignoring `near_x`/`near_y` (they are pixels of
 a screenshot); the next `build_structure` call reuses that read for tile targets in the
@@ -201,7 +204,7 @@ same view if no input was sent in between, and otherwise reads one on its first 
 | `inspect_building` | `x`, `y` | Clicks a building, reads its panel (workers, vacancies, working, keep access, missing inputs, health; for a fletcher, poleturner or blacksmith the product it is making and the next one) and closes it | Text | Yes |
 | `set_tax` | `level` 0–11 | Opens the keep and steps the tax arrows until the reader shows that level. 0–2 are bribes, 3 is no tax (the start), 4–11 are taxes | From, to, the popularity effect (the reader's own factor after the last step, or the reference table without one), and the panel's tax figure: gold a month at that level for the current population | Yes |
 | `set_rations` | `rations`: `none`, `half`, `full`, `extra` or `double` | Opens a granary with its hotkey and clicks the ration plate until the reader shows those rations (they apply to every granary) | From, to, the ration factor the panel shows | Yes |
-| `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 (5 units each) | Opens the marketplace and trades one click at a time in the game's own steps, up to `lots` × 5 units and never more: a purchase is 5 units a click; a sale is 20 units a click while 100 or more are in stock, 10 from 50, else 5 (seen live on wood, stone and apples). A purchase the reader shows no room for (a full armory, granary or stockpile) is not clicked: the game refuses it ("No space in the armory." at 50 weapons and armour) and the result names `expand_storage`. A click counts once the reader shows its trade within 5 seconds (two of Kimi K3's trades stopped after 2 seconds with nothing bought): from one reader sample to the next the stock or the gold moved by exactly its units, or the gold did since the click, also with the month's taxes (the keep's tax figure) on top, so a delivery or a tax payment meanwhile neither hides a trade nor passes for one | Units traded, clicks, the gold change at the market's price (units × the buy or sell price, so taxes landing meanwhile do not hide a trade's cost), the net worth change, the gold now, price; when it stops early, why: the next sale step was larger than what was left (with the step to ask for), nothing left to sell, a trade that did not show, or for a purchase too little gold or storage room as the reader shows them | Yes |
+| `market_trade` | `good` (20 goods), `action`: `buy` or `sell`, `lots` 1–20 (5 units each) | Opens the marketplace and trades one click at a time in the game's own steps, up to `lots` × 5 units and never more: a purchase is 5 units a click; a sale is 20 units a click while 100 or more are in stock, 10 from 50, else 5 (seen live on wood, stone and apples). A purchase the reader shows no room for (a full armory, granary or stockpile) is not clicked: the game refuses it ("No space in the armory." at 50 weapons and armour) and the result names `expand_storage`. A click counts once the reader shows its trade within 5 seconds (two of Kimi K3's trades stopped after 2 seconds with nothing bought): from one reader sample to the next the stock or the gold moved by exactly its units, or the gold did since the click, also with the month's taxes (the keep's tax figure) on top; for a purchase, also when the stock rose and the gold fell in one sample, unless bribes are taking gold (food eaten and part of the month's taxes in the sample of a purchase left neither exact). So a delivery or a tax payment meanwhile neither hides a trade nor passes for one | Units traded, clicks, the gold change at the market's price (units × the buy or sell price, so taxes landing meanwhile do not hide a trade's cost), the net worth change, the gold now, price; when it stops early, why: the next sale step was larger than what was left (with the step to ask for), nothing left to sell, a trade that did not show, or for a purchase too little gold or storage room as the reader shows them | Yes |
 
 After `set_tax`, `set_rations`, `market_trade`, `place_near` or `expand_storage`, the model must
 observe again before it can click.

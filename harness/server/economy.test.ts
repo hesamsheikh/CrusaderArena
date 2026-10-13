@@ -224,6 +224,12 @@ test("market_trade counts a click only when the reader shows that trade", async 
   assert.deepEqual([missed.status, missed.units], ["not_traded", 0]);
   assert.match(missed.note, /within 5 seconds/);
 
+  // Apples bought while the town eats them and part of the month's taxes lands in the same sample
+  // (Claude Opus 5.5, 2026-10-13): +3 apples and -19 gold is the purchase, not nothing.
+  const eaten = fakeMarket({ apples: 30 }, 461, { delay: () => 0, meanwhile: (g) => { g.goods.apples -= 2; g.gold += 21; } });
+  const fed = await marketTrade(eaten.ctx, "apples", "buy", 1) as any;
+  assert.deepEqual([fed.status, fed.units, fed.clicks], ["traded", 5, 1], JSON.stringify(fed));
+
   // Food is bought 5 units a click too (not lots of 10).
   const food = fakeMarket({ apples: 40 }, 500);
   const bought = await marketTrade(food.ctx, "apples", "buy", 3) as any;

@@ -5,7 +5,7 @@ import { saveGame, type SaveIo } from "./game-save.js";
 const keysFor = (text: string) => [...text].map((c) => (c === " " ? "Space" : c.toUpperCase()));
 
 /** A save folder and a game whose Save button writes the typed name (or the default one). */
-function machine(options: { typing?: boolean; existing?: string[]; backupMatches?: boolean; clickBeforeEnd?: number } = {}) {
+function machine(options: { typing?: boolean; existing?: string[]; backupMatches?: boolean; clickBeforeEnd?: number; lettersLostIn?: number } = {}) {
   const files = new Map<string, string>([["Oasis by the Sea-1", "original"], ...(options.existing ?? []).map((n) => [n, "old"] as [string, string])]);
   const backup = { sha256: "sha:original" };
   let field = "Oasis by the Sea-1";
@@ -13,6 +13,7 @@ function machine(options: { typing?: boolean; existing?: string[]; backupMatches
   let cursor = field.length;
   const calls: string[] = [];
   const written: Record<string, Buffer> = {};
+  let dialogs = 0;
   const io: SaveIo = {
     key: async (key) => {
       calls.push(key);
@@ -21,10 +22,11 @@ function machine(options: { typing?: boolean; existing?: string[]; backupMatches
       if (key === "Backspace") { if (cursor > 0) { field = field.slice(0, cursor - 1) + field.slice(cursor); cursor--; } }
       else if (key === "ArrowRight") cursor = Math.min(field.length, cursor + 1);
       else if (key === "Space") insert(" ");
-      else if (key.length === 1) insert(key.toLowerCase());
+      else if (key.length === 1 && !(dialogs <= (options.lettersLostIn ?? 0))) insert(key.toLowerCase());
     },
     click: async (x, y) => {
       calls.push(`click ${x},${y}`);
+      if (x === 958 && y === 298) dialogs++;
       if (x === 600 && y === 496) cursor = Math.max(0, field.length - (options.clickBeforeEnd ?? 0));
       if (x === 474 && y === 742) files.set(field, `game at ${field}`);
     },
@@ -82,4 +84,20 @@ test("nothing is saved when the benchmark save no longer matches its copy, or th
   const r2 = await saveGame(taken.io, "arena test e1", "Oasis by the Sea-1", keysFor);
   assert.equal(r2.error, "a save with this name exists");
   assert.ok(!taken.calls.includes("Escape"));
+});
+
+test("a save whose typed name missed the field is tried once more", async () => {
+  // Live 2026-10-13: only the spaces reached the field and the game saved " ".
+  const m = machine({ lettersLostIn: 1 });
+  const result = await saveGame(m.io, "arena test e1", "Oasis by the Sea-1", keysFor);
+  assert.equal(result.error, undefined, JSON.stringify(result));
+  assert.equal(result.attempts, 2);
+  assert.equal(m.written["arena test e1.sav"].toString(), "game at arena test e1");
+  assert.equal(m.calls.filter((c) => c === "Escape").length, 2);
+  // Never more than two tries.
+  const stuck = machine({ lettersLostIn: 5 });
+  const failed = await saveGame(stuck.io, "arena test e1", "Oasis by the Sea-1", keysFor);
+  assert.equal(failed.error, "no save file appeared");
+  assert.equal(failed.attempts, 2);
+  assert.equal(stuck.calls.filter((c) => c === "Escape").length, 2);
 });

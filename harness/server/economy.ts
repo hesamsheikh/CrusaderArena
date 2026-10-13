@@ -179,9 +179,14 @@ async function tradeShown(
       const tax = (o?.settlement as { tax_amount?: unknown } | null | undefined)?.tax_amount;
       const paid = (delta: number) => delta === gold || (typeof tax === "number" && tax !== 0 && delta === gold + tax);
       // From one sample to the next: exact in the stock or the gold, or for a sale both moved its
-      // way (a delivery and the taxes in the very sample of the sale). Since the click: the gold.
+      // way (a delivery and the taxes in the very sample of the sale). For a purchase both moving its
+      // way counts too, unless bribes are taking gold: food being eaten and part of the month's taxes
+      // in its very sample left 5 apples bought as +3 apples and -19 gold, and the purchase was not
+      // counted (Claude Opus 5.5 and GPT-6 Luna, 2026-10-13). Since the click: the gold.
+      const bribing = typeof tax === "number" && tax < 0;
       const step = v.stock - prev.stock === units || paid(v.gold - prev.gold) ||
-        (units < 0 && v.stock < prev.stock && v.gold - prev.gold >= gold);
+        (units < 0 && v.stock < prev.stock && v.gold - prev.gold >= gold) ||
+        (units > 0 && !bribing && v.stock > prev.stock && v.gold < prev.gold);
       if (step || paid(v.gold - from.gold)) return v;
       prev = v;
     }

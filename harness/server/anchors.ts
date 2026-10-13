@@ -96,8 +96,11 @@ async function placeFromMap(
   anchorCamera: string,
 ) {
   // Storage must touch storage of its kind: a new armory too ("Needs to be placed adjacent to the
-  // armory.", live 2026-10-12).
-  const storage = building === "Stockpile" || building === "Granary" || building === "Armory";
+  // armory.", live 2026-10-12). The first of its kind goes anywhere, so it is placed against the
+  // anchor like any other building (Claude Haiku 5.5's first Armory against the keep found no
+  // armory to touch and fell back to probing, 2026-10-13).
+  const storage = (building === "Stockpile" || building === "Granary" || building === "Armory") &&
+    map.storageRects(building).length > 0;
   // Storage goes against the stockpile (or granary) nearest the camera centre or any joined to it:
   // centring always returns to the first one, so with its sides alone expand_storage ran out of
   // spots after 4 to 6. A stockpile is four piles, not one building, so the building nearest the
@@ -329,7 +332,10 @@ async function centerOnStockpile(ctx: AnchorContext): Promise<CentreResult> {
     delete ctx.state.stockpile;
   }
   const frame = await ctx.frame();
-  const placer = await new Placer(ctx.device, { send: (a) => ctx.send(frame, a), pause: ctx.pause, frame }).init();
+  // Input goes through the call's reusable frame, captured afresh when it grows old: a frame reused
+  // at up to 20 s old outlived the 30 s action limit while probing (three place_near Armory calls
+  // threw "Game image expired" and left the game in placement mode, 2026-10-13).
+  const placer = await new Placer(ctx.device, { send: async (a) => ctx.send(await ctx.frame(), a), pause: ctx.pause, frame }).init();
   if (!placer.readerReady) return { status: "failed", anchor, note: "Reader unavailable; the stockpile cannot be located." };
   if ((await placer.select("Stockpile")) === "failed")
     return { status: "failed", anchor, note: "The Stockpile button did not select; is the construction bar visible?" };
@@ -395,7 +401,10 @@ export async function placeAdjacent(
   const span = cameraSpanOf(first);
   let anchorCamera = cameraKey(first);
   if (!span || !anchorCamera) return { status: "failed" as const, anchor, placed, probes: 0, note: "Reader camera unavailable." };
-  const placer = await new Placer(ctx.device, { send: (a) => ctx.send(frame, a), pause: ctx.pause, frame }).init();
+  // Input goes through the call's reusable frame, captured afresh when it grows old: a frame reused
+  // at up to 20 s old outlived the 30 s action limit while probing (three place_near Armory calls
+  // threw "Game image expired" and left the game in placement mode, 2026-10-13).
+  const placer = await new Placer(ctx.device, { send: async (a) => ctx.send(await ctx.frame(), a), pause: ctx.pause, frame }).init();
   // With the native tile layers the flush spots are computed, not probed: the anchor is the
   // building nearest the camera centre, and each candidate's whole footprint is free. The read
   // (about 3 s on the game machine in a 2026-10-11 run's records) runs while the building is
@@ -411,7 +420,7 @@ export async function placeAdjacent(
     // where the click landed, so probe the view from the anchor outward instead of giving up.
     const probeOn = viaMap && viaMap.stopped === "no_more_free_spots" && viaMap.silent === viaMap.probes;
     if (viaMap && !probeOn) {
-      await dismiss(ctx, frame);
+      await dismiss(ctx, await ctx.frame());
       const { silent: _silent, ...result } = viaMap;
       return result;
     }
@@ -457,7 +466,7 @@ export async function placeAdjacent(
       }
     }
   }
-  await dismiss(ctx, frame);
+  await dismiss(ctx, await ctx.frame());
   return {
     status: placed.length >= count ? "placed" as const : placed.length ? "partly_placed" as const : "not_placed" as const,
     anchor,

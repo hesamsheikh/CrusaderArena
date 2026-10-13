@@ -130,8 +130,11 @@ export function adjacentRemedy(result: { stopped?: string; missing?: Record<stri
     case "no_more_free_spots":
     case "probe_limit":
     case "attempt_limit":
-      // Storage must touch its own kind, so another anchor is no way out.
-      if (building === "Stockpile" || building === "Granary" || building === "Armory") {
+      // Storage must touch its own kind, so another anchor is no way out. Against another anchor it is
+      // the first of its kind, placed like any building (GPT-6.1 Sol's first Armory against the
+      // stockpile was told "No room around your armory", 2026-10-13).
+      const ownAnchor = { Stockpile: "stockpile", Granary: "granary", Armory: "armoury" }[building];
+      if (ownAnchor && (result.anchor === undefined || result.anchor === ownAnchor)) {
         const held = building === "Stockpile" ? "goods" : building === "Granary" ? "food" : "weapons and armour";
         return `No room around your ${building.toLowerCase()}: no free ground touches it on any side. Make room either by selling some of the ${held} it holds (market_trade) or by demolishing buildings beside it (demolish_building), then expand it.`;
       }

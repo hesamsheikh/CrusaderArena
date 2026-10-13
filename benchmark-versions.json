@@ -1,5 +1,5 @@
 {
-  "current": "1.6.2",
+  "current": "1.6.3",
   "history": [
     {
       "version": "1.0.0",
@@ -210,6 +210,12 @@
       "fingerprint": "6cc0c01622622bde8e5bc0a271af08f8413efd4576a44c1060182f4e21b8ba56",
       "date": "2026-10-12",
       "note": "Armories in storage: the reader reads their weapons and room, the stats warn when they are full, market_trade does not buy into one, expand_storage adds armories; place_near re-aims at terrain height"
+    },
+    {
+      "version": "1.6.3",
+      "fingerprint": "f3b1a121ed6b496355791be1164c70617a49a31074ba17fcd79a2d49f972540b",
+      "date": "2026-10-13",
+      "note": "First Armory by place_near from the tile map, fresh frames while probing, storage no-room remedy only for its own anchor, purchases counted when stock rose and gold fell, a second end-of-run save try"
     }
   ]
 }

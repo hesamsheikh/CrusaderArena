@@ -1,5 +1,5 @@
 /** What saving a finished episode in the game did (episode.json `game_save`). */
-export type GameSave = { name: string; file?: string; bytes?: number; sha256?: string; error?: string; benchmarkSaveChanged?: boolean };
+export type GameSave = { name: string; file?: string; bytes?: number; sha256?: string; error?: string; benchmarkSaveChanged?: boolean; attempts?: number };
 
 /** The runner's game input and the game machine's save helper (tools/ubuntu/game-session.py). */
 export type SaveIo = {
@@ -27,32 +27,39 @@ export async function saveGame(io: SaveIo, name: string, benchmarkSave: string, 
       return { name, error: `"${benchmarkSave}" differs from the copy kept before the first save; not saving`, benchmarkSaveChanged: true };
     if ((await io.session("saves", [name])).saves[name]?.exists) return { name, error: "a save with this name exists" };
     const keys = keysFor(name);
-    await io.key("Escape"); // Game Options
-    await io.sleep(1500);
-    await io.click(958, 298); // Save
-    await io.settle(15);
-    await io.click(600, 496); // Name field, holding the loaded save's name
-    await io.sleep(400);
-    // The click puts the cursor where it lands: inside a name long enough to reach it ("Large
-    // Barren Desert benchmark start" kept its last two letters, "rt", after the new name, live
-    // 2026-10-11). Move to the end first, then clear the whole name.
-    const clear = benchmarkSave.length + 5;
-    for (let i = 0; i < clear; i++) await io.key("ArrowRight");
-    for (let i = 0; i < clear; i++) await io.key("Backspace");
-    for (const key of keys) await io.key(key);
-    await io.sleep(400);
-    await io.click(474, 742); // Save button; the dialog and the menu close
-    await io.sleep(3000);
-    const after = await io.session("saves", [benchmarkSave, name]);
-    if (after.saves[benchmarkSave]?.sha256 !== backup.backup.sha256) {
-      await io.session("restore-save", [benchmarkSave]);
-      return { name, error: `saving changed "${benchmarkSave}"; it was put back from the copy`, benchmarkSaveChanged: true };
+    // The typed name can miss the name field: GLM 5.3 Flash's game on The Sinkhole saved as " "
+    // (2026-10-13), and the next three runs saved normally. A second try opens the dialog afresh.
+    let attempts = 0;
+    while (true) {
+      attempts++;
+      await io.key("Escape"); // Game Options
+      await io.sleep(1500);
+      await io.click(958, 298); // Save
+      await io.settle(15);
+      await io.click(600, 496); // Name field, holding the loaded save's name
+      await io.sleep(400);
+      // The click puts the cursor where it lands: inside a name long enough to reach it ("Large
+      // Barren Desert benchmark start" kept its last two letters, "rt", after the new name, live
+      // 2026-10-11). Move to the end first, then clear the whole name.
+      const clear = benchmarkSave.length + 5;
+      for (let i = 0; i < clear; i++) await io.key("ArrowRight");
+      for (let i = 0; i < clear; i++) await io.key("Backspace");
+      for (const key of keys) await io.key(key);
+      await io.sleep(400);
+      await io.click(474, 742); // Save button; the dialog and the menu close
+      await io.sleep(3000);
+      const after = await io.session("saves", [benchmarkSave, name]);
+      if (after.saves[benchmarkSave]?.sha256 !== backup.backup.sha256) {
+        await io.session("restore-save", [benchmarkSave]);
+        return { name, error: `saving changed "${benchmarkSave}"; it was put back from the copy`, benchmarkSaveChanged: true, attempts };
+      }
+      if (after.saves[name]?.exists) break;
+      if (attempts >= 2) return { name, error: "no save file appeared", attempts };
     }
-    if (!after.saves[name]?.exists) return { name, error: "no save file appeared" };
     const exported = await io.session("export-save", [name]);
     const file = `${name}.sav`;
     io.write(file, Buffer.from(exported.data, "base64"));
-    return { name, file, bytes: exported.bytes, sha256: exported.sha256 };
+    return { name, file, bytes: exported.bytes, sha256: exported.sha256, ...(attempts > 1 ? { attempts } : {}) };
   } catch (error) {
     return { name, error: error instanceof Error ? error.message : String(error) };
   }

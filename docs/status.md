@@ -166,6 +166,18 @@ between September and October 2026.
   - `market_trade` bought 20 wood and reported `goldChange` −80 at the market's price.
   - `find_sites` with `tile_x`/`tile_y` listed spots around tiles out of view, and
     `build_structure` placed there.
+  - The 1.6.2 round on The Sinkhole, seven models, 2026-10-12/13: all seven played the
+    full 45 game minutes and every reported placement matched the game's final count.
+    `expand_storage` (kind armory) placed second armories in three runs and gave the
+    no-room remedy in one; `set_workshop` set fletchers, poleturners and blacksmiths by
+    tile and by pixel, though a building in front (three times the Armory, once a Hovel)
+    still opened instead four times. Seen live and fixed in 1.6.3 (below): `place_near`
+    could not place a first Armory (three calls threw "Game image expired" for Claude
+    Haiku 5.5, one for Kimi K3, and GPT-6.1 Sol got 20 probes and "No room around your
+    armory"); apple purchases stopped three times as not shown in the reader, and in the
+    one checked (Claude Opus 5.5) the reader had shown it, with apples eaten and part of
+    the taxes in the same sample; GLM 5.3 Flash's end-of-run save typed only a space as
+    its name. The other six saved normally.
 
 **Runs**
 - The Large Barren Desert scenario's map facts, on 2026-10-11, from "Large Barren Desert
@@ -308,6 +320,15 @@ between September and October 2026.
   39,300 tokens) did not fit under 65% of it, which ended that run with an error.
 
 ## Tested in code only
+
+- The 1.6.3 fixes (`model-observation.test.ts`, `remedies.test.ts`, `economy.test.ts`,
+  `game-save.test.ts`), not yet run live:
+  - `place_near` placing the first Armory (or first of any storage kind) against its anchor
+    from the tile map, and the no-room remedy kept for a storage's own anchor.
+  - `place_near` and `expand_storage` sending clicks through a frame captured afresh once
+    the one they started with is 20 s old.
+  - `market_trade` counting a purchase when the stock rose and the gold fell in one sample.
+  - The end-of-run save trying once more when no save under the new name appears.
 
 - The 1.6.0 changes not yet run live (`model-observation.test.ts`, `tile-map.test.ts`,
   `economy.test.ts`, `controller.test.ts`):
@@ -560,9 +581,8 @@ between September and October 2026.
   watchdog (above), too few to call full-length runs reliable.
 - **The current prompt** has been used only in runs of up to 5 game minutes, and no
   model has yet played with the text-only menu guide.
-- **Benchmark:** scoring exists only for Oasis by the Sea; there is no military
-  scoring, no ranking across runs and no published comparison of models. Early
-  single-model pilots used older harness versions and are not comparable.
+- **Benchmark:** there is no military scoring. Early single-model pilots used older
+  harness versions and are not comparable.
 
 ## Known issues
 

@@ -17,6 +17,32 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.6.3] - 2026-10-13
+
+Fixes for what the seven 1.6.2 runs on The Sinkhole showed: none made a run invalid, but they
+cost the models turns and game time. A patch; The Sinkhole's round stays on 1.6.2.
+
+### Benchmark
+
+- `place_near` places the first Armory (or the first of any storage kind) against the anchor
+  asked for, from the tile map. It used to look for an armory to touch, find none and probe
+  the view instead: Claude Haiku 5.5's three calls and one of Kimi K3's threw "Game image
+  expired" and left the game in placement mode, and GPT-6.1 Sol's used all 20 probes.
+- `place_near` and `expand_storage` send their clicks through a frame captured afresh once
+  the one they started with is 20 seconds old, so long probing never meets the 30-second age
+  limit on input.
+- The remedy "No room around your armory" (and the stockpile's and granary's) comes only when
+  expanding that storage, not for the first one placed against another anchor.
+- `market_trade` counts a purchase when the stock rose and the gold fell in one reader sample,
+  unless bribes are taking gold. Apples bought while the town ate them, with part of the
+  month's taxes in the same sample, matched neither exact check and were reported as not
+  traded (Claude Opus 5.5 once, GPT-6 Luna twice).
+
+### Harness
+
+- The end-of-run game save tries once more when no save under the new name appears; GLM 5.3
+  Flash's game was saved under a name of one space.
+
 ## [1.6.2] - 2026-10-12
 
 The armory's storage, found missing in GLM 5.3 Flash's first run on The Sinkhole: its armory

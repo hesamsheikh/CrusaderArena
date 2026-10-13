@@ -470,7 +470,7 @@ function simulatedGame(options: {
   const actions: any[] = [];
   const state: SimState = { action: 0, sub: 52, wood: 100, structures: 18, camera: 1, worldClicks: 0, sel: null, messages: [], flat: false };
   const buttonIds: Record<string, number> = { "866,978": 54, "872,934": 52, "880,992": 57 };
-  for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73], ["Dancing Bear", 324], ["Iron Mine", 68]] as const) {
+  for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73], ["Dancing Bear", 324], ["Iron Mine", 68], ["Armory", 1011]] as const) {
     const button = (trayClicks({ width: 1920, height: 1080 }, name) as { x: number; y: number }[]).at(-1)!;
     buttonIds[`${button.x},${button.y}`] = id;
   }
@@ -1092,6 +1092,22 @@ test("place_near probes the view when every spot the map gave is refused without
   assert.equal(json.status, "placed");
   assert.ok(json.probes >= 2, "the map's spot, then at least one probe");
   assert.deepEqual(footprintRect(view.tileAt(mapPixel!), 4), spot, "the first click was the map's only spot");
+});
+
+test("place_near puts the first Armory against the keep from the tile map, with no armory to touch", async () => {
+  // Storage must touch its kind only once one stands; the first armory used to find nothing to touch
+  // and fall back to probing (Claude Haiku 5.5, 2026-10-13).
+  const game = simulatedGame({
+    anchors: { HomeKeep: { camera: 5, type: 41 } },
+    tiles: (set, c) => { for (let x = c.x - 3; x <= c.x + 3; x++) for (let y = c.y - 3; y <= c.y + 3; y++) set("structure", x, y, 4); },
+  });
+  await game.observe();
+  const { json } = await game.run("place_near", { building: "Armory", anchor: "keep", count: 1, side: "down-left" });
+  assert.equal(json.method, "tile_map", JSON.stringify(json));
+  assert.equal(json.status, "placed");
+  assert.equal(json.probes, 1, "one click, no probing");
+  const keep = { x1: 101, y1: 97, x2: 107, y2: 103 };
+  assert.ok(disjoint(footprintRect(tileView(5).tileAt(json.placed[0]), 4), keep));
 });
 
 test("place_near refuses a Granary against another anchor while one stands, before any input", async () => {
