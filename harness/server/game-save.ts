@@ -4,9 +4,9 @@ export type GameSave = { name: string; file?: string; bytes?: number; sha256?: s
 /** The runner's game input and the game machine's save helper (tools/ubuntu/game-session.py). */
 export type SaveIo = {
   /**
-   * Keys pressed in order. They carry no coordinates, so the runner sends a whole run on one
-   * capture of the window (a fresh screenshot before each of the ~100 save-name keys made saving
-   * take 1.5 to 3.5 minutes, 2026-10-13).
+   * Keys pressed in order. They carry no coordinates, so the runner sends a whole run in one
+   * bridge request (a fresh screenshot before each of the ~100 save-name keys made saving take
+   * 1.5 to 3.5 minutes, 2026-10-13, and one request a key 0.71 s a key, 2026-10-14).
    */
   keys: (keys: string[]) => Promise<unknown>;
   /** A click in the 1920 × 1080 menu layout, scaled to the window. */

@@ -142,6 +142,36 @@ def emit(w, event, event_mask):
     w.send_event(event, event_mask=event_mask, propagate=False)
     d.sync()
 
+# A run of keys (the runner's save name, about 100 keys) goes in one request, at most this many:
+# one request a key took 0.71 s each over SSH (live, 2026-10-14).
+KEY_RUN_LIMIT = 200
+# Real seconds between a key's release and the next key of a run.
+KEY_RUN_GAP = 0.05
+
+def key_code(name):
+    """The keycode for an allowed key name, and the modifier state it needs (a shifted '+')."""
+    if name not in keys:
+        raise ValueError('Unsupported key. OS shortcuts and modifiers are not exposed.')
+    symbol = XK.string_to_keysym(keys[name])
+    code = d.keysym_to_keycode(symbol)
+    if not code:
+        raise ValueError('Key is unavailable in this keyboard layout.')
+    # Resolve shifted '+' without exposing arbitrary modifier combinations.
+    if d.keycode_to_keysym(code, 0) != symbol:
+        if d.keycode_to_keysym(code, 1) != symbol:
+            raise ValueError('Key requires an unsupported keyboard layout level.')
+        return code, X.ShiftMask
+    return code, 0
+
+def press(w, common, code, state):
+    """Press and release one key, held 70 ms."""
+    allow_input()
+    emit(w, protocol.event.KeyPress(detail=code, **(common | {'state': state})), event_mask=X.KeyPressMask)
+    try:
+        time.sleep(0.07)
+    finally:
+        emit(w, protocol.event.KeyRelease(detail=code, **(common | {'state': state})), event_mask=X.KeyReleaseMask)
+
 def action(a):
     allow_input()
     monitor.state["commands"] += 1
@@ -158,24 +188,18 @@ def action(a):
                   root_x=0, root_y=0, event_x=0, event_y=0, state=0, same_screen=1)
     kind = a.get('type')
     if kind == 'key':
-        name = a.get('key')
-        if name not in keys:
-            raise ValueError('Unsupported key. OS shortcuts and modifiers are not exposed.')
-        symbol = XK.string_to_keysym(keys[name])
-        code = d.keysym_to_keycode(symbol)
-        if not code:
-            raise ValueError('Key is unavailable in this keyboard layout.')
-        # Resolve shifted '+' without exposing arbitrary modifier combinations.
-        if d.keycode_to_keysym(code, 0) != symbol:
-            if d.keycode_to_keysym(code, 1) != symbol:
-                raise ValueError('Key requires an unsupported keyboard layout level.')
-            common['state'] = X.ShiftMask
-        allow_input()
-        emit(w, protocol.event.KeyPress(detail=code, **common), event_mask=X.KeyPressMask)
-        try:
-            time.sleep(0.07)
-        finally:
-            emit(w, protocol.event.KeyRelease(detail=code, **common), event_mask=X.KeyReleaseMask)
+        press(w, common, *key_code(a.get('key')))
+    elif kind == 'keys':
+        names = a.get('keys')
+        if not isinstance(names, list) or not 1 <= len(names) <= KEY_RUN_LIMIT:
+            raise ValueError(f'A run of keys has 1 to {KEY_RUN_LIMIT} keys.')
+        # Every key resolved first: a run with one it cannot send sends none. The window and its
+        # focus were checked above, once for the whole run.
+        codes = [key_code(name) for name in names]
+        for i, (code, state) in enumerate(codes):
+            if i:
+                time.sleep(KEY_RUN_GAP)
+            press(w, common, code, state)
     elif kind == 'hotkey':
         keysym, modifiers = hotkey_binding(a.get('name'))
         code = d.keysym_to_keycode(XK.string_to_keysym(keysym))

@@ -11,6 +11,7 @@ import {
   costProblem,
   runNameFor,
   actionSchema,
+  allowedKeys,
   runConfigSchema,
   TICKS_PER_GAME_SECOND,
   type State,
@@ -18,7 +19,7 @@ import {
 } from "../shared/protocol.js";
 import { Store } from "./store.js";
 import { omitDuplicateToolImages } from "./context.js";
-import { GameDevice } from "./device.js";
+import { GameDevice, KEY_RUN_LIMIT } from "./device.js";
 import { testModel, modelConfig } from "./model.js";
 import { renderVideo } from "./video.js";
 import { RunController } from "./controller.js";
@@ -244,6 +245,20 @@ app.post("/api/action", async (req, res) => {
     .parse(req.body);
   await device.action(body.action, body.frameId);
   log("action", JSON.stringify(body.action));
+  res.json({ ok: true });
+});
+// A run of keys in one bridge request, for the runner's save name (not an agent tool).
+app.post("/api/keys", async (req, res) => {
+  if (state.running)
+    return void res
+      .status(409)
+      .json({ error: "Stop the agent before taking manual control." });
+  const body = z
+    .object({ keys: z.array(z.enum(allowedKeys)).min(1).max(KEY_RUN_LIMIT), frameId: z.string().uuid() })
+    .strict()
+    .parse(req.body);
+  await device.keys(body.keys, body.frameId);
+  log("action", JSON.stringify({ type: "keys", keys: body.keys.join(" ") }));
   res.json({ ok: true });
 });
 let testing = false;

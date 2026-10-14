@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Frame, GameAction, Stats } from "../shared/protocol.js";
-import { frameAgeSeconds, validateFrameAction, windowAction } from "../shared/protocol.js";
+import { allowedKeys, frameAgeSeconds, validateFrameAction, windowAction } from "../shared/protocol.js";
 import { GameEvents } from "./game-events.js";
 import type { MapSummary } from "./map-view.js";
 /** Single-quoted for the remote shell. */
@@ -396,7 +396,7 @@ export class GameDevice {
     }
     this.pending.clear();
   }
-  private rpc(op: string, extra: object = {}) {
+  private rpc(op: string, extra: object = {}, timeoutMs = BRIDGE_TIMEOUT_MS) {
     return new Promise<any>((resolve, reject) => {
       if (!this.child?.stdin.writable)
         return reject(new Error("Connect the game first."));
@@ -405,7 +405,7 @@ export class GameDevice {
         this.pending.delete(id);
         reject(new Error("Game request timed out; reconnect before retrying."));
         this.fail("Game bridge timed out.");
-      }, 12000);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.child.stdin.write(JSON.stringify({ id, op, ...extra }) + "\n");
     });
@@ -516,6 +516,25 @@ export class GameDevice {
     });
   }
   /**
+   * Type a run of keys in one bridge request (the runner's save name, about 100 keys): the bridge
+   * checks the window and its focus once, before the first key, then presses each in turn. One
+   * request a key took 0.71 s each, 67 to 73 s for a save name (live, 2026-10-14). The keys carry
+   * no coordinates, so `frameId`'s capture serves only for the window and its age.
+   */
+  async keys(keys: readonly AllowedKey[], frameId: string) {
+    return this.serial(async () => {
+      this.speedGuard?.();
+      if (keys.length < 1 || keys.length > KEY_RUN_LIMIT) throw new Error(`A run of keys has 1 to ${KEY_RUN_LIMIT} keys.`);
+      const frame = this.frames.get(frameId);
+      if (!frame) throw new Error("Unknown or expired game image: call observe for a fresh screenshot.");
+      validateFrameAction({ type: "key", key: keys[0] }, frame, this.frameAge(frame));
+      for (const key of keys) this.announce({ type: "key", key, width: frame.width, height: frame.height });
+      return this.rpc("action", {
+        action: { type: "keys", keys, windowId: frame.windowId, width: frame.windowWidth ?? frame.width, height: frame.windowHeight ?? frame.height },
+      }, BRIDGE_TIMEOUT_MS + keys.length * KEY_RUN_MS) as Promise<{ at?: number } | undefined>;
+    });
+  }
+  /**
    * Send one of the host's own control keys (pause, speed) the same way as hotkey(): the latest
    * captured frame's window identity, no fresh capture. These carry no coordinates either, so an
    * old frame serves as well as a new one; the caller captures once first if there is none yet.
@@ -543,3 +562,11 @@ export type GameHotkey =
 
 /** The host's own control keys, sent with pressKey() (pause and the game's speed keys). */
 export type HostKey = "P" | "+" | "-";
+
+export type AllowedKey = (typeof allowedKeys)[number];
+/** Real time the bridge may take for one request before the host gives up on the connection. */
+const BRIDGE_TIMEOUT_MS = 12_000;
+/** Most keys in one run (tools/ubuntu/game-window.py checks the same). */
+export const KEY_RUN_LIMIT = 200;
+/** Time allowed per key of a run: the bridge holds each 70 ms and waits 50 ms after it. */
+const KEY_RUN_MS = 250;

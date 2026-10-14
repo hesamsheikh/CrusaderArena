@@ -244,7 +244,10 @@ listens on the network. The window bridge:
   injection, pointer warping, shell commands or arbitrary keyboard shortcuts;
 - checks the game is the active window and has the screenshot's size before every
   input, and rejects coordinates outside it;
-- exposes only finite clicks, drags and key presses, never a held key.
+- exposes only finite clicks, drags and key presses, never a held key. The runner types a
+  save's name as one run of up to 200 allowed keys in one request, each held 70 ms with
+  50 ms between them, after one such check for the whole run; the agent's tools have no
+  runs of keys.
 
 This bridge is written for the tested GNOME, Xwayland and Proton setup and refuses
 states it does not recognise. It limits what the tools can do; it is not a sandbox

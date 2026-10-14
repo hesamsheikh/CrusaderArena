@@ -123,9 +123,9 @@ warnings can end the model's waits.
   interview still running waits for it before its agent run, and for one it had to stop
   (after 30 minutes) until it has ended. Ctrl-C ends a runner's wait for a round host's
   interview.
-- The end-of-run save types the save's name on one capture of the window instead of one per
-  key (about 100 keys), which made saving take 1.5 to 3.5 minutes; a capture serves 15
-  seconds of keys at most.
+- The end-of-run save, and the load before a run, type the save's name in one request to the
+  game machine's window bridge instead of one capture and one request a key: about 100 keys
+  made saving take 1.5 to 3.5 minutes, and 0.71 seconds a key still with one capture.
 - The dashboard's new-run dialog has a Fast waits switch.
 - The game machine renders the game on its NVIDIA GPU instead of the integrated Intel GPU,
   which it used since September because the game stalled at the end of loading on the NVIDIA

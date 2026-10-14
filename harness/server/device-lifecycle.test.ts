@@ -116,6 +116,34 @@ test("pressKey sends the host's own keys from the latest frame without a capture
   assert.equal(device.inputSerial, 3, "and an ordinary action");
 });
 
+test("a run of keys goes to the bridge in one request, each key announced, with time for all of them", async () => {
+  // A save's name, about 100 keys, took 0.71 s a key at one request each (live, 2026-10-14).
+  const device = new GameDevice(() => {}, () => {});
+  const calls: { op: string; extra: any; timeoutMs?: number }[] = [];
+  Object.assign(device, {
+    rpc: async (op: string, extra: any = {}, timeoutMs?: number) => {
+      calls.push({ op, extra, timeoutMs });
+      if (op === "capture")
+        return { image: "", mimeType: "image/jpeg", width: 1920, height: 1080, windowId: 7, pid: 1, capturedAt: Date.now(), scope: "game-window" };
+      return { delivered: true };
+    },
+  });
+  const heard: unknown[] = [];
+  device.onInput((input) => heard.push(input));
+  const frame = await device.capture();
+  const keys = [...Array<"ArrowRight">(38).fill("ArrowRight"), "S", "T", "Space", "1"] as const;
+  await device.keys(keys, frame.id);
+  const sent = calls.filter((c) => c.op === "action");
+  assert.equal(sent.length, 1, "one request for the whole run");
+  assert.deepEqual(sent[0].extra.action, { type: "keys", keys, windowId: 7, width: 1920, height: 1080 });
+  assert.ok(sent[0].timeoutMs! >= 12_000 + keys.length * 120, "time for every key's 70 ms hold and 50 ms gap");
+  assert.equal(heard.length, keys.length, "each key announced, as single keys are");
+  await assert.rejects(device.keys([], frame.id), /1 to 200 keys/);
+  await assert.rejects(device.keys(Array<"A">(201).fill("A"), frame.id), /1 to 200 keys/);
+  await assert.rejects(device.keys(["A"], "00000000-0000-4000-8000-000000000000"), /Unknown or expired/);
+  assert.equal(calls.filter((c) => c.op === "action").length, 1, "nothing sent for a refused run");
+});
+
 /** A device whose bridge answers every request; `sent` lists the requests in order. */
 function bridged() {
   const device = new GameDevice(() => {}, () => {});

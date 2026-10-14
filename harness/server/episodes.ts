@@ -179,32 +179,36 @@ async function frame() {
   checkStop();
   return api<Frame>("frame");
 }
-/** Real time after which a run of keys sent on one capture (send's `shared`) captures again. */
-const SHARED_FRAME_MS = 15_000;
 /**
- * Send one input on a fresh frame, or on `shared.frame` when given (a run of keys needs only the
- * window's identity, so one capture serves them all). The bridge refuses input while another
- * window has focus; a Steam window or the control-monitor xterm took focus during save loading
- * (2026-09-29), so re-activate the game and retry a few times.
+ * Send one input on a fresh frame (`input` is the host endpoint and body for it). The bridge
+ * refuses input while another window has focus; a Steam window or the control-monitor xterm took
+ * focus during save loading (2026-09-29), so re-activate the game and retry a few times.
  */
-async function send(action: (f: Frame) => GameAction, shared?: { frame?: Frame }) {
+async function sendOn(input: (f: Frame) => [path: string, body: object]) {
   for (let attempt = 0; ; attempt++) {
-    // A long run of keys (the save's ~110) takes a fresh capture now and then, so it stays well
-    // inside the screenshot age limit even where that falls back to real time (no reader clock).
-    if (shared?.frame && Date.now() - shared.frame.receivedAt > SHARED_FRAME_MS) shared.frame = undefined;
-    const f = shared?.frame ?? (await frame());
-    if (shared) shared.frame = f;
+    const f = await frame();
     try {
-      await api("action", { action: action(f), frameId: f.id });
+      const [path, body] = input(f);
+      await api(path, { ...body, frameId: f.id });
       return;
     } catch (error) {
-      if (shared) shared.frame = undefined;
       if (attempt >= 3 || !/not the active application/i.test(String(error))) throw error;
       log("The game lost focus; re-activating it");
       await gameSession("activate");
       await sleep(1000);
     }
   }
+}
+async function send(action: (f: Frame) => GameAction) {
+  await sendOn((f) => ["action", { action: action(f) }]);
+}
+/**
+ * Type a run of keys (a save's name) in one bridge request: one request a key took 0.71 s each
+ * over SSH, 67 to 73 s for a save name (live, 2026-10-14). The bridge checks the game's focus
+ * once, before the first key, so a refusal typed none of them and the run can go again whole.
+ */
+async function sendKeys(keys: string[]) {
+  await sendOn(() => ["keys", { keys }]);
 }
 async function act(action: GameAction) {
   await send(() => action);
@@ -364,9 +368,7 @@ async function loadSave(save: string, map?: string, launchedAt = Date.now()) {
       await openLoadDialog(attempt, launchedAt);
       await clickScaled(1178, 976); // Search box
       await sleep(400);
-      // The keys need only the window's identity: one capture serves the whole name.
-      const shared: { frame?: Frame } = {};
-      for (const key of keysFor(save)) await send(() => ({ type: "key", key: key as never }), shared);
+      await sendKeys(keysFor(save));
       await sleep(1000);
       await debugShot(`${attempt}-typed`);
       await clickScaled(900, 261); // First matching row
@@ -602,11 +604,8 @@ async function playEpisode(
     let gameSave: GameSave | undefined;
     if ((run || humanGame) && !stopRequested && final.stats?.status === "ok" && final.stats.observation?.paused) {
       gameSave = await saveGame({
-        // One capture for each run of keys, as loadSave types the save name.
-        keys: async (keys) => {
-          const shared: { frame?: Frame } = {};
-          for (const key of keys) await send(() => ({ type: "key", key: key as never }), shared);
-        },
+        // Each run of keys in one bridge request, as loadSave types the save name.
+        keys: sendKeys,
         click: clickScaled,
         settle: (seconds) => waitForStillScreen(seconds).then(() => {}),
         sleep,
