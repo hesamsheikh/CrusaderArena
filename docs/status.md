@@ -186,6 +186,42 @@ between September and October 2026.
     its name. The other six saved normally.
 
 **Runs**
+- 1.7.0, on 2026-10-14: three episodes through `npm run episodes` on the game machine,
+  with a scripted stand-in for the model (an OpenAI-compatible endpoint on the host that
+  answered with set tool calls), on "Oasis by the Sea benchmark start" (12 game minutes),
+  "Large Barren Desert benchmark start" (4) and "The Sinkhole human", the person's town of
+  506 at its end (8). All three were valid and used their whole budget.
+  - Fast waits: 11 waits played 1,062 game seconds in 395 real seconds at 90.9 to 92.2
+    ticks a second (speed 90), on the start maps and on the 506-person town alike. Every
+    one measured 39.2 to 40.3 again before its last tick, none needed a correction, and
+    no message showed on screen or in the reader's messages when the speed changed. The
+    Oasis episode's 12 game minutes took 7 real minutes.
+  - Warnings: food low ended a 120-second wait after 117; popularity 10 down (taxes at
+    their highest, factor −24) ended a 300-second wait after 30, its fast wait back at 40
+    first; gold below 500 led the observation after a purchase left 50. The popularity
+    warning then said 81 beside stats showing 68, since the game plays on while a wait
+    slows down; warnings now use the reporting observation's values. In the 506-person
+    town, food hovering near two months brought "Food is low" three times in 8 game
+    minutes, two of them ending waits after 19 game seconds.
+  - A pixel target from a screenshot followed by a 60-game-second wait was refused as
+    older than 40 game seconds of play. `flat_view`'s two images had no "Game Paused"
+    banner, on Oasis by the Sea and in the Sinkhole town; in the flat image palms and
+    bushes shrink to stumps. Two `build_structure` calls in one reply, a Hovel first in
+    each, both placed.
+  - The interview changes: `religion` 0 in the factors once a chapel stood (+2 two game
+    months later), `status` counting the buildings as placed, `inspect_building` by tile
+    reading a chapel (no worker fields) and a woodcutter (1 of 1 workers, keep access),
+    `set_workshop` by tile setting a new fletcher to crossbows, and `find_sites` on Large
+    Barren Desert saying no woodcutter spot has trees, around a tile and in the view.
+    `expand_storage` with the sides that stopped GPT-6.1 Sol's calls placed 3 and 2
+    stockpiles; the view did not jump, so the way back to the anchor's view was not used.
+  - The runner rebuilt the game machine's reader (all 13 build steps, in 7 seconds) when
+    it had no record of its sources, and nothing when they matched. The Oasis episode's
+    video rendered in the background after the runner went on (4:18, its recording
+    compacted from 1,107 to 81 MB, the marker then removed), and the host held its
+    interview after the runner exited. Saving took 96 to 124 seconds from the run's end,
+    against 237 to 256 for that day's 1.6.3 desert games; the keys, 95 to 103 of them,
+    now take 0.71 seconds each.
 - The prompt cache key for Meta's models, on 2026-10-13: Muse Wonder's run on Oasis by
   the Sea at 1.5.1, its host given the key by `round-preload.ts`, read the cache on all
   106 requests, 96.9% of its input tokens. Its run the same morning without the key
@@ -358,10 +394,12 @@ between September and October 2026.
 
 ## Tested in code only
 
-- The 1.7.0 changes, not yet run live (`game-speed.test.ts`, `session.test.ts`,
-  `controller.test.ts`, `device-lifecycle.test.ts`, `protocol.test.ts`, `anchors.test.ts`,
-  `tile-map.test.ts`, `model-observation.test.ts`, `game-save.test.ts`, `video.test.ts`,
-  `warnings.test.ts`, `tools/video/test_render_queue.py`, `tools/dataset/test_dataset.py`):
+- The 1.7.0 changes (`game-speed.test.ts`, `session.test.ts`, `controller.test.ts`,
+  `device-lifecycle.test.ts`, `protocol.test.ts`, `anchors.test.ts`, `tile-map.test.ts`,
+  `model-observation.test.ts`, `game-save.test.ts`, `video.test.ts`, `warnings.test.ts`,
+  `tools/video/test_render_queue.py`, `tools/dataset/test_dataset.py`), of which the live
+  test on 2026-10-14 (see Runs above) showed the normal course; the cases below it did not
+  reach stay tested in code only:
   - [Fast waits](how-it-works.md#fast-waits), on a simulated game clock: waits of 3 to 300
     game seconds end at speed 40 before their last tick, short ones press nothing, a lost
     `-` press and a lower top speed are set right by the end measurement, dead speed keys
@@ -370,13 +408,11 @@ between September and October 2026.
     (the reader gone) recovers to a measured 40 or ends the run; with key presses of 60 to
     300 ms and reader samples 200 ms late, about one wait in a hundred ends past its last
     tick, by under a game second; the device refusing game input while the speed is
-    unconfirmed. Not known from the live game: the top speed and whether a late-game map
-    holds it, a message on screen or in the reader when the speed changes, whether the
-    speed keys work while paused, the shortest key press the game takes, how late reader
-    samples reach the host, and that a tick is the same game at 90 as at 40.
-  - A screenshot's age counted in game seconds on the game clock (40 of them), with real
-    time only when there is no clock reading; input aimed by map tile exempt, as before.
-  - `flat_view` toggling the view paused and taking its two images with the game running.
+    unconfirmed. Not known from the live game: whether the speed keys work while paused
+    (the restore after a run stopped mid-wait presses them so), how late reader samples
+    reach the host (the end margin held in all 11 live waits), and that a tick is the same
+    game at 90 as at 40.
+  - A screenshot's age counted in real time when there is no game-clock reading.
   - The tile of open ground kept around stockpiles (the keep may touch them), the last
     spot for another stockpile kept free (`blocks_stockpile`), also after a target was
     refused there, and a stockpile target moved or retried only flush with the stockpile.
@@ -396,10 +432,10 @@ between September and October 2026.
     interview left to the host; the save name typed on one capture. The runner's own waits
     for the host's interviews have no automated test (episodes.ts runs on import).
   - [Warnings](context.md#warnings) for popularity, food and gold: when each comes up and
-    comes up again, `wait_and_observe` ended early after the minimum turn, and a fast wait
-    brought back to 40 early, on a simulated game. The food rates come from recorded runs
-    (food falling with no deliveries, against population and the rations set); how often
-    each warning comes up was replayed on 97 recorded runs, not seen in a run.
+    comes up again, in the values of the observation that reports it or as it came up,
+    on a simulated game. The food rates come from recorded runs (food falling with no
+    deliveries, against population and the rations set); how often each warning comes up
+    was replayed on 97 recorded runs.
   - Changes from the 1.6.3 round's interviews, on simulated readings and a simulated game:
     religion and the inn shown at 0 while the reader counts a chapel, church, cathedral or
     inn; `status` counting the player's buildings by type; `find_sites` saying when no
@@ -412,8 +448,8 @@ between September and October 2026.
     it still selected there too (seen for `build_structure` tile targets, 2026-10-12).
   - The runner rebuilding the game machine's reader unless its programs were built from
     the reader sources of the version a run plays (`version-checkout.test.ts`, with a fake
-    game machine; the build command also run in a shell with a stand-in `cmake`). The
-    1.6.3 games played from 2026-10-13 21:39 UTC to 2026-10-14, on Oasis by the Sea and
+    game machine; the build command also run in a shell with a stand-in `cmake`; seen live
+    on 2026-10-14, Runs above). The 1.6.3 games played from 2026-10-13 21:39 UTC to 2026-10-14, on Oasis by the Sea and
     Large Barren Desert, ran a probe built from 1.5.0's sources, read on the game
     machine on 2026-10-14: its sources were 1.6.3's, its `crusader_probe.exe`
     dated from a 1.5.0 round 11 minutes before, and the sync's build said "ninja: no work

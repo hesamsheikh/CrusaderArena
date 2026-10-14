@@ -20,9 +20,10 @@ this file lists every version in `benchmark-versions.json`, with its date.
 ## [1.7.0] - 2026-10-14
 
 Runs take less real time. Waits are played at the game's top speed and every tick is the same
-game at any speed, so a run's game should be the same as on 1.6; this, the top speed and the
-speed keys' behaviour are still to be checked in the live game (see
-[Status](docs/status.md#tested-in-code-only)). A minor version because the placement rules
+game at any speed, so a run's game should be the same as on 1.6; that a tick is the same game
+at 90 is still to be checked. A live test with a scripted stand-in model on 2026-10-14 saw the
+top speed held on a town of 506 and every fast wait back at 40 before its end (see
+[Status](docs/status.md#checked-in-the-live-game)). A minor version because the placement rules
 around stockpiles and the routes to the keep change what models can build where, and
 warnings can end the model's waits.
 
