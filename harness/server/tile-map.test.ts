@@ -385,3 +385,38 @@ test("spots keep one tile of open ground around a stockpile too, and a new stock
   assert.equal(crowded.access("Stockpile", { x: 102, y: 107 }).reason, "touches_storage");
   assert.ok(crowded.access("Stockpile", { x: 102, y: 107 }, [], false).ok);
 });
+
+test("no spot the harness picks takes the last room beside a stockpile for another one", () => {
+  // The stockpile (100..104) with trees on its up-left and up-right sides and, along the
+  // down-left side, as far as its own edge: another stockpile still fits down-right (+x) and
+  // down-left (+y, slid towards +x).
+  const blocked = (downLeft: boolean) => (set: Parameters<Parameters<typeof region>[0] & {}>[0]) => {
+    stockpile(set, 100, 100, 1);
+    fill(set, "organism", 90, 90, 99, 115, 1);
+    fill(set, "organism", 90, 90, 115, 99, 1);
+    if (downLeft) fill(set, "organism", 90, 105, 104, 115, 1);
+  };
+  const lastSide = () => new TileMap({ ...region(blocked(true)), structure_types: piles(1) }, camera, frame);
+  // Down-right is its only room: a hovel there (106..109 × 102..105) would cover every spot left.
+  assert.equal(lastSide().access("Hovel", { x: 108, y: 104 }).reason, "blocks_stockpile");
+  assert.ok(lastSide().access("Hovel", { x: 115, y: 104 }).ok, "beyond the room it fits");
+  assert.ok(lastSide().access("Stockpile", { x: 107, y: 102 }).ok, "a stockpile itself may take it");
+  assert.ok(lastSide().access("Hovel", { x: 108, y: 104 }, [], false).ok, "only spots chosen with spacing keep it");
+  assert.equal(lastSide().sitesNear("Hovel", { x: 108, y: 104 }, 1, 0).length, 0, "find_sites does not offer it");
+  // With room down-left as well, one side may be built on, until the other is taken in the same call.
+  const twoSides = new TileMap({ ...region(blocked(false)), structure_types: piles(1) }, camera, frame);
+  assert.ok(twoSides.access("Hovel", { x: 108, y: 104 }).ok);
+  twoSides.claim("Hovel", { x: 104, y: 107 }, 0, true);
+  assert.equal(twoSides.access("Hovel", { x: 108, y: 104 }).reason, "blocks_stockpile");
+  // A stockpile at the edge of the read region (which ends at x = 128) may have room beyond it:
+  // its one spot in view, up-left, is not held for it.
+  const edge = new TileMap({
+    ...region((set) => {
+      stockpile(set, 122, 100, 1);
+      fill(set, "organism", 110, 90, 128, 99, 1);
+      fill(set, "organism", 110, 105, 128, 115, 1);
+    }),
+    structure_types: piles(1),
+  }, camera, frame);
+  assert.ok(edge.access("Hovel", { x: 119, y: 102 }).ok);
+});

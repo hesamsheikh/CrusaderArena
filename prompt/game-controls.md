@@ -131,8 +131,10 @@ placed or tried (whether given by tile or worked out from the pixel):
 - `access: "no_open_side"` or `"closes_neighbour"`: your target would leave a building
   with workers no open side (see the rules below), so the harness moved it without
   clicking there, as for a blocked spot. `access: "touches_storage"`: it would touch a
-  granary, armory or stockpile with no tile between them, and was moved the same way. With
-  `exact: true` it is placed as asked and `access` warns you.
+  granary, armory or stockpile with no tile between them, and was moved the same way.
+  `access: "blocks_stockpile"`: it would cover the last spot beside the stockpile where
+  another stockpile fits, and was moved the same way. With `exact: true` it is placed
+  as asked and `access` warns you.
 - `retrySkipped: "not_enough_resources"` with `missing` (for example `{"wood": 4}`):
   you cannot pay for it yet.
 - `rejected`: the game showed a new error for it. `possibly_rejected`: an error was
@@ -183,7 +185,8 @@ Game rules for placement:
   shows its workers and whether it has access to the keep.
 - The harness keeps one tile of open ground around granaries, armories and stockpiles:
   other buildings are not placed touching them, though a new granary touches the
-  granary, a new armory the armory and a new stockpile the stockpile.
+  granary, a new armory the armory and a new stockpile the stockpile. It also keeps
+  one spot beside the stockpile free for another stockpile.
 - Leave walking routes between buildings and their storage, and room to expand storage.
 
 ## Camera and keys

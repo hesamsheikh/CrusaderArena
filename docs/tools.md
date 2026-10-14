@@ -166,6 +166,14 @@ warning). `place_near` beside a granary, the armoury or the stockpile therefore 
 a gap of one tile. Any flush stockpile touches the pile at each end of its side, since
 the walkway between a stockpile's piles is one tile wide.
 
+**Room for the stockpile to grow.** The same spots and targets keep one spot free beside
+the stockpile where another stockpile fits, as `expand_storage` looks for them: a
+footprint that would cover the last such spot is moved like a blocked one and reports
+`access: blocks_stockpile` (with `exact`, placed as asked with the warning). Spots taken
+earlier in the call do not count as room, a stockpile with no room left sets no limit,
+and neither does one whose surroundings the tile map has not read in full. Boxed-in
+stockpiles were one of the runs' commonest dead ends (runs of 2026-10-12 and 13).
+
 **Tile map.** An external read of the game's own tile layers for the current view
 (about 2 seconds, read-only). It knows where structures, trees and rock are, which
 ground suits farms, quarries, iron mines and pitch rigs, and the no-build zone around

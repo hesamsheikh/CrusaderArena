@@ -153,6 +153,7 @@ export class TileMap {
   private signposts?: Tile[];
   private trees?: Tile[];
   private buildings?: Footprint[];
+  private stockpileRoom?: Rect[][];
   constructor(
     readonly region: TileRegion,
     readonly camera: Camera,
@@ -259,16 +260,66 @@ export class TileMap {
    * neighbour with workers that has one now: built, placed during this call, or `planned` (about to
    * be placed, not in the map yet).
    */
-  access(building: string, centre: Tile, planned: readonly Footprint[] = [], spaced = true): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" } {
+  access(building: string, centre: Tile, planned: readonly Footprint[] = [], spaced = true): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" | "blocks_stockpile" } {
     const rect = footprintRect(centre, footprintOf(building));
     if (needsOpenSide(building) && !this.openSides(rect, planned)) return { ok: false, reason: "no_open_side" };
     if (spaced && this.touchesStorage(building, rect, planned)) return { ok: false, reason: "touches_storage" };
+    if (spaced && building !== "Stockpile" && this.blocksStockpile(rect, planned)) return { ok: false, reason: "blocks_stockpile" };
     const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
     for (const n of [...this.existing(), ...this.claimed, ...planned]) {
       if (!n.needsOpenSide || !overlaps(n, ring) || overlaps(n, rect)) continue;
       if (this.openSides(n, planned) && !this.openSides(n, [...planned, rect])) return { ok: false, reason: "closes_neighbour" };
     }
     return { ok: true };
+  }
+  /**
+   * Whether a footprint would cover the last spot beside a stockpile where another stockpile still
+   * fits: one of the run's commonest dead ends was a stockpile boxed in by other buildings, after
+   * which expand_storage found no room and goods stopped coming in (runs of 2026-10-12 and 13).
+   * Spots taken during this call, or `planned`, do not count as room. A stockpile with no room left
+   * already, or whose surroundings lie partly outside the read region, sets no limit.
+   */
+  blocksStockpile(rect: Rect, planned: readonly Footprint[] = []) {
+    const taken = [...this.claimed, ...planned];
+    return this.stockpileSpots().some((spots) => {
+      const room = spots.filter((s) => !taken.some((t) => overlaps(t, s)));
+      return room.length > 0 && room.every((s) => overlaps(s, rect));
+    });
+  }
+  /**
+   * For each stockpile cluster wholly read with the ground around it, the footprints flush beside
+   * its squares where another stockpile fits (as expand_storage looks for them).
+   */
+  private stockpileSpots() {
+    if (this.stockpileRoom) return this.stockpileRoom;
+    const size = footprintOf("Stockpile"), a = Math.floor(size / 2);
+    const { x0, y0, w, h } = this.region;
+    const squares = this.storageRects("Stockpile");
+    const seen = new Set<Rect>();
+    this.stockpileRoom = [];
+    for (const square of squares) {
+      if (seen.has(square)) continue;
+      const cluster = this.cluster(square, squares);
+      for (const r of cluster) seen.add(r);
+      const x1 = Math.min(...cluster.map((r) => r.x1)) - size, y1 = Math.min(...cluster.map((r) => r.y1)) - size;
+      const x2 = Math.max(...cluster.map((r) => r.x2)) + size, y2 = Math.max(...cluster.map((r) => r.y2)) + size;
+      if (x1 < x0 || y1 < y0 || x2 >= x0 + w || y2 >= y0 + h) continue;
+      const spots: Rect[] = [];
+      for (const r of cluster)
+        for (const side of ["down-right", "down-left", "up-right", "up-left"]) {
+          const along = side === "down-right" || side === "up-left" ? "x" : "y";
+          const fixed = side === "down-right" ? r.x2 + 1 + a : side === "down-left" ? r.y2 + 1 + a
+            : side === "up-left" ? r.x1 - 1 - (size - 1 - a) : r.y1 - 1 - (size - 1 - a);
+          const [lo, hi] = along === "x" ? [r.y1, r.y2] : [r.x1, r.x2];
+          for (let other = lo - (size - 1 - a); other <= hi + a; other++) {
+            const t = along === "x" ? { x: fixed, y: other } : { x: other, y: fixed };
+            const spot = footprintRect(t, size);
+            if (!spots.some((s) => s.x1 === spot.x1 && s.y1 === spot.y1) && this.fits("Stockpile", t).ok) spots.push(spot);
+          }
+        }
+      this.stockpileRoom.push(spots);
+    }
+    return this.stockpileRoom;
   }
   /** Raw layer values at one tile (diagnostics). */
   describe(t: Tile) {
