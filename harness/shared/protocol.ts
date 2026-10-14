@@ -279,6 +279,12 @@ export const TICKS_PER_GAME_SECOND = 30;
  */
 export const GAME_SPEED = 40;
 /**
+ * The speed the host plays waits at (run config `fastWaits`, harness/server/game-speed.ts): the
+ * game's top speed, which its + key reaches in steps of 5. Only game time the run waits for
+ * passes at it; the host brings the game back to GAME_SPEED, measured, before a wait ends.
+ */
+export const FAST_GAME_SPEED = 90;
+/**
  * Game seconds of play after which a screenshot no longer serves for input aimed at its pixels:
  * the game changes under a stale image. Counted on the game clock, so time the game spends paused
  * does not count and waits the host plays faster (fast waits) count in full; 40 game seconds is
@@ -349,6 +355,12 @@ export const runConfigSchema = z
     imageTokenEstimate: z.number().int().min(1024).max(16384).default(4096),
     /** Record the game window while the agent acts (not while it thinks) for tools/video/render-video.py. */
     recordVideo: z.boolean().default(false),
+    /**
+     * Fast waits: the host plays the game time a run only waits for (the model's waits and its own)
+     * at FAST_GAME_SPEED where that saves real time, back at GAME_SPEED, measured, before each
+     * wait ends. Every tick is the same game at any speed, so only the run's real time changes.
+     */
+    fastWaits: z.boolean().default(true),
   })
   .strict();
 export type RunConfig = z.infer<typeof runConfigSchema>;
@@ -368,6 +380,12 @@ export type RuntimeProgress = {
   };
   /** How the host set the game speed before timed play (runs from 2026-10-08). */
   gameSpeed?: GameSpeedSetting;
+  /**
+   * Fast waits (run config `fastWaits`): how many waits were played fast, the game and real
+   * seconds they took, the real seconds they saved (estimated), the presses it took to set the
+   * speed again after a wrong end speed, and why they stopped for the run, if they did.
+   */
+  fastWaits?: { count: number; gameSeconds: number; realSeconds: number; savedSeconds: number; corrections: number; off?: string };
   stopReason?: string;
   /** The error that ended the run, when one did. */
   endError?: string;

@@ -991,11 +991,13 @@ main {
 .switch input:disabled + span {
   opacity: 0.45;
 }
-.switch.record-video {
+.switch.record-video,
+.switch.fast-waits {
   flex-wrap: wrap;
   row-gap: 2px;
 }
-.switch.record-video small {
+.switch.record-video small,
+.switch.fast-waits small {
   flex-basis: 100%;
   padding-left: 36px;
   color: var(--muted);

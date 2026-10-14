@@ -91,12 +91,13 @@ On **Home**, fill in:
 | Benchmark type | | Benchmark name; selects `prompt/benchmarks/<name>.md` (see [The benchmark](benchmark.md#scenarios)) |
 | Model | | A saved profile |
 | Instruction | | The operator's instruction to the agent, up to 12,000 characters |
-| Game minutes | 25 | Game-time budget (0.5 to 120). The game speed is fixed at 40 and not a setting; see [How it works](how-it-works.md#time-is-game-time) |
+| Game minutes | 25 | Game-time budget (0.5 to 120). The game speed is fixed at 40 for everything the model does and not a setting; see [How it works](how-it-works.md#time-is-game-time) |
 | Wall limit | 360 minutes | Real-time limit, including thinking time (up to 720) |
 | Default wait | 5 game seconds | How long the host waits after a turn that acted without looking (0 to 300) |
 | Minimum turn | 8 game seconds | Least game time a turn that runs the game takes; the host waits out the rest (0 to 60, 0 turns it off). See [the agent](agent.md#a-turn) |
 | Context budget | 120,000 tokens | When to compact the conversation (32,000 to 200,000; see [Context](context.md#compaction)) |
 | Record video | on | Record the game while the agent acts |
+| Fast waits | on | Play the game time the run only waits for at the game's top speed, back at 40 before each wait ends (`fastWaits`; see [Fast waits](how-it-works.md#fast-waits)) |
 
 **Start run** is refused unless the game is connected, the model has a key (and prices,
 unless it is on OpenRouter), the memory guard is active and the reader confirms a
@@ -162,7 +163,7 @@ use. Treat the runs folder as private anyway: it holds full screenshots and mode
 
 With **Record video** on (or `--record` for episodes), the game machine records the
 game window while the agent acts, and the host renders an edited MP4 when the run
-ends.
+ends. A wait played fast shows in the video as faster idle play.
 
 - **Recording.** A separate SSH session captures the game window only, scaled to
   1600 × 900: 10 frames per second for 2.5 seconds after each input, 4 otherwise.

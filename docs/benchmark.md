@@ -14,9 +14,11 @@ game accepts, keep workers fed and housed, and grow.
   name.
 - **Same game time.** The budget is counted in game ticks (1,800 per game minute; 25
   game minutes by default), so every model gets the same amount of in-game time.
-- **Same speed.** The game runs at a fixed speed of 40. The host sets it with the
-  game's speed keys before the budget starts and the model cannot change it, so speed
-  is not a lever: it cannot trade game time for how often the model looks.
+- **Same speed.** The game runs at a fixed speed of 40 for everything the model does.
+  The host sets it with the game's speed keys before the budget starts and the model
+  cannot change it, so speed is not a lever: it cannot trade game time for how often the
+  model looks. Only time spent waiting may pass faster in real time
+  ([fast waits](how-it-works.md#fast-waits)); every tick is the same game at any speed.
 - **Thinking is free.** The game is paused while the model thinks and while it only
   reads, so a slow model is not penalised in game time. A real-time limit (6 hours by
   default) only stops runs that have gone badly wrong; the record shows when it ended a
@@ -344,6 +346,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |
 | `--playbook` | off | Run the episodes as a [learning series](#learning-series): the playbook carries over |
 | `--record` | off | Record the run and render a video |
+| `--no-fast-waits` | off | Play every wait at the benchmark speed instead of the game's top speed ([fast waits](how-it-works.md#fast-waits)) |
 | `--resume` | | Continue a paused series by its ID, with its own settings |
 | `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs, and ignore [rounds](#rounds); for trials only |
 | `--new-round` | off | Play on this checkout's version even when the benchmark's [round](#rounds) is an earlier one, and move the round here once the run is valid |

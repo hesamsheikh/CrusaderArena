@@ -27,7 +27,9 @@ A turn is one model reply plus the tool calls in it.
    the camera with it paused (minimap clicks work on a paused game) and unpause it only
    for the screenshot they return. `flat_view` does the same: it toggles the flattened
    view with the game paused and unpauses it for the two images it returns, since a
-   paused game shows "Game Paused" across the middle of the view.
+   paused game shows "Game Paused" across the middle of the view. Waits, the model's and
+   the host's, may be played at the game's top speed; everything else happens at 40 (see
+   [Fast waits](how-it-works.md#fast-waits)).
 4. **The host makes sure the model sees the result.** If the turn acted without
    observing afterwards, or called no tools at all, the host lets the default wait
    pass (5 game seconds) and sends an observation. A reply that called no tools always

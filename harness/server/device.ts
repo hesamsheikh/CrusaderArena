@@ -474,9 +474,16 @@ export class GameDevice {
       return f;
     });
   }
+  /**
+   * Set during a run with fast waits (controller.ts): throws while the game may run at another
+   * speed than the benchmark's, so no input aimed at the game (action, hotkey) goes out then. The
+   * host's own pause and speed keys (pressKey) are exempt.
+   */
+  speedGuard?: () => void;
   async action(action: GameAction, frameId: string, guard?: () => void, ageCreditMs = 0) {
     return this.serial(async () => {
       guard?.();
+      this.speedGuard?.();
       const frame = this.frames.get(frameId);
       if (!frame) throw new Error("Unknown or expired game image: call observe for a fresh screenshot.");
       validateFrameAction(action, frame, this.frameAge(frame, ageCreditMs));
@@ -499,6 +506,7 @@ export class GameDevice {
   async hotkey(name: GameHotkey, guard?: () => void) {
     return this.serial(async () => {
       guard?.();
+      this.speedGuard?.();
       const frame = this.latest;
       if (!frame) throw new Error("Capture the game before sending a hotkey.");
       this.announce({ type: "hotkey", name, width: frame.width, height: frame.height });

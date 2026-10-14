@@ -153,6 +153,19 @@ test("a screenshot ages in game seconds on the game clock: 40 of them, however l
   await assert.rejects(device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id), /expired/);
 });
 
+test("the speed guard refuses game input while it throws, but not the host's pause and speed keys", async () => {
+  const { device, sent } = bridged();
+  const frame = await device.capture();
+  device.speedGuard = () => { throw new Error("The game is not confirmed at speed 40; input refused."); };
+  await assert.rejects(device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id), /not confirmed at speed 40/);
+  await assert.rejects(device.hotkey("HomeKeep"), /not confirmed at speed 40/);
+  await device.pressKey("-");
+  assert.deepEqual(sent, ["capture", "action"], "only the speed key went out");
+  device.speedGuard = undefined;
+  await device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id);
+  assert.equal(sent.length, 3);
+});
+
 test("a reader diagnostic naming a multiplayer game ends the connection; other refusals do not", () => {
   const failures: string[] = [];
   const device = new GameDevice(() => {}, (message) => failures.push(message));

@@ -104,6 +104,7 @@ function App() {
       fallbackObservation: "when-needed",
       contextBudget: 120000,
       recordVideo: true,
+      fastWaits: true,
       modelId: "",
     }),
     [error, setError] = useState(""),
@@ -287,6 +288,7 @@ function App() {
       fallbackObservation: run.config?.fallbackObservation ?? "when-needed",
       contextBudget: run.config?.contextBudget || 120000,
       recordVideo: run.config?.recordVideo ?? true,
+      fastWaits: run.config?.fastWaits ?? true,
     });
     setNewRun(true);
   };
@@ -694,6 +696,7 @@ function App() {
                   contextBudget: draft.contextBudget,
                   imageTokenEstimate: 4096,
                   recordVideo: draft.recordVideo,
+                  fastWaits: draft.fastWaits,
                 },
                 modelId: draftModel?.id,
               });

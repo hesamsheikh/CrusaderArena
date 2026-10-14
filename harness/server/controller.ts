@@ -13,9 +13,9 @@ import type {
   RunSeries,
   RuntimeProgress,
 } from "../shared/protocol.js";
-import { EMPTY_REPLY_GRACE_SECONDS, EMPTY_REPLY_LIMIT, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, isOpenRouter } from "../shared/protocol.js";
+import { EMPTY_REPLY_GRACE_SECONDS, EMPTY_REPLY_LIMIT, GAME_SPEED, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, isOpenRouter } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
-import { setGameSpeed, type SpeedControl } from "./game-speed.js";
+import { FastWaits, setGameSpeed, type ClockReading, type FastWait, type FastWaitControl, type SpeedControl } from "./game-speed.js";
 import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
 import { RunRecorder, defaultRecording } from "./recorder.js";
 import {
@@ -80,6 +80,9 @@ const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
 export function isTransientProviderError(message?: string) {
   return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream/i.test(message ?? "");
 }
+
+/** What the controller uses of FastWaits (game-speed.ts). */
+export type FastWaitsLike = Pick<FastWaits, "run" | "restore" | "normal" | "off" | "corrections">;
 
 export class RunController {
   readonly session: Session;
@@ -163,6 +166,8 @@ export class RunController {
       playbook?: string;
       /** Sets the game speed before timed play (default: setGameSpeed against the live reader). */
       gameSpeed?: (control: SpeedControl) => Promise<GameSpeedSetting>;
+      /** Makes the run's fast waits (default: FastWaits against the live reader and speed keys). */
+      fastWaits?: (control: FastWaitControl, normalRate?: number) => FastWaitsLike;
     } = {},
   ) {
     if (!run.config) throw new Error("Missing run configuration");
@@ -525,6 +530,23 @@ export class RunController {
     }
     throw new Error(`${target ? "Pause" : "Unpause"} input sent but not confirmed by a new reader sample.`);
   }
+  /** The reader's game clock for the speed keys' measurements: its tick and when it was captured. */
+  private clockReading(): ClockReading {
+    const stats = this.device.currentStats();
+    const tick = stats.observation?.game_time;
+    return stats.status === "ok" && typeof tick === "number" && typeof stats.captured_unix_ms === "number"
+      ? { tick, at: stats.captured_unix_ms }
+      : null;
+  }
+  /** A speed key from the host, refused once the run has stopped. */
+  private async pressSpeedKey(key: "+" | "-") {
+    const allowed = () => {
+      if (this.operatorStopped || this.session.reason) throw new Error("Run stopped.");
+    };
+    if (!this.device.latest) await this.device.capture();
+    allowed();
+    await this.device.pressKey(key, allowed);
+  }
   /**
    * Run the game at the benchmark's fixed speed. Before the budget starts the host unpauses the
    * game, measures its speed from the reader and presses the speed keys until it runs at
@@ -537,18 +559,8 @@ export class RunController {
     this.runtime.phase("setting game speed");
     await this.ensurePauseState(false);
     const setting = await (this.dependencies.gameSpeed ?? setGameSpeed)({
-      clock: () => {
-        const stats = this.device.currentStats();
-        const tick = stats.observation?.game_time;
-        return stats.status === "ok" && typeof tick === "number" && typeof stats.captured_unix_ms === "number"
-          ? { tick, at: stats.captured_unix_ms }
-          : null;
-      },
-      press: async (key) => {
-        if (!this.device.latest) await this.device.capture();
-        allowed();
-        await this.device.pressKey(key, allowed);
-      },
+      clock: () => this.clockReading(),
+      press: (key) => this.pressSpeedKey(key),
       sleep: (ms) => {
         allowed();
         return new Promise((resolve) => setTimeout(resolve, ms));
@@ -561,6 +573,72 @@ export class RunController {
       `Game speed set to ${setting.target}: measured ${setting.after} ticks/s (was ${setting.before}; ${setting.presses} key presses).`,
     );
     this.publish();
+  }
+  /** Fast waits (run config `fastWaits`, game-speed.ts), from the first tick of the budget. */
+  private fastWaits?: FastWaitsLike;
+  /**
+   * Plays the run's waits fast from now on (Session.waitGame hands each one over), with the
+   * device refusing game input whenever the speed is not confirmed at GAME_SPEED. Each wait played
+   * fast goes to the events ("fast_wait") and into progress.fastWaits.
+   */
+  private startFastWaits() {
+    const measured = this.progress.gameSpeed?.after;
+    const fast = (this.dependencies.fastWaits ?? ((control, rate) => new FastWaits(control, rate)))(
+      {
+        clock: () => this.clockReading(),
+        press: (key) => this.pressSpeedKey(key),
+        sleep: (ms) => this.session.wait(ms / 1000),
+        check: () => this.session.check(),
+        paused: () => {
+          const paused = this.device.currentStats().observation?.paused;
+          return typeof paused === "boolean" ? paused : undefined;
+        },
+        now: () => performance.now(),
+      },
+      measured !== undefined && Math.abs(measured - GAME_SPEED) <= 3 ? measured : undefined,
+    );
+    this.fastWaits = fast;
+    this.device.speedGuard = () => {
+      if (!fast.normal) throw new Error(`The game is not confirmed at speed ${GAME_SPEED}; input refused.`);
+    };
+    this.session.setFastWait(async (target) => {
+      const off = fast.off;
+      const record = await fast.run(target);
+      if (record) this.recordFastWait(record, fast);
+      if (fast.off && fast.off !== off) {
+        this.store.event(this.run.id, { type: "fast_waits_off", reason: fast.off });
+        this.log("system", `Fast waits are off for the rest of the run: ${fast.off}.`);
+        this.progress.fastWaits = { ...(this.progress.fastWaits ?? { count: 0, gameSeconds: 0, realSeconds: 0, savedSeconds: 0, corrections: 0 }), off: fast.off };
+        this.publish();
+      }
+    });
+  }
+  private recordFastWait(record: FastWait, fast: FastWaitsLike) {
+    this.store.event(this.run.id, { type: "fast_wait", ...record });
+    const sum = this.progress.fastWaits ?? { count: 0, gameSeconds: 0, realSeconds: 0, savedSeconds: 0, corrections: 0 };
+    const tenths = (value: number) => Math.round(value * 10) / 10;
+    this.progress.fastWaits = {
+      ...sum,
+      count: sum.count + 1,
+      gameSeconds: tenths(sum.gameSeconds + record.ticks / TICKS_PER_GAME_SECOND),
+      realSeconds: tenths(sum.realSeconds + record.realMs / 1000),
+      savedSeconds: tenths(sum.savedSeconds + record.savedMs / 1000),
+      corrections: fast.corrections,
+    };
+    if (record.corrected !== undefined)
+      this.log("system", `A fast wait came back at ${record.endRate} ticks a second after ${record.corrected} correcting key presses.`);
+    this.publish();
+  }
+  /**
+   * After a run that stopped during a fast wait, with the game now paused: the - presses that take
+   * the speed back down, unconfirmed (a paused game's speed cannot be measured).
+   */
+  private async restoreSpeed() {
+    const fast = this.fastWaits;
+    if (!fast || fast.normal) return;
+    const presses = await fast.restore((key) => this.device.pressKey(key));
+    this.store.event(this.run.id, { type: "fast_wait_restored", presses });
+    this.log("system", `The run ended during a fast wait; ${presses} presses of - took the speed back down (unconfirmed while paused).`);
   }
   /** The model's screenshots at the run's size (screenshotWidth) for the whole run, or the window's own. */
   private useScreenshotWidth(on: boolean) {
@@ -796,6 +874,7 @@ export class RunController {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       this.session.start();
+      if (this.runtime.config.fastWaits) this.startFastWaits();
       this.recorder?.start();
       unsubscribeInput = this.recorder && this.device.onInput?.((input) => this.recorder!.input(input));
       if (this.prepared) {
@@ -1032,6 +1111,11 @@ export class RunController {
         unsubscribe();
         unsubscribeGuard?.();
         unsubscribeInput?.();
+        // The device outlives the run: no guard or fast waits carry over to whatever comes next.
+        if (this.fastWaits && !this.fastWaits.normal)
+          this.log("error", "The run was stopped during a fast wait: the game may still run faster than the benchmark speed.");
+        this.device.speedGuard = undefined;
+        this.session.setFastWait(undefined);
       }
     }
     return this.progress.phase as "completed" | "stopped" | "error";
@@ -1200,6 +1284,7 @@ export class RunController {
             "Pause input sent but not confirmed by a new reader sample.",
           );
       }
+      await this.restoreSpeed();
       const frame = await this.device.capture();
       allowed();
       this.refresh(frame);

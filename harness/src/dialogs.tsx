@@ -386,6 +386,7 @@ export type RunDraft = {
   fallbackObservation: "when-needed" | "always";
   contextBudget: number;
   recordVideo: boolean;
+  fastWaits: boolean;
   modelId: string;
 };
 
@@ -588,6 +589,20 @@ export function NewRunDialog({
             Screen-records the game with the agent's reasoning and tools. Idle
             play is fast-forwarded and thinking pauses become short reasoning
             cards. Saved as video.mp4 in the run folder.
+          </small>
+        </label>
+        <label className="switch fast-waits">
+          <input
+            type="checkbox"
+            checked={draft.fastWaits}
+            onChange={(e) => update({ fastWaits: e.target.checked })}
+          />
+          <span aria-hidden />
+          Fast waits
+          <small>
+            Plays the game time the run only waits for at the game's top speed,
+            back at the benchmark speed before each wait ends. The game is the
+            same tick for tick; the run takes less real time.
           </small>
         </label>
         <footer className="modal-foot">

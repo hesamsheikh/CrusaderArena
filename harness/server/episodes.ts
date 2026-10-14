@@ -32,6 +32,8 @@
  * --dry-run does everything except the agent run (no model cost); --keep-game leaves
  * the game running (paused) afterwards for manual inspection; --record records the game
  * while the agent acts and renders video.mp4 into the run folder after the scorecard.
+ * --no-fast-waits plays every wait at the benchmark speed instead of the game's top speed (fast
+ * waits: game-speed.ts).
  */
 import "dotenv/config";
 import { spawn } from "node:child_process";
@@ -72,6 +74,7 @@ const { values: opts } = parseArgs({
     episodes: { type: "string" },
     playbook: { type: "boolean" },
     record: { type: "boolean" },
+    "no-fast-waits": { type: "boolean" },
     // How to run, not what.
     resume: { type: "string" },
     unversioned: { type: "boolean", default: false },
@@ -91,7 +94,7 @@ const DEFAULTS = {
 };
 const setting = (name: keyof typeof DEFAULTS) => opts[name] ?? DEFAULTS[name];
 const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-file", "game-minutes", "wall-limit-minutes",
-  "default-wait", "min-turn-seconds", "fallback-observation", "screenshot-width", "context-budget", "episodes", "playbook", "record"] as const;
+  "default-wait", "min-turn-seconds", "fallback-observation", "screenshot-width", "context-budget", "episodes", "playbook", "record", "no-fast-waits"] as const;
 /** What an episode is run with: a series' settings, or the flags for --idle, --human and --dry-run. */
 type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
@@ -1073,6 +1076,7 @@ async function main() {
       contextBudget: Number(setting("context-budget")),
       imageTokenEstimate: 4096,
       recordVideo: opts.record ?? false,
+      fastWaits: !opts["no-fast-waits"],
     });
     const plan: Plan = { save: opts.save, map: opts.map, benchmark: setting("benchmark"), prompt: "", config };
     if (!agent) await runPlain(plan, total);

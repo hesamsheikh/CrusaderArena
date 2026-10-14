@@ -15,6 +15,11 @@ too, because a paused game shows a "Game Paused" overlay. `go_to_tile` and
 with it paused, which the game allows, and unpause it only for their screenshot;
 `flat_view` likewise toggles the view paused and unpauses it for its two images.
 
+**Waits may run fast.** The game time `wait_and_observe` and the host's own waits let
+pass may be played at the game's top speed, back at 40 before the wait ends (see
+[Fast waits](how-it-works.md#fast-waits)). Waits are in game seconds, so nothing about
+them changes for the model.
+
 **Action** marks tools that count toward the limit of 8 actions per reply. **Obs**
 means the result includes an observation: a fresh screenshot plus the JSON reading
 described in [Context](context.md#observations), or, from `wait_and_observe` with

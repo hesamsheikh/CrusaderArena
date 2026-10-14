@@ -23,6 +23,14 @@ export class Session {
   private startTick?: number;
   private lastTick?: number;
   private map?: string;
+  /**
+   * Plays a wait's way to a target tick faster (fast waits, game-speed.ts), returning with the
+   * game back at the benchmark speed; set by the controller when the run has them on.
+   */
+  private fastWait?: (target: number) => Promise<unknown>;
+  setFastWait(fastWait: ((target: number) => Promise<unknown>) | undefined) {
+    this.fastWait = fastWait;
+  }
   constructor(
     /** Wall-clock limit in seconds. */
     readonly seconds: number,
@@ -112,6 +120,9 @@ export class Session {
    * budget. A stalled reader or very slow game speed ends the wait after three
    * real seconds per game second (the slowest speed runs about 10 ticks/s).
    * `until`, checked every 50 ms, ends it early; returns true when it did.
+   * Without `until` the wait's last tick is known, so fast waits may play most
+   * of the way there (by the budget's end at the latest) before the rest passes
+   * at the benchmark speed.
    */
   async waitGame(gameSeconds: number, until?: () => boolean) {
     if (!this.game) {
@@ -125,6 +136,7 @@ export class Session {
     const target = this.lastTick! + gameSeconds * TICKS_PER_GAME_SECOND;
     const wallCap = Math.min(this.remaining(), gameSeconds * 3000 + 2000);
     const started = this.now();
+    if (!until && this.fastWait) await this.fastWait(Math.min(target, this.startTick! + this.game.budgetTicks));
     while (this.lastTick! < target && this.now() - started < wallCap) {
       if (until?.()) return true;
       await this.sleep(50);

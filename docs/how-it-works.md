@@ -64,7 +64,8 @@ machine listens on the network.
    default): the model's screenshots wait until the turn has run that long, and if a
    turn acts without looking at the result, or calls no tools at all, the host lets the
    longer of 5 game seconds and the rest of the minimum pass and sends a new screenshot.
-   This caps how many requests, and so how much cost, a run can take.
+   This caps how many requests, and so how much cost, a run can take. Waits long enough
+   to gain from it run at the game's top speed (see [Fast waits](#fast-waits)).
 5. **Finish.** The run ends when the game-time budget is used up (25 game minutes by
    default), the real-time safety limit is reached (6 hours), the operator stops
    it, or something fails. The host pauses the game, confirms the pause and saves a
@@ -81,13 +82,34 @@ wall-clock time. The game is paused whenever the model is thinking, and stays pa
 while it only reads, so thinking and reading cost no game time. Only the game's own
 clock counts: 30 game ticks per game second.
 
-The game speed is fixed at 40 for every run, where the clock runs about 40 ticks a
-second and a game second takes about 0.75 real seconds. The model cannot change it.
-With a game-time budget, a free speed would let a model trade how much game passes
-during each action and wait against real time, which is not what the benchmark
-measures. The run record keeps the speed the host found and measured
-(`progress.gameSpeed`). The seconds it takes to set the speed pass before the budget's
-first tick.
+The game speed is fixed at 40 for everything the model does, where the clock runs about
+40 ticks a second and a game second takes about 0.75 real seconds. The model cannot change
+it. With a game-time budget, a free speed would let a model trade how much game passes
+during each action against real time, which is not what the benchmark measures. The run
+record keeps the speed the host found and measured (`progress.gameSpeed`). The seconds it
+takes to set the speed pass before the budget's first tick.
+
+### Fast waits
+
+Much of a run's game time is spent only waiting: the model's own waits
+(`wait_and_observe`) and the host's (the default wait, the rest of a minimum turn). Every
+tick is the same game at any speed, so the host plays a wait at the game's top speed (90)
+when that saves at least 2 real seconds after the key presses it takes. It presses `+` up
+to 90, waits, and presses `-` back down early enough to measure the speed at 40 again,
+from the reader's clock, before the wait's last tick; a wrong speed is set right with the
+speed keys, or the run ends. So every action, screenshot and gap before the next model
+request happens at 40, and the model's game time is spent exactly as without fast waits.
+While the speed is not confirmed at 40, the host refuses any input to the game.
+
+A wait with a condition (`wait_and_observe` with `until`) can end at any moment, so it
+keeps the speed of 40. So do waits too short to gain: about 0.12 real seconds per key
+press and a 1.3-second measurement make the host's waits of 5 to 8 game seconds a loss.
+A wait that ends below 40 shows the game tops out lower than 90, so later waits press `+`
+fewer times; after three wrong end speeds, or if `+` does not speed the game up, the run
+plays the rest of its waits at 40. Each wait played fast is in the run's events
+(`fast_wait`), and the totals, with the real seconds saved, in `progress.fastWaits`. The
+run setting `fastWaits` (on by default; `--no-fast-waits` for `npm run episodes`) turns
+them off.
 
 Every request shows the model the game time left in minutes and seconds: `run_clock`
 in each screenshot, and a "Game time left" line after the last tool result of each

@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { Store } from "./store.js";
-import { RunController, isTransientProviderError } from "./controller.js";
+import { RunController, isTransientProviderError, type FastWaitsLike } from "./controller.js";
 import { GameEvents } from "./game-events.js";
 import type { GameDevice } from "./device.js";
 import { Session, requestTimeout } from "./session.js";
@@ -19,7 +19,7 @@ import { pruneImages, contextEstimate, handoffInstruction } from "./context.js";
 import { RunMemory } from "./run-memory.js";
 import { availableAtlasPages, constructionAtlasInstalled } from "./visual-atlas.js";
 import { runConfigSchema, type Frame, type GameSpeedSetting, type RunSeries } from "../shared/protocol.js";
-import type { SpeedControl } from "./game-speed.js";
+import type { FastWaitControl, SpeedControl } from "./game-speed.js";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
@@ -67,6 +67,8 @@ function fixture(
    * observing; tests of that setting itself pass "when-needed" explicitly.
    */
   fallbackObservation: "when-needed" | "always" = "always",
+  /** A stand-in for the run's fast waits, which turns them on (the fake game's clock does not run by itself). */
+  fastWaits?: (control: FastWaitControl, normalRate?: number) => FastWaitsLike,
 ) {
   const store = new Store(
     mkdtempSync(path.join(tmpdir(), "arena-controller-")),
@@ -87,6 +89,7 @@ function fixture(
       minTurnSeconds,
       fallbackObservation,
       recordVideo: !!recording.spawnRecorder,
+      fastWaits: !!fastWaits,
     }),
     ...(learning ? { series: learning.series } : {}),
   });
@@ -235,6 +238,7 @@ function fixture(
       spawnRecorder: recording.spawnRecorder,
       playbook: learning?.playbook,
       gameSpeed,
+      fastWaits,
     },
   );
   let prepareHook = async (_input: AgentMessage, _system: string, _tools: AgentTool<any>[]) => message([{ type: "text", text: "Ready.\nBEGIN" }]);
@@ -417,6 +421,58 @@ test("flat_view toggles the view with the game paused and takes both images it r
   assert.deepEqual(images.map((c) => c.type === "image" && c.data), ["flat", "test"]);
   const status = result.content[0];
   assert.equal(status.type === "text" && JSON.parse(status.text).status, "ok");
+});
+/** The run's own events (events.jsonl), as the controller wrote them. */
+const runEvents = (f: ReturnType<typeof fixture>) =>
+  readFileSync(f.store.file(f.run.id, "events.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).event);
+test("fast waits get the host's waits and the model's, and the run records what they did", async () => {
+  const targets: number[] = [];
+  let f!: ReturnType<typeof fixture>;
+  const stub: FastWaitsLike = {
+    normal: true, corrections: 0,
+    run: async (target) => {
+      targets.push(target);
+      f.advanceTicks(target - 1000 + 1); // The fake game runs past the wait's end.
+      return { ticks: 300, presses: 10, fastRate: 90.9, endRate: 40.4, realMs: 4000, savedMs: 3400 };
+    },
+    restore: async () => 0,
+  };
+  f = fixture(3, 10, 10, {}, undefined, 0, undefined, "always", () => stub);
+  f.provider((n) => n === 1 ? [call("wait_and_observe", { seconds: 20 })] : [call("game_action", { type: "key", key: "Z" })]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  // The model's wait (20 s from tick 1000), then the host's default wait after the action that
+  // looked at nothing (10 s from wherever the clock got to).
+  assert.equal(targets.length, 2);
+  assert.equal(targets[0], 1000 + 20 * 30);
+  const waits = runEvents(f).filter((e) => e.type === "fast_wait");
+  assert.equal(waits.length, 2);
+  assert.deepEqual(f.controller.progress.fastWaits, { count: 2, gameSeconds: 20, realSeconds: 8, savedSeconds: 6.8, corrections: 0 });
+});
+test("a run that ends during a fast wait presses the speed back down once the game is paused", async () => {
+  let f!: ReturnType<typeof fixture>;
+  let raised = 0;
+  const stub: FastWaitsLike = {
+    normal: true, corrections: 0,
+    run: async () => {
+      stub.normal = false;
+      raised = 7;
+      f.controller.interrupt(); // A host shutdown: the run still ends with its final pause.
+      throw new Error("Session stopped while waiting");
+    },
+    restore: async (press) => {
+      for (; raised > 0; raised--) await press("-");
+      stub.normal = true;
+      return 7;
+    },
+  };
+  f = fixture(2, 0, 10, {}, undefined, 0, undefined, "always", () => stub);
+  f.provider(() => [call("wait_and_observe", { seconds: 60 })]);
+  await f.controller.runSession();
+  const keys = f.actions.map((a) => (a as { key?: string }).key);
+  const finalPause = keys.lastIndexOf("P");
+  assert.deepEqual(keys.slice(finalPause + 1).filter((k) => k === "-").length, 7, JSON.stringify(keys));
+  assert.equal(f.isPaused(), true);
+  assert.ok(runEvents(f).some((e) => e.type === "fast_wait_restored" && e.presses === 7));
 });
 test("go_to_tile after an action in the same reply runs with the game running, with no extra pause toggles", async () => {
   const f = fixture(2);

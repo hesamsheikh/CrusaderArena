@@ -33,6 +33,33 @@ test("a game wait without a condition, or one never met, runs its full time", as
   }
 });
 
+test("fast waits get a wait's last tick, by the budget's end at the latest, and never a wait with a condition", async () => {
+  let tick = 1000;
+  const session = new Session(60, () => {}, undefined, { budgetTicks: 600, clock: () => ({ tick, map: "m" }) });
+  session.start();
+  const targets: number[] = [];
+  // The fast part takes the clock nearly there; the session then waits out the last ticks itself.
+  session.setFastWait(async (target) => {
+    targets.push(target);
+    tick = target - 15;
+  });
+  const clock = setInterval(() => (tick += 30), 20);
+  try {
+    await session.waitGame(10);
+    assert.deepEqual(targets, [1300]);
+    assert.ok(tick >= 1300);
+    await session.waitGame(5, () => tick >= 0);
+    assert.equal(targets.length, 1, "a wait with `until` keeps the benchmark speed");
+    // 1,000 + 600 is the budget's end: a longer wait is played fast only that far.
+    await assert.rejects(session.waitGame(60), /stopped|deadline/);
+    assert.equal(session.deadlineKind, "game_time");
+    assert.equal(targets.at(-1), 1600);
+  } finally {
+    clearInterval(clock);
+    session.close();
+  }
+});
+
 test("the host wait gives the default wait to unobserved actions and tops up short turns", () => {
   const turn = (tools: number, { ran = false, acted = false, observed = false } = {}) => {
     const cycle = new ObservationCycle();
