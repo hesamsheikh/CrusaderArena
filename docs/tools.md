@@ -157,12 +157,14 @@ moved like a blocked one without being clicked, and the placement reports `acces
 warns.
 
 **Room around storage.** Every spot the host chooses, and every `build_structure`
-target, keeps one tile of open ground between a granary or armory and any other
-building, built, placed earlier in the call or planned in it; another granary may touch
-a granary and another armory an armory, and the keep's courtyard does not count. A
-target that would touch one is moved like a blocked one and reports
-`access: touches_storage` (with `exact`, placed as asked with the warning).
-`place_near` beside a granary or the armoury therefore places at a gap of one tile.
+target, keeps one tile of open ground between a granary, armory or stockpile and any
+other building, built, placed earlier in the call or planned in it; another granary may
+touch a granary, another armory an armory and another stockpile a stockpile, and the
+keep's courtyard does not count. A target that would touch one is moved like a blocked
+one and reports `access: touches_storage` (with `exact`, placed as asked with the
+warning). `place_near` beside a granary, the armoury or the stockpile therefore places at
+a gap of one tile. Any flush stockpile touches the pile at each end of its side, since
+the walkway between a stockpile's piles is one tile wide.
 
 **Tile map.** An external read of the game's own tile layers for the current view
 (about 2 seconds, read-only). It knows where structures, trees and rock are, which

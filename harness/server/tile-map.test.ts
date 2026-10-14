@@ -292,8 +292,9 @@ test("a new building may not take a neighbour's last open side; storage, the kee
   const unknown = new TileMap(region(neighbour), camera, frame);
   assert.deepEqual(unknown.access("Hovel", { x: 102, y: 100 }), { ok: false, reason: "closes_neighbour" }, "a building the harness cannot name is kept open");
   assert.deepEqual(unknown.access("Hovel", { x: 101, y: 100 }), { ok: true }, "one tile back leaves the side open");
+  // A pile needs no open side (spaced off: the tile of open ground around storage is its own rule).
   const pile = new TileMap({ ...region(neighbour), structure_types: { "30": STRUCTURE_TYPES.pile } }, camera, frame);
-  assert.deepEqual(pile.access("Hovel", { x: 102, y: 100 }), { ok: true });
+  assert.deepEqual(pile.access("Hovel", { x: 102, y: 100 }, [], false), { ok: true });
   const hovel = new TileMap({ ...region(neighbour), structure_types: { "30": STRUCTURE_TYPES.hovel } }, camera, frame);
   assert.deepEqual(hovel.access("Bakery", { x: 102, y: 100 }), { ok: true }, "a house needs no open side");
   const workshop = new TileMap({ ...region(neighbour), structure_types: { "30": 3 } }, camera, frame);
@@ -356,4 +357,31 @@ test("spots keep one tile of open ground around a granary or an armory, except f
   // Spots offered beside it leave the gap.
   const beside = map().sitesBeside("Hovel", granary, 1, "down-right", 3)[0];
   assert.equal(beside.gap, 1, JSON.stringify(beside));
+});
+
+test("spots keep one tile of open ground around a stockpile too, and a new stockpile may still touch it", () => {
+  // The user's rule (2026-10-14): workers carry every good to the stockpile.
+  const map = () => new TileMap({ ...region((set) => stockpile(set, 100, 100, 1)), structure_types: piles(1) }, camera, frame);
+  const square = { x1: 100, y1: 100, x2: 104, y2: 104 };
+  // A hovel (side 4: tile 107 covers 105..108) flush against the square is refused on any side;
+  // one tile away it fits.
+  assert.equal(map().access("Hovel", { x: 107, y: 102 }).reason, "touches_storage");
+  assert.equal(map().access("Hovel", { x: 102, y: 107 }).reason, "touches_storage");
+  assert.ok(map().access("Hovel", { x: 108, y: 102 }).ok);
+  // A second stockpile may touch it, as the game wants, and spots beside it for one are flush.
+  assert.ok(map().access("Stockpile", { x: 107, y: 102 }).ok);
+  const flush = map().sitesBeside("Stockpile", square, 1, "down-right", 0)[0];
+  assert.equal(flush.gap, 0, JSON.stringify(flush));
+  // Other buildings offered beside it leave the gap; one planned in the same call counts too.
+  const beside = map().sitesBeside("Hovel", square, 1, "down-right", 3)[0];
+  assert.equal(beside.gap, 1, JSON.stringify(beside));
+  assert.equal(new TileMap(region(), camera, frame).access("Hovel", { x: 107, y: 102 }, [{ ...square, building: "Stockpile" }]).reason, "touches_storage");
+  // A new stockpile touching another building is refused while spaced (expand_storage then falls
+  // back to a flush spot: anchors.ts).
+  const crowded = new TileMap({
+    ...region((set) => { stockpile(set, 100, 100, 1); fill(set, "structure", 105, 106, 108, 109, 20); }),
+    structure_types: { ...piles(1), "20": STRUCTURE_TYPES.hovel },
+  }, camera, frame);
+  assert.equal(crowded.access("Stockpile", { x: 102, y: 107 }).reason, "touches_storage");
+  assert.ok(crowded.access("Stockpile", { x: 102, y: 107 }, [], false).ok);
 });

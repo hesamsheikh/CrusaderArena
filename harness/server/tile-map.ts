@@ -101,10 +101,12 @@ export type Rect = { x1: number; y1: number; x2: number; y2: number };
 export type Footprint = Rect & { needsOpenSide?: boolean; building?: string };
 /**
  * Storage that spots chosen by the harness keep one tile of open ground around, by engine type:
- * granaries and armories, which workers keep walking to (the user's rule, 2026-10-12). One may
- * touch another of its own kind: the game wants a new granary against the granary.
+ * granaries, armories and stockpile piles, which workers keep walking to (the user's rule,
+ * 2026-10-12; stockpiles from 2026-10-14). One may touch another of its own kind: the game wants
+ * a new granary against the granary. Any building flush against a stockpile's 5×5 square has a
+ * pile tile in its one-tile ring, since the walkway between the piles is one tile wide.
  */
-const SPACED_STORAGE: Record<string, number> = { Granary: 19, Armory: 11 };
+const SPACED_STORAGE: Record<string, number> = { Granary: STRUCTURE_TYPES.granary, Armory: STRUCTURE_TYPES.armory, Stockpile: STRUCTURE_TYPES.pile };
 export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number; ground?: string };
 /**
  * How a spot is chosen. `reserve` (the default): keep off every other building's ground, for
@@ -229,9 +231,9 @@ export class TileMap {
     return this.buildings;
   }
   /**
-   * Whether a footprint for `building` would touch a granary or armory (or, for one of those, any
-   * other building) with no tile between them: built, placed during this call, or `planned`.
-   * Another of the same kind may touch it, and so may the keep's open courtyard.
+   * Whether a footprint for `building` would touch a granary, armory or stockpile (or, for one of
+   * those, any other building) with no tile between them: built, placed during this call, or
+   * `planned`. Another of the same kind may touch it, and so may the keep's open courtyard.
    */
   touchesStorage(building: string, rect: Rect, planned: readonly Footprint[] = []) {
     const own = SPACED_STORAGE[building];

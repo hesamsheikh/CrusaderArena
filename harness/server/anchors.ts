@@ -120,8 +120,8 @@ async function placeFromMap(
     missing = shortfall(building, ctx.device.currentStats().observation) ?? undefined;
     if (missing) { stopped = "not_enough_resources"; break; }
     // Storage must touch its kind, so when no spot beside it keeps the tile of open ground around
-    // granaries and armories, one that does not is taken rather than none (a full armory in a
-    // crowded town had two flush spots, both touching other buildings, live 2026-10-12).
+    // granaries, armories and stockpiles, one that does not is taken rather than none (a full
+    // armory in a crowded town had two flush spots, both touching other buildings, live 2026-10-12).
     const site = touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, storage ? 0 : 3))[0]
       ?? (storage ? touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, 0, { spaced: false }))[0] : undefined);
     if (!site) { stopped = attempts ? "no_more_free_spots" : "no_free_spot_in_view"; break; }
