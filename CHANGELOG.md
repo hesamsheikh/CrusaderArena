@@ -23,7 +23,8 @@ Runs take less real time. Waits are played at the game's top speed and every tic
 game at any speed, so a run's game should be the same as on 1.6; this, the top speed and the
 speed keys' behaviour are still to be checked in the live game (see
 [Status](docs/status.md#tested-in-code-only)). A minor version because the placement rules
-around stockpiles change what models can build where, and warnings can end the model's waits.
+around stockpiles and the routes to the keep change what models can build where, and
+warnings can end the model's waits.
 
 ### Benchmark
 
@@ -51,6 +52,15 @@ around stockpiles change what models can build where, and warnings can end the m
   (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
   `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,
   GPT-6.1 Sol, Gemini 4 Argon and Muse Wonder on The Sinkhole, and others on the desert).
+- Every spot the harness picks, and every `build_structure` target, keeps a way to walk
+  from the keep to the new building and to every building that has one now: to an open
+  side of one with workers, and to any tile beside storage. An open side alone can face a
+  pocket walled off by buildings, water or cliffs, and then no worker comes ("no access to
+  keep"); a model's interview asked for this check. A spot people could not walk to reports
+  `access: no_route`, one that would close another building's last way `cuts_route`, and
+  both are moved like a blocked target. The way is searched on the tile map from the keep's
+  courtyard or the edge of the area read; trees, bushes and farm fields count as walkable
+  until the live game shows otherwise.
 - `build_structure` waits after its closing right-click until the reader shows placement
   mode ended. A call straight after another one, placing the same building first, read the
   end of the previous placement mode as its own selection failing and reported `not_selected`

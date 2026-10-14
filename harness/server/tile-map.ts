@@ -82,6 +82,12 @@ const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
 const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary", "Armory", ...decorationNames]);
 export const needsOpenSide = (building: string) => !noWorkers.has(building);
 /**
+ * Buildings people must walk to from the keep: those with workers, who come from the keep's
+ * campfire, and storage, which goods are carried to. Hovels, the marketplace and the good and
+ * bad things need no route.
+ */
+export const needsRoute = (building: string) => needsOpenSide(building) || ["Stockpile", "Granary", "Armory"].includes(building);
+/**
  * Engine types that need no open side. Buildings of other types in the map, including ones the
  * harness cannot name, are kept with an open side too.
  */
@@ -89,6 +95,8 @@ const noOpenSideTypes = new Set<number>([STRUCTURE_TYPES.hovel, STRUCTURE_TYPES.
   STRUCTURE_TYPES.market, STRUCTURE_TYPES.keep, STRUCTURE_TYPES.courtyard, SIGNPOST_TYPE,
   // Good and bad things (the game's eStructs: gallows to garden, cesspit to dunking stool, statue to pond).
   ...[62, 63, 64, 65, 66, 91, 92, 93, 94, 95, 96, 97, 98, 100, 101, 102, 103, 104]]);
+/** Engine types of storage, which needs a route (needsRoute) though no open side: piles, granaries, armories. */
+const routedStorageTypes = new Set<number>([STRUCTURE_TYPES.pile, STRUCTURE_TYPES.granary, STRUCTURE_TYPES.armory]);
 /** Placement groups the game never runs the signpost check for. */
 const signpostExempt = new Set(["Woodcutter", "Ox Tether", "Stockpile", "Granary", "Armory", "Quarry", "Iron Mine", "Pitch Rig", ...farmNames]);
 
@@ -97,8 +105,18 @@ type Camera = TileCamera;
 type Size = { width: number; height: number };
 export type Tile = { x: number; y: number };
 export type Rect = { x1: number; y1: number; x2: number; y2: number };
-/** A building's footprint, whether its workers need an open side (see needsOpenSide), and its name when known. */
-export type Footprint = Rect & { needsOpenSide?: boolean; building?: string };
+/**
+ * A building's footprint, whether its workers need an open side (see needsOpenSide) and people a
+ * route to it (needsRoute; from the name when not given), and its name when known.
+ */
+export type Footprint = Rect & { needsOpenSide?: boolean; needsRoute?: boolean; building?: string };
+/**
+ * Logic bits of ground no one walks on, for routes to the keep: water, mountain and rock. Trees,
+ * bushes and farm fields are walked on as far as routes go; what people really cross is still to
+ * be checked in the live game, and counting a tile walkable can only miss a closed-off spot,
+ * never refuse a good one.
+ */
+const UNWALKABLE = 0x100000 | 0x10 | 0x20 | 0x80;
 /**
  * Storage that spots chosen by the harness keep one tile of open ground around, by engine type:
  * granaries, armories and stockpile piles, which workers keep walking to (the user's rule,
@@ -124,6 +142,14 @@ export function footprintRect(centre: Tile, size: number): Rect {
 const overlaps = (a: Rect, b: Rect) => a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2;
 const inside = (t: Tile, r: Rect) => t.x >= r.x1 && t.x <= r.x2 && t.y >= r.y1 && t.y <= r.y2;
 const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+/** A footprint's four sides: each the row of tiles just outside it along one edge. */
+const sidesOf = (r: Rect): Tile[][] => {
+  const xs = span(r.x1, r.x2), ys = span(r.y1, r.y2);
+  return [
+    ys.map((y) => ({ x: r.x1 - 1, y })), ys.map((y) => ({ x: r.x2 + 1, y })),
+    xs.map((x) => ({ x, y: r.y1 - 1 })), xs.map((x) => ({ x, y: r.y2 + 1 })),
+  ];
+};
 
 /**
  * Screen rows one unit of terrain height (the tile layers' `height`) raises a tile. The game draws
@@ -209,13 +235,165 @@ export class TileMap {
   }
   /** How many of a footprint's four sides have open ground along their whole length. */
   openSides(r: Rect, closed: readonly Rect[] = []) {
-    const xs = span(r.x1, r.x2), ys = span(r.y1, r.y2);
-    return [
-      ys.map((y) => ({ x: r.x1 - 1, y })), ys.map((y) => ({ x: r.x2 + 1, y })),
-      xs.map((x) => ({ x, y: r.y1 - 1 })), xs.map((x) => ({ x, y: r.y2 + 1 })),
-    ].filter((side) => side.every((t) => this.open(t, closed))).length;
+    return sidesOf(r).filter((side) => side.every((t) => this.open(t, closed))).length;
   }
-  /** Footprints of the buildings in the region, each marked whether it needs an open side. */
+  /** Walkable tiles of the region (1) before any footprint is laid on them: see UNWALKABLE. */
+  private walkGrid?: Uint8Array;
+  private walkable() {
+    if (this.walkGrid) return this.walkGrid;
+    const { w, h, layers, structure_types: types } = this.region;
+    this.walkGrid = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const id = layers.structure[i];
+      if (id && types?.[id] !== STRUCTURE_TYPES.courtyard) continue;
+      if (!((layers.logic[i] >>> 0) & UNWALKABLE)) this.walkGrid[i] = 1;
+    }
+    return this.walkGrid;
+  }
+  /** Search space shared by the route checks: a queue, and per-tile marks of the search or check that last saw it. */
+  private scratch?: { queue: Int32Array; seen: Int32Array; good: Int32Array; mark: number };
+  private space() {
+    const n = this.region.w * this.region.h;
+    return (this.scratch ??= { queue: new Int32Array(n), seen: new Int32Array(n), good: new Int32Array(n), mark: 0 });
+  }
+  private reachBefore?: { key: string; reach: Uint8Array; steps: Int32Array };
+  /**
+   * The region's tiles people can reach (1) from the keep's courtyard or from the edge of the read
+   * region (the ground beyond is unknown, and taken to lead to the keep), over walkable ground
+   * outside `closed` and the footprints placed during this call; with each one's steps from there.
+   */
+  private reach(closed: readonly Rect[]) {
+    const { x0, y0, w, h, layers, structure_types: types } = this.region;
+    const walk = this.walkable();
+    // 2 marks a tile closed, 1 one reached. Spots only refused during this call close nothing.
+    const reach = new Uint8Array(w * h);
+    const steps = new Int32Array(w * h);
+    for (const r of [...this.claimed.filter((c) => c.building), ...closed])
+      for (let y = Math.max(r.y1, y0); y <= Math.min(r.y2, y0 + h - 1); y++)
+        for (let x = Math.max(r.x1, x0); x <= Math.min(r.x2, x0 + w - 1); x++) reach[(y - y0) * w + (x - x0)] = 2;
+    const { queue } = this.space();
+    let tail = 0;
+    const visit = (i: number, step: number) => {
+      if (walk[i] && !reach[i]) {
+        reach[i] = 1;
+        steps[i] = step;
+        queue[tail++] = i;
+      }
+    };
+    for (let x = 0; x < w; x++) { visit(x, 0); visit((h - 1) * w + x, 0); }
+    for (let y = 0; y < h; y++) { visit(y * w, 0); visit(y * w + w - 1, 0); }
+    if (types) for (let i = 0; i < w * h; i++) if (layers.structure[i] && types[layers.structure[i]] === STRUCTURE_TYPES.courtyard) visit(i, 0);
+    for (let head = 0; head < tail; head++) {
+      const i = queue[head], x = i % w, step = steps[i] + 1;
+      if (x > 0) visit(i - 1, step);
+      if (x < w - 1) visit(i + 1, step);
+      if (i >= w) visit(i - w, step);
+      if (i < (h - 1) * w) visit(i + w, step);
+    }
+    return { reach, steps };
+  }
+  /**
+   * Whether every tile beside `rect` that reached the keep before (`reach`, `steps`) still does
+   * with `rect` closed. A tile no more steps from the keep than the footprint's nearest tile keeps
+   * its shortest way, which cannot pass through the footprint; so a search from each tile beside it
+   * goes only as far as such a tile, or one an earlier search reached. Then nothing else loses its
+   * way either: one through the footprint enters it from a tile beside it.
+   */
+  private stillReached(rect: Rect, reach: Uint8Array, steps: Int32Array) {
+    const { x0, y0, w, h } = this.region;
+    const index = (x: number, y: number) => (x >= x0 && y >= y0 && x < x0 + w && y < y0 + h ? (y - y0) * w + (x - x0) : -1);
+    let nearest = Infinity;
+    for (let y = rect.y1; y <= rect.y2; y++)
+      for (let x = rect.x1; x <= rect.x2; x++) {
+        const i = index(x, y);
+        if (i >= 0 && reach[i] === 1) nearest = Math.min(nearest, steps[i]);
+      }
+    // A footprint no way to the keep crossed takes none away.
+    if (nearest === Infinity) return true;
+    const s = this.space();
+    const check = ++s.mark;
+    const within = (i: number) => {
+      const x = x0 + (i % w), y = y0 + Math.floor(i / w);
+      return x >= rect.x1 && x <= rect.x2 && y >= rect.y1 && y <= rect.y2;
+    };
+    for (const t of sidesOf(rect).flat()) {
+      const start = index(t.x, t.y);
+      if (start < 0 || reach[start] !== 1 || s.good[start] === check) continue;
+      const search = ++s.mark;
+      let tail = 0, found = false;
+      s.seen[start] = search;
+      s.queue[tail++] = start;
+      for (let head = 0; head < tail; head++) {
+        const i = s.queue[head];
+        if (steps[i] <= nearest || s.good[i] === check) {
+          found = true;
+          break;
+        }
+        const x = i % w;
+        for (const n of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i >= w ? i - w : -1, i < (h - 1) * w ? i + w : -1])
+          if (n >= 0 && reach[n] === 1 && s.seen[n] !== search && !within(n)) {
+            s.seen[n] = search;
+            s.queue[tail++] = n;
+          }
+      }
+      if (!found) return false;
+      for (let k = 0; k < tail; k++) s.good[s.queue[k]] = check;
+    }
+    return true;
+  }
+  /** Whether every tile of the one-tile ring around `rect` is walkable, in the region and not under `closed` or a building placed during this call. */
+  private walkableAround(rect: Rect, closed: readonly Rect[]) {
+    const { x0, y0, w, h } = this.region;
+    const walk = this.walkable();
+    const shut = [...this.claimed.filter((c) => c.building), ...closed];
+    const free = (x: number, y: number) =>
+      x >= x0 && y >= y0 && x < x0 + w && y < y0 + h && walk[(y - y0) * w + (x - x0)] === 1 && !shut.some((r) => inside({ x, y }, r));
+    for (let x = rect.x1 - 1; x <= rect.x2 + 1; x++) if (!free(x, rect.y1 - 1) || !free(x, rect.y2 + 1)) return false;
+    for (let y = rect.y1; y <= rect.y2; y++) if (!free(rect.x1 - 1, y) || !free(rect.x2 + 1, y)) return false;
+    return true;
+  }
+  /** Whether `reach` (see reach) holds tile t. */
+  private reached(reach: Uint8Array, t: Tile) {
+    const { x0, y0, w, h } = this.region;
+    return t.x >= x0 && t.y >= y0 && t.x < x0 + w && t.y < y0 + h && reach[(t.y - y0) * w + (t.x - x0)] === 1;
+  }
+  /**
+   * Whether people can walk from the keep to `f`: to a tile of one of its open sides (a building
+   * with workers, who go in and out there; `closed` closes sides), or to any tile beside it.
+   */
+  private routed(f: Footprint, closed: readonly Rect[], reach: Uint8Array) {
+    const sides = sidesOf(f);
+    return f.needsOpenSide
+      ? sides.some((side) => side.every((t) => this.open(t, closed)) && side.some((t) => this.reached(reach, t)))
+      : sides.some((side) => side.some((t) => this.reached(reach, t)));
+  }
+  /**
+   * Whether `rect` for `building` leaves it, and every building with a route now, a route from the
+   * keep (see reach): "no_route" when people could not walk to it, "cuts_route" when it would close
+   * another building's last one. `planned`: footprints about to be placed, closed as well.
+   */
+  private route(building: string, rect: Rect, planned: readonly Footprint[]): "no_route" | "cuts_route" | null {
+    const key = JSON.stringify([this.claimed, planned]);
+    if (this.reachBefore?.key !== key) this.reachBefore = { key, ...this.reach(planned) };
+    const { reach: before, steps } = this.reachBefore;
+    const closed = [...planned, rect];
+    // With walkable ground all around the footprint, any way through it can go around it instead;
+    // otherwise a search near it tells (stillReached). Only when something lost its way is the
+    // whole region searched again.
+    const intact = this.walkableAround(rect, planned) || this.stillReached(rect, before, steps);
+    const after = intact ? before : this.reach(closed).reach;
+    if (needsRoute(building) && !this.routed({ ...rect, needsOpenSide: needsOpenSide(building) }, closed, after)) return "no_route";
+    if (intact) return null;
+    // A building loses its route only if a tile beside the footprint reached the keep before and
+    // does not now: a way that went through the footprint enters it from such a tile.
+    if (!sidesOf(rect).some((side) => side.some((t) => this.reached(before, t) && !this.reached(after, t)))) return null;
+    for (const n of [...this.existing(), ...this.claimed, ...planned]) {
+      if (!(n.needsRoute ?? (n.building ? needsRoute(n.building) : n.needsOpenSide)) || overlaps(n, rect)) continue;
+      if (this.routed(n, planned, before) && !this.routed(n, closed, after)) return "cuts_route";
+    }
+    return null;
+  }
+  /** Footprints of the buildings in the region, each marked whether it needs an open side and a route. */
   private existing(): Footprint[] {
     if (this.buildings) return this.buildings;
     const { x0, y0, w, layers, structure_types: types } = this.region;
@@ -228,7 +406,10 @@ export class TileMap {
         ? { x1: Math.min(r.x1, x), y1: Math.min(r.y1, y), x2: Math.max(r.x2, x), y2: Math.max(r.y2, y) }
         : { x1: x, y1: y, x2: x, y2: y });
     });
-    this.buildings = [...rects].map(([id, r]) => ({ ...r, needsOpenSide: !noOpenSideTypes.has(types?.[id] ?? -1) }));
+    this.buildings = [...rects].map(([id, r]) => {
+      const type = types?.[id] ?? -1;
+      return { ...r, needsOpenSide: !noOpenSideTypes.has(type), needsRoute: !noOpenSideTypes.has(type) || routedStorageTypes.has(type) };
+    });
     return this.buildings;
   }
   /**
@@ -258,9 +439,10 @@ export class TileMap {
   /**
    * Whether `building` at `centre` keeps an open side if it has workers, and leaves one to every
    * neighbour with workers that has one now: built, placed during this call, or `planned` (about to
-   * be placed, not in the map yet).
+   * be placed, not in the map yet); and whether it, and every building with one now, keeps a route
+   * from the keep (route).
    */
-  access(building: string, centre: Tile, planned: readonly Footprint[] = [], spaced = true): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" | "blocks_stockpile" } {
+  access(building: string, centre: Tile, planned: readonly Footprint[] = [], spaced = true): { ok: boolean; reason?: "no_open_side" | "closes_neighbour" | "touches_storage" | "blocks_stockpile" | "no_route" | "cuts_route" } {
     const rect = footprintRect(centre, footprintOf(building));
     if (needsOpenSide(building) && !this.openSides(rect, planned)) return { ok: false, reason: "no_open_side" };
     if (spaced && this.touchesStorage(building, rect, planned)) return { ok: false, reason: "touches_storage" };
@@ -270,7 +452,8 @@ export class TileMap {
       if (!n.needsOpenSide || !overlaps(n, ring) || overlaps(n, rect)) continue;
       if (this.openSides(n, planned) && !this.openSides(n, [...planned, rect])) return { ok: false, reason: "closes_neighbour" };
     }
-    return { ok: true };
+    const cut = this.route(building, rect, planned);
+    return cut ? { ok: false, reason: cut } : { ok: true };
   }
   /**
    * Whether a footprint would cover the last spot beside a stockpile where another stockpile still
@@ -489,7 +672,7 @@ export class TileMap {
     const r = footprintRect(centre, footprintOf(building));
     this.claimed.push({
       x1: r.x1 - margin, y1: r.y1 - margin, x2: r.x2 + margin, y2: r.y2 + margin,
-      ...(placed ? { needsOpenSide: needsOpenSide(building), building } : {}),
+      ...(placed ? { needsOpenSide: needsOpenSide(building), needsRoute: needsRoute(building), building } : {}),
     });
   }
   /**

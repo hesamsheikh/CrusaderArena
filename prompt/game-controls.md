@@ -133,8 +133,10 @@ placed or tried (whether given by tile or worked out from the pixel):
   clicking there, as for a blocked spot. `access: "touches_storage"`: it would touch a
   granary, armory or stockpile with no tile between them, and was moved the same way.
   `access: "blocks_stockpile"`: it would cover the last spot beside the stockpile where
-  another stockpile fits, and was moved the same way. With `exact: true` it is placed
-  as asked and `access` warns you.
+  another stockpile fits, and was moved the same way. `access: "no_route"`: people could
+  not walk to it from the keep; `"cuts_route"`: it would close another building's last
+  way from the keep; both moved the same way. With `exact: true` it is placed as asked
+  and `access` warns you.
 - `retrySkipped: "not_enough_resources"` with `missing` (for example `{"wood": 4}`):
   you cannot pay for it yet.
 - `rejected`: the game showed a new error for it. `possibly_rejected`: an error was
@@ -178,7 +180,8 @@ Game rules for placement:
   trees, rocks, water or cliffs stays empty. Pack them in two rows back to back or in
   blocks of four, so each keeps an outer side. `find_sites`, `place_near`,
   `expand_storage` and the retries only use spots that keep this for the new building
-  and its neighbours.
+  and its neighbours, and that leave it, storage and every building with workers a way
+  to walk from the keep, not walled off by buildings, water or cliffs.
 - A red no-entry sign over a building means it is missing a worker. Either no peasant
   is free to take the job (no idle peasants), or workers cannot reach the building
   because it is closed in on every side or cut off from the keep. `inspect_building`
