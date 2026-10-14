@@ -231,6 +231,28 @@ between September and October 2026.
     13 seconds and the save 37 from the run's end, the name complete at the first attempt;
     the load's 32 keys likewise, the Load Game dialog to the loaded map in 12 seconds
     against 26.
+- 1.7.0 with three models, on 2026-10-14: 10 game minutes each from the benchmark starts,
+  GLM 5.3 Flash on Oasis by the Sea, GPT-6 Luna on Large Barren Desert and Claude Haiku
+  5.5 on The Sinkhole, each interviewed after; all three valid. They cost $0.050, $0.031
+  and $0.024, with 77% (GLM's requests moved between its two providers), 96% and 97% of
+  their input tokens read from the cache.
+  - Fast waits: 1, 3 and 9 waits played 67, 115 and 274 game seconds in 26, 48 and 121
+    real seconds, none needing a correction, and saved 24, 38 and 84 seconds: 3, 4 and 12%
+    of the runs' real time. GLM's three waits for wood had `until` conditions and ran at 40.
+    Loading took 11 to 14 seconds from the Load Game dialog, against 19 to 27 on 1.6.3.
+  - In Luna's run a popularity warning ("Popularity fell from 77 to 66 since your last
+    observation.") ended a 60-second wait after 58; `status` counted the buildings and
+    showed religion and the inn at 0 once a chapel and an inn stood; `inspect_building`
+    read ten buildings by tile, two with the warning that another building's panel had
+    opened; `expand_storage` placed two stockpiles, the game refusing two of its spots as
+    not adjacent, as in 1.6.3. No placement in the three runs was refused for a route.
+  - Saving: GLM's and Luna's saves failed ("keys: Device disconnected") and Haiku's went
+    through. The bridge answers one request at a time, and a save name's run of 100 or more
+    keys took over 12 seconds: the status line the host sends every second waited behind
+    it past its own 12-second timeout, which ended the connection. Haiku's 75 keys took
+    about 9. Since a request's time starts when the bridge gets to it (51651b0), a stand-in
+    run on Large Barren Desert with a save name of the full 32 characters typed its 112
+    keys in about 15 seconds and saved 42 seconds after the run's end.
 - The prompt cache key for Meta's models, on 2026-10-13: Muse Wonder's run on Oasis by
   the Sea at 1.5.1, its host given the key by `round-preload.ts`, read the cache on all
   106 requests, 96.9% of its input tokens. Its run the same morning without the key
