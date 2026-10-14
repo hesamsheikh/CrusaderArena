@@ -7,7 +7,7 @@ import { Warnings } from "./warnings.js";
 import { menuClicks as trayClicks } from "./construction-ui.js";
 import { tilePixel } from "./anchors.js";
 import type { GameDevice, TileRegion } from "./device.js";
-import { TileMap, footprintRect } from "./tile-map.js";
+import { TileMap, footprintRect, type Rect } from "./tile-map.js";
 
 test("observe delivers buffered warnings once even after current stats expire", async () => {
   const events = new GameEvents();
@@ -1378,6 +1378,54 @@ test("find_sites offers another granary only flush with the one standing, wherev
   const first = simulatedGame({ tiles: () => {} });
   const { json: plain } = await first.run("find_sites", { building: "Granary", count: 1 });
   assert.ok(!plain.searchedAround && allSites(plain).length === 1, JSON.stringify(plain));
+});
+
+test("expand_storage makes up for a view whose clicks land a tile off: one retry, then every spot flush, and the next call at once", async () => {
+  // On Large Barren Desert's start every stockpile went one tile further along +x than aimed, and
+  // each flush spot on that side was refused as not adjacent (live 2026-10-14).
+  for (const error of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 0 }]) {
+    const granaries: Rect[] = [{ x1: 100, y1: 98, x2: 103, y2: 101 }];
+    const storage = { piles: [], granaries: [{ tile: [100, 98], amount: 40, capacity: 250 }], truncated: false };
+    const structureTypes: Record<string, number> = { "7": 19 };
+    // The tile a click picks (tilePixel turned back, at the simulated camera), and the footprint it builds.
+    const landed = (px: number, py: number, camera: number) => {
+      const u = (px - 960) / 32, v = (py - 540) / (1080 / 68) + 8 / 8.7;
+      const t = { x: 99 + camera + Math.round((u + v) / 2) + error.x, y: 100 + Math.round((v - u) / 2) + error.y };
+      return footprintRect(t, 4);
+    };
+    const overlaps = (a: Rect, b: Rect) => a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2;
+    const flush = (a: Rect, b: Rect) => !overlaps(a, b) &&
+      ((a.x1 === b.x2 + 1 || b.x1 === a.x2 + 1) && a.y1 <= b.y2 && b.y1 <= a.y2 || (a.y1 === b.y2 + 1 || b.y1 === a.y2 + 1) && a.x1 <= b.x2 && b.x1 <= a.x2);
+    const game = simulatedGame({
+      anchors: { Granary: { camera: 1, type: 19 } },
+      tiles: (set) => granaries.forEach((g, i) => { for (let x = g.x1; x <= g.x2; x++) for (let y = g.y1; y <= g.y2; y++) set("structure", x, y, 7 + i); }),
+      structureTypes, buildings: { "19": 1 }, storage, runtime: timedRuntime().runtime,
+      reject: (px, py, state) => {
+        const f = landed(px, py, state.camera);
+        return granaries.some((g) => overlaps(f, g)) || granaries.some((g) => flush(f, g)) ? undefined : "Needs to be placed adjacent to the granary.";
+      },
+      // Over a granary: refused without a message. Otherwise it stands, and the reader shows it.
+      blocked: (px, py) => {
+        const f = landed(px, py, game.state.camera);
+        if (granaries.some((g) => overlaps(f, g))) return true;
+        structureTypes[String(7 + granaries.length)] = 19;
+        granaries.push(f);
+        storage.granaries.push({ tile: [f.x1, f.y1], amount: 0, capacity: 0 });
+        return false;
+      },
+    });
+    const first = await game.run("expand_storage", { kind: "granary", count: 2 });
+    assert.equal(first.json.status, "placed", `${JSON.stringify(error)} ${JSON.stringify(first.json)}`);
+    // The first spot lies on the +x side: a drift along x makes it refused once, and the retry
+    // places it; one along y only slides it along the granary, and the placement measures it.
+    assert.equal(first.json.probes, error.x ? 3 : 2, `${JSON.stringify(error)} ${JSON.stringify(first.json)}`);
+    const second = await game.run("expand_storage", { kind: "granary", count: 1 });
+    assert.equal(second.json.status, "placed", `${JSON.stringify(error)} ${JSON.stringify(second.json)}`);
+    assert.equal(second.json.probes, 1, `the view's drift kept: ${JSON.stringify(error)} ${JSON.stringify(second.json)}`);
+    // Every granary touches one placed before it, and none overlaps another.
+    assert.equal(granaries.length, 4);
+    granaries.forEach((g, i) => i && assert.ok(granaries.slice(0, i).some((h) => flush(g, h)), JSON.stringify(granaries)));
+  }
 });
 
 test("find_sites says when no woodcutter spot has trees in reach: where the nearest grove is, or that the map has none", async () => {

@@ -57,6 +57,12 @@ warnings can end the model's waits.
   them, beside the one nearest the asked spot. Its usual search had offered spots the game
   refused ("Needs to be placed adjacent to the granary."), in four 1.6.3 games and in a live
   test.
+- `expand_storage` and `place_near` make up for a view whose clicks land a tile from where
+  they aim: where the reader shows each stockpile, granary or armory they placed sets how far
+  the next clicks aim the other way, kept for that view, and a flush spot refused as not
+  adjacent is tried once more a tile closer. On Large Barren Desert's start every stockpile
+  went one tile further along +x than aimed, so each flush spot on that side was refused;
+  earlier runs had 240 refused probes in 180 `expand_storage` calls for stockpiles.
 - They also leave one spot beside the stockpile where another stockpile fits
   (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
   `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,

@@ -3,7 +3,7 @@ import type { GameDevice, GameHotkey } from "./device.js";
 import { cameraKey, cameraSpanOf, minimapClick, placementOf, visiblePlacementFeedback } from "./construction-ui.js";
 import { Placer, SAMPLE_POLL_SECONDS, type Ack, type Observation } from "./placement.js";
 import { anchorFootprintTiles, footprintOf } from "./footprints.js";
-import { footprintRect, onScreen, STRUCTURE_TYPES, tilePixel as projectTile, type Rect, type TileMap } from "./tile-map.js";
+import { footprintRect, isStorageKind, onScreen, STRUCTURE_TYPES, tilePixel as projectTile, type Rect, type StorageKind, type TileMap } from "./tile-map.js";
 import { shortfall } from "./building-info.js";
 import { VIEW_JUMPERS } from "./building-types.js";
 
@@ -80,6 +80,38 @@ export function anchorRectOf(map: TileMap, anchor: Anchor): Rect | null {
 export const TOO_CLOSE_MARGIN = 3;
 
 /**
+ * The reader's tiles of one kind of storage: each stockpile pile's, granary's or armory's first
+ * (top-left) tile. A granary on Oasis by the Sea standing on 439..442 × 360..363 reads 439,360
+ * (live 2026-10-14).
+ */
+function storageTiles(kind: StorageKind, observation: Observation | null | undefined) {
+  type Tiles = { tile: [number, number] }[] | undefined;
+  const stored = (observation?.storage ?? undefined) as { piles?: Tiles; granaries?: Tiles; armories?: Tiles } | undefined;
+  const list = kind === "Stockpile" ? stored?.piles : kind === "Granary" ? stored?.granaries : stored?.armories;
+  return (list ?? []).map(({ tile: [x, y] }) => `${x},${y}`);
+}
+
+/**
+ * The footprint of the storage building a click just placed, from the reader's tiles: a new
+ * stockpile's four piles (its square starts at the first), or a new granary's or armory's first
+ * tile. Null when the reader does not show exactly one within a second.
+ */
+async function placedStorage(ctx: AnchorContext, kind: StorageKind, before: string[]): Promise<Rect | null> {
+  const known = new Set(before);
+  const fresh = (o: Observation) => storageTiles(kind, o).filter((t) => !known.has(t)).map((t) => t.split(",").map(Number));
+  const wanted = kind === "Stockpile" ? 4 : 1;
+  const seen = await sampleAfter(ctx, 0, (o) => fresh(o).length === wanted, 1);
+  const tiles = seen ? fresh(seen) : [];
+  if (tiles.length !== wanted) return null;
+  const x = Math.min(...tiles.map(([tx]) => tx)), y = Math.min(...tiles.map(([, ty]) => ty));
+  const size = footprintOf(kind);
+  return { x1: x, y1: y, x2: x + size - 1, y2: y + size - 1 };
+}
+
+/** Furthest a click is moved to make up for a view's drift, in tiles along each axis. */
+const MAX_DRIFT = 2;
+
+/**
  * Place up to `count` buildings at computed flush spots beside the anchor (storage may also
  * touch the ones just placed; other buildings may leave a gap of up to 3 tiles when the flush
  * band is full). Returns null when the anchor is not found in the tile map, so the caller
@@ -111,6 +143,19 @@ async function placeFromMap(
   if (!anchorRect) return null;
   const size = footprintOf(building);
   const touching: Rect[] = storage ? map.cluster(anchorRect, map.storageRects(building)) : [anchorRect];
+  // The game can put a building a tile from the spot a click aims at: the reader's camera is a
+  // whole tile, and the view can lie part of a tile from it. On Large Barren Desert's start every
+  // stockpile went one tile further along +x than aimed, so each flush spot on that side was
+  // refused as not adjacent (live 2026-10-14; 240 refused probes in 180 earlier expand_storage
+  // calls). Where the reader shows a placed storage building sets the drift the clicks after it
+  // make up for, kept for the view; a flush storage spot refused as not adjacent (the building fell
+  // a tile beyond the side) or, before any drift is measured, without a message (a tile into the
+  // storage) is tried once more a tile the other way.
+  const kind = storage && isStorageKind(building) ? building : null;
+  const kept = ctx.state.drift;
+  let drift = kept && kept.camera === anchorCamera ? { x: kept.x, y: kept.y } : { x: 0, y: 0 };
+  let measured = false;
+  let retried: { site: string; drift: { x: number; y: number } } | undefined;
   let attempts = 0;
   // Refusals with no message and nothing spent: the spot was blocked where the click landed.
   let silent = 0;
@@ -136,19 +181,53 @@ async function placeFromMap(
     // the view the click lands in, and a tile pushes a flush spot into the anchor (both of a
     // stockpile's flush spots refused after a bookmark return, Kimi K3, 2026-10-12).
     const live = sample?.camera as Parameters<typeof projectTile>[0] | undefined;
-    const at = live ? projectTile(live, map.frame, site.tile, map.heightAt(site.tile)) : site;
+    const aim = { x: site.tile.x - drift.x, y: site.tile.y - drift.y };
+    const at = live ? projectTile(live, map.frame, aim, map.heightAt(aim)) : map.pixel(aim);
     if (!onScreen(map.frame, at)) { stopped = "camera_moved"; break; }
     attempts++;
     const carried = visiblePlacementFeedback(ctx.device.currentStats().observation);
+    const before = kind ? storageTiles(kind, ctx.device.currentStats().observation) : [];
     const result = await placer.click(building, at, carried, ctx.device.events.cursor());
-    // Placed or refused, the spot is used up for this call; a "Too close to …" refusal also rules
-    // out its surroundings.
-    map.claim(building, site.tile, result.feedback.some((f) => /too close/i.test(f)) ? TOO_CLOSE_MARGIN : 0, result.outcome.status === "placed");
+    const spot = `${site.tile.x},${site.tile.y}`;
     if (result.outcome.status === "placed") {
+      const landed = kind ? await placedStorage(ctx, kind, before) : null;
+      if (landed) {
+        const aimed = footprintRect(aim, size);
+        const seen = { x: landed.x1 - aimed.x1, y: landed.y1 - aimed.y1 };
+        if (Math.abs(seen.x) <= MAX_DRIFT && Math.abs(seen.y) <= MAX_DRIFT) {
+          drift = seen;
+          measured = true;
+          ctx.state.drift = { camera: anchorCamera, ...drift };
+        }
+      }
+      const rect = landed ?? footprintRect(site.tile, size);
+      map.claim(building, { x: rect.x1 + Math.floor(size / 2), y: rect.y1 + Math.floor(size / 2) }, 0, true);
       placed.push({ x: at.x, y: at.y, side: site.side as Side, tilesOut: site.gap });
-      if (storage) touching.push(footprintRect(site.tile, size));
+      if (storage) touching.push(rect);
+      retried = undefined;
       continue;
     }
+    const outward = site.side ? sideAxes[site.side as Side]?.along : undefined;
+    const notAdjacent = result.feedback.some((f) => /adjacent/i.test(f));
+    if (kind && site.gap === 0 && outward && retried?.site !== spot && (notAdjacent || (!result.feedback.length && !measured))) {
+      const next = notAdjacent
+        ? { x: drift.x + outward[0], y: drift.y + outward[1] }
+        : { x: drift.x - outward[0], y: drift.y - outward[1] };
+      if (Math.abs(next.x) <= MAX_DRIFT && Math.abs(next.y) <= MAX_DRIFT) {
+        retried = { site: spot, drift };
+        drift = next;
+        if (!result.feedback.length) silent++;
+        else feedback = result.feedback;
+        continue;
+      }
+    }
+    // Refused again after a correction: the drift was not why, so the correction goes.
+    if (retried?.site === spot) {
+      drift = retried.drift;
+      retried = undefined;
+    }
+    // The spot is used up for this call; a "Too close to …" refusal also rules out its surroundings.
+    map.claim(building, site.tile, result.feedback.some((f) => /too close/i.test(f)) ? TOO_CLOSE_MARGIN : 0, false);
     if (!result.feedback.length) silent++;
     // The map showed this footprint free. Short of resources, stop; otherwise a rule the map does
     // not model refused it ("Too close to signpost to build.", run 7), so the next spot may work.
@@ -233,7 +312,11 @@ export type AnchorContext = {
   /** Native tile layers for the current view of `frame`; null when unavailable. */
   tiles?: (frame: Frame) => Promise<TileMap | null>;
   /** Per-run memory: the located stockpile's camera tile (bookmarked). */
-  state: { stockpile?: string };
+  state: {
+    stockpile?: string;
+    /** The tiles the game put storage beyond where clicks aimed, in the view of `camera` (placeFromMap). */
+    drift?: { camera: string; x: number; y: number };
+  };
 };
 
 /**
