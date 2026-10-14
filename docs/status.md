@@ -202,7 +202,13 @@ between September and October 2026.
     warning then said 81 beside stats showing 68, since the game plays on while a wait
     slows down; warnings now use the reporting observation's values. In the 506-person
     town, food hovering near two months brought "Food is low" three times in 8 game
-    minutes, two of them ending waits after 19 game seconds.
+    minutes, two of them ending waits after 19 game seconds; with food and gold warned of
+    again only after a recovery, the same 8 minutes brought it once, as food went from 32
+    to 108 and back to 36, and every wait ran its length.
+  - `find_sites` for storage, on "Oasis by the Sea benchmark start": asked 20 tiles from
+    the granary, it searched beside the granary and gave two flush spots, both placed; a
+    stockpile the same; the first armory by the usual search, and a second asked 30 tiles
+    away offered flush with the first and placed. None was refused as not adjacent.
   - A pixel target from a screenshot followed by a 60-game-second wait was refused as
     older than 40 game seconds of play. `flat_view`'s two images had no "Game Paused"
     banner, on Oasis by the Sea and in the Sinkhole town; in the flat image palms and
@@ -416,8 +422,7 @@ between September and October 2026.
   - The tile of open ground kept around stockpiles (the keep may touch them), the last
     spot for another stockpile kept free (`blocks_stockpile`), also after a target was
     refused there, and a stockpile, granary or armory target moved or retried only flush
-    with one of its kind; `find_sites` listing only such spots for them, beside the one
-    nearest the asked spot, from the reader's storage positions.
+    with one of its kind.
   - [Routes to the keep](tools.md#build) (`no_route`, `cuts_route`): walled-in spots
     refused, a gap, the courtyard or the read area's edge giving a way, water and
     mountains closing one, a footprint on a building's only way in refused, churches
