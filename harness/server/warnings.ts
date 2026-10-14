@@ -19,11 +19,19 @@ export const FOOD_WARNING_MONTHS = 2;
 export const FOOD_PER_PERSON_MONTH = [0, 0.086, 0.174, 0.26, 0.344];
 const RATIONS = ["none", "half", "full", "extra", "double"];
 
-const foodLow = (o: Observation) => {
-  const s = o.settlement;
-  const eaten = s ? o.population * (FOOD_PER_PERSON_MONTH[s.rationing] ?? 0) : 0;
-  return eaten > 0 && s!.total_food < eaten * FOOD_WARNING_MONTHS;
-};
+/**
+ * Game months of food, and gold, an observation must show after a food or gold warning before
+ * either can come up again. Food that hovered around two months in a town of 506 brought "Food is
+ * low" three times in 8 game minutes and ended two waits after 19 game seconds (live, 2026-10-14);
+ * the user chose this rule.
+ */
+export const FOOD_REARM_MONTHS = 3;
+export const GOLD_REARM = 750;
+
+/** Food the people eat in a game month at their rations; 0 without a reading. */
+const eaten = (o: Observation) => (o.settlement ? o.population * (FOOD_PER_PERSON_MONTH[o.settlement.rationing] ?? 0) : 0);
+const foodLow = (o: Observation) => eaten(o) > 0 && o.settlement!.total_food < eaten(o) * FOOD_WARNING_MONTHS;
+const foodRecovered = (o: Observation) => !!o.settlement && o.settlement.total_food >= eaten(o) * FOOD_REARM_MONTHS;
 const goldLow = (o: Observation) => o.gold < GOLD_WARNING;
 
 /**
@@ -32,11 +40,18 @@ const goldLow = (o: Observation) => o.gold < GOLD_WARNING;
  * GOLD_WARNING, food below FOOD_WARNING_MONTHS of what the people eat at their rations. Each comes
  * up when its condition turns true after the agent's last observation, never for what that
  * observation showed already; the next observation reports it, and the watch starts again from
- * what that observation shows. Plain facts only: what fell, and to what.
+ * what that observation shows. Food and gold, once warned of or seen low, come up again only after
+ * an observation shows them recovered (FOOD_REARM_MONTHS, GOLD_REARM). Plain facts only: what
+ * fell, and to what.
  */
 export class Warnings {
-  /** What the agent's last observation showed: popularity and gold, and whether food and gold were low. */
-  private seen?: { popularity: number; gold: number; food: boolean; goldLow: boolean };
+  /** The popularity and gold the agent's last observation showed. */
+  private seen?: { popularity: number; gold: number };
+  /**
+   * Food and gold warnings held back: from one that came up, or an observation that showed it low,
+   * until an observation shows FOOD_REARM_MONTHS of food or GOLD_REARM gold.
+   */
+  private quiet = { food: false, gold: false };
   /** Warnings due, each with its text and the popularity or gold it came up with. */
   private due = new Map<Kind, { text: string; value: number }>();
   /** A warning's text in the values `o` shows, or null when `o` does not show its condition. */
@@ -57,8 +72,7 @@ export class Warnings {
   check(o: Observation | null | undefined) {
     if (o && this.seen)
       for (const kind of ["popularity", "food", "gold"] as const) {
-        // Food or gold the last observation already showed low comes up only once one shows it recovered.
-        if (this.due.has(kind) || (kind === "food" && this.seen.food) || (kind === "gold" && this.seen.goldLow)) continue;
+        if (this.due.has(kind) || (kind !== "popularity" && this.quiet[kind])) continue;
         const text = this.describe(kind, o);
         if (text) this.due.set(kind, { text, value: kind === "gold" ? o.gold : o.popularity });
       }
@@ -74,15 +88,15 @@ export class Warnings {
   observe(o: Observation | null | undefined): string[] {
     this.check(o);
     const texts = [...this.due].map(([kind, warning]) => (o && this.seen ? this.describe(kind, o) : null) ?? warning.text);
-    if (o) this.seen = { popularity: o.popularity, gold: o.gold, food: foodLow(o), goldLow: goldLow(o) };
-    else if (this.seen)
+    const food = this.quiet.food || this.due.has("food"), gold = this.quiet.gold || this.due.has("gold");
+    if (o) {
+      this.seen = { popularity: o.popularity, gold: o.gold };
+      this.quiet = { food: (food || foodLow(o)) && !foodRecovered(o), gold: (gold || goldLow(o)) && o.gold < GOLD_REARM };
+    } else if (this.seen) {
       // Without game values to start again from, what was reported counts as seen.
-      this.seen = {
-        popularity: this.due.get("popularity")?.value ?? this.seen.popularity,
-        gold: this.due.get("gold")?.value ?? this.seen.gold,
-        food: this.seen.food || this.due.has("food"),
-        goldLow: this.seen.goldLow || this.due.has("gold"),
-      };
+      this.seen = { popularity: this.due.get("popularity")?.value ?? this.seen.popularity, gold: this.due.get("gold")?.value ?? this.seen.gold };
+      this.quiet = { food, gold };
+    }
     this.due.clear();
     return texts;
   }

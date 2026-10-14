@@ -163,10 +163,14 @@ A warning ends `wait_and_observe` early, once the turn's minimum length has pass
 under `warnings`, in that observation's own values while they still show it: the game
 plays on for a few seconds while a fast wait slows down, and a popularity warning worded
 when it came up said 81 beside stats showing 68 (live, 2026-10-14). One whose condition is
-gone by then reads as it came up. Any other observation, such as the host's own after its waits, or a
-tool's screenshot, lists the warnings that hold when it is taken. Each comes up once:
-what an observation already shows brings no warning, and popularity counts from the last
-observation's value. Warnings are tool results, never part of the system prompt. Over
+gone by then reads as it came up. Any other observation, such as the host's own after its
+waits, or a tool's screenshot, lists the warnings that hold when it is taken. Each comes up
+once: what an observation already shows brings no warning, and popularity counts from the
+last observation's value. Food and gold, once warned of or seen low, come up again only
+after an observation shows three months of food or 750 gold: in a town of 506 on The
+Sinkhole, food hovering around two months brought "Food is low" three times in 8 game
+minutes and ended two waits after 19 game seconds (live, 2026-10-14). Warnings are tool
+results, never part of the system prompt. Over
 97 recorded runs, the popularity warning would have come up about 1.2 times a run, the
 food warning 2.4 and the gold warning 1.2; in the game above, the food warning at 30:01
 (food 16) and the popularity warning at 30:27 (52 to 42), a minute or more before the

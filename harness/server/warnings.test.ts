@@ -69,6 +69,28 @@ test("food or gold the last observation already showed low brings no warning unt
   assert.deepEqual(w.observe(reading({ gold: 650 })), ["Gold is low: 50 left, down from 900 at your last observation."]);
 });
 
+test("after a food or gold warning, another needs an observation showing food or gold recovered first", () => {
+  // The person's town of 506 on The Sinkhole (live, 2026-10-14): food hovering around two months
+  // brought "Food is low" three times in 8 game minutes. Here 100 people on full rations: two
+  // months is 34.8 food, three 52.2.
+  const w = new Warnings();
+  w.observe(reading({ food: 60, gold: 900 }));
+  assert.equal(w.check(reading({ food: 30, gold: 900 })), true);
+  assert.equal(w.observe(reading({ food: 30, gold: 900 })).length, 1);
+  w.observe(reading({ food: 45, gold: 900 }));
+  assert.equal(w.check(reading({ food: 30, gold: 900 })), false, "back above two months, not three: a dip brings nothing");
+  w.observe(reading({ food: 53, gold: 900 }));
+  assert.equal(w.check(reading({ food: 30, gold: 900 })), true, "three months seen: food warns again");
+  // Gold the same: back over 500 is not enough, 750 is.
+  const g = new Warnings();
+  g.observe(reading({ gold: 900 }));
+  assert.equal(g.observe(reading({ gold: 450 })).length, 1);
+  g.observe(reading({ gold: 600 }));
+  assert.equal(g.check(reading({ gold: 450 })), false);
+  g.observe(reading({ gold: 750 }));
+  assert.equal(g.check(reading({ gold: 450 })), true);
+});
+
 test("nothing warns before the first observation, and one without game values counts what it reported as seen", () => {
   const w = new Warnings();
   assert.equal(w.check(reading({ popularity: 0, gold: 0, food: 0 })), false);
