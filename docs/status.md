@@ -384,8 +384,9 @@ between September and October 2026.
   - The runner rebuilding the game machine's reader unless its programs were built from
     the reader sources of the version a run plays (`version-checkout.test.ts`, with a fake
     game machine; the build command also run in a shell with a stand-in `cmake`). The
-    1.6.3 games from 2026-10-13 21:39 UTC ran a probe built from 1.5.0's sources, read on
-    the game machine on 2026-10-14: its sources were 1.6.3's, its `crusader_probe.exe`
+    1.6.3 games played from 2026-10-13 21:39 UTC to 2026-10-14, on Oasis by the Sea and
+    Large Barren Desert, ran a probe built from 1.5.0's sources, read on the game
+    machine on 2026-10-14: its sources were 1.6.3's, its `crusader_probe.exe`
     dated from a 1.5.0 round 11 minutes before, and the sync's build said "ninja: no work
     to do". The reader DLL was 1.6.2's build, whose sources 1.6.3 shares.
 
