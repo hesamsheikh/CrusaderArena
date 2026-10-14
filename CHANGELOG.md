@@ -58,12 +58,16 @@ warnings can end the model's waits.
   refused ("Needs to be placed adjacent to the granary."), in four 1.6.3 games and in a live
   test.
 - Clicks at a map tile land on it: `build_structure`'s tile targets and retry spots,
-  `expand_storage` and `place_near` move the pointer to the projected pixel first, read the
-  tile the game picks under it (the reader's new `mouse_tile`) and move by the difference
-  before clicking, keeping each view's offset. The reader's camera is a whole tile and the
-  view can lie part of a tile from it: on Large Barren Desert's start every building placed by
-  tile went one tile off, and each flush stockpile spot on the +x side was refused as not
-  adjacent (earlier runs had 240 refused probes in 180 `expand_storage` calls for stockpiles).
+  `expand_storage`, `place_near`, and the tile targets of `demolish_building`, `set_workshop`
+  and `inspect_building` move the pointer to the projected pixel first, read the tile the game
+  picks under it (the reader's new `mouse_tile`) and move by the difference before clicking,
+  keeping each view's offset; for the last three any tile of the building counts. The reader's
+  camera is a whole tile and the view can lie part of a tile from it: on Large Barren Desert's
+  start every building placed by tile went one tile off, and each flush stockpile spot on the
+  +x side was refused as not adjacent (earlier runs had 240 refused probes in 180
+  `expand_storage` calls for stockpiles). Where another building is drawn over every spot of
+  the target, the game picks that one, so `demolish_building` clicks nothing and reports
+  `covered` (a fletcher in front of a hovel took a demolish meant for the hovel, live).
 - They also leave one spot beside the stockpile where another stockpile fits
   (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
   `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,

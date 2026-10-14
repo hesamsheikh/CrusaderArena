@@ -41,6 +41,82 @@ export function mouseTileOf(observation: Observation | null | undefined) {
   return t && typeof t.x === "number" && typeof t.y === "number" ? { x: t.x, y: t.y } : null;
 }
 
+/** What aimAtTile works with: reader samples, pointer moves, waits, the image's size, the run's view offsets. */
+export type AimIo = {
+  device: Pick<GameDevice, "currentStats">;
+  move: (point: { x: number; y: number }) => Promise<Ack>;
+  pause: (seconds: number) => Promise<unknown>;
+  frame: { width: number; height: number };
+  offsets?: { view?: ViewOffset };
+};
+
+type Tile = { x: number; y: number };
+
+/**
+ * The point to click for map tile `tile`, from `point`, its projection: the pointer goes there
+ * first, the reader shows the tile the game picks under it (mouse_tile), and while that is not
+ * `accept`ed (by default, `tile` itself) the pointer moves by the difference, up to AIM_MOVES
+ * times. The reader's camera is a whole tile, and the view can lie part of a tile from it, so a
+ * projected click could pick a neighbour: every building placed by tile on Large Barren Desert's
+ * start went one tile off (live 2026-10-14). A building drawn over the spot keeps the game's tile
+ * on itself however the pointer moves (a fletcher in front of a hovel's corner took a demolish
+ * meant for the hovel, live 2026-10-14), so the moves stop when the tile does not follow them.
+ * `matched` says the game's tile was accepted at `point`; otherwise `point` is where its tile came
+ * closest to `tile`, and `shown` that tile (null without any reading). An exact match keeps the
+ * view's offset (io.offsets), so the next target there starts from it.
+ */
+export async function aimAtTile(io: AimIo, point: Tile, tile: Tile, accept: (shown: Tile) => boolean = (t) => t.x === tile.x && t.y === tile.y) {
+  const unaimed = { point, shown: null as Tile | null, matched: false, moves: 0 };
+  const sampleAfter = async (after: number, done: (o: Observation) => boolean, seconds: number) => {
+    for (let i = 0; i < seconds / SAMPLE_POLL_SECONDS; i++) {
+      const stats = io.device.currentStats();
+      if (stats.status === "ok" && stats.observation && (stats.captured_unix_ms ?? 0) >= after && done(stats.observation as Observation))
+        return stats.observation as Observation;
+      await io.pause(SAMPLE_POLL_SECONDS);
+    }
+    return null;
+  };
+  const latest = await sampleAfter(0, () => true, 0.3);
+  // A reader without the field (before 1.7.0) gives nothing to aim by.
+  if (!latest || !("mouse_tile" in latest)) return unaimed;
+  const camera = cameraKey(latest);
+  const span = latest.camera as { tiles_wide?: number; tiles_high?: number } | null | undefined;
+  if (!camera || !span?.tiles_wide || !span?.tiles_high) return unaimed;
+  const { width, height } = io.frame;
+  // One tile along x moves the drawing half a tile right and a row down; along y, left and down.
+  const half = width / span.tiles_wide / 2, row = height / span.tiles_high;
+  const at = (d: Tile) => ({ x: Math.round(point.x - (d.x - d.y) * half), y: Math.round(point.y - (d.x + d.y) * row) });
+  const distance = (t: Tile) => Math.max(Math.abs(t.x - tile.x), Math.abs(t.y - tile.y));
+  const kept = io.offsets?.view;
+  let offset = kept && kept.camera === camera ? { x: kept.x, y: kept.y } : { x: 0, y: 0 };
+  const first = at(offset);
+  let best: { point: Tile; shown: Tile } | null = null;
+  let last: Tile | null = null;
+  let moves = 0;
+  for (let i = 0; i < AIM_MOVES; i++) {
+    const p = at(offset);
+    if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height * 0.8) break;
+    const ack = await io.move(p);
+    moves++;
+    const sent = typeof ack?.at === "number" ? ack.at : Date.now();
+    const seen = await sampleAfter(sent + AIM_SETTLE_MS, (o) => cameraKey(o) === camera && !!mouseTileOf(o), 1);
+    const shown = seen ? mouseTileOf(seen) : null;
+    if (!shown) break;
+    if (accept(shown)) {
+      if (shown.x === tile.x && shown.y === tile.y && io.offsets) io.offsets.view = { camera, ...offset };
+      return { point: p, shown, matched: true, moves };
+    }
+    if (!best || distance(shown) < distance(best.shown)) best = { point: p, shown };
+    // The game's tile stayed put although the pointer moved: something is drawn over the spot.
+    if (last && last.x === shown.x && last.y === shown.y) break;
+    last = shown;
+    const next = { x: offset.x + shown.x - tile.x, y: offset.y + shown.y - tile.y };
+    if (Math.abs(next.x) > MAX_AIM_OFFSET || Math.abs(next.y) > MAX_AIM_OFFSET) break;
+    offset = next;
+  }
+  return best ? { ...best, matched: false, moves } : { ...unaimed, point: first, moves };
+}
+
 /**
  * Construction-menu selection and terrain clicks for one targeting image,
  * confirmed from reader samples. Shared by build_structure and the anchor tools.
@@ -150,47 +226,10 @@ export class Placer {
     this.selected = undefined;
     return "failed";
   }
-  /**
-   * The point to click for map tile `tile`, from `point`, its projection: the pointer goes there
-   * first, the reader shows the tile the game picks under it (mouse_tile), and while that is
-   * another tile the pointer moves by the difference, up to AIM_MOVES times. The reader's camera is
-   * a whole tile, and the view can lie part of a tile from it, so a projected click could pick a
-   * neighbour: every building placed by tile on Large Barren Desert's start went one tile off
-   * (live 2026-10-14). The view's offset is kept (io.offsets), so the next target there starts from
-   * it. `shown` is the tile the game showed at `point` (null without a reading), `matched` whether
-   * it is `tile`.
-   */
+  /** aimAtTile with this Placer's reader, pointer moves and view offsets; unaimed without a reader or moves. */
   async aim(point: { x: number; y: number }, tile: { x: number; y: number }) {
-    const unaimed = { point, shown: null as { x: number; y: number } | null, matched: false, moves: 0 };
-    if (!this.io.move || !this.readerReady) return unaimed;
-    const latest = await this.current();
-    // A reader without the field (before 1.7.0) gives nothing to aim by.
-    if (!latest || !("mouse_tile" in latest)) return unaimed;
-    const camera = cameraKey(latest);
-    const span = latest?.camera as { tiles_wide?: number; tiles_high?: number } | null | undefined;
-    if (!camera || !span?.tiles_wide || !span?.tiles_high) return unaimed;
-    const { width, height } = this.io.frame;
-    // One tile along x moves the drawing half a tile right and a row down; along y, left and down.
-    const half = width / span.tiles_wide / 2, row = height / span.tiles_high;
-    const at = (d: { x: number; y: number }) =>
-      ({ x: Math.round(point.x - (d.x - d.y) * half), y: Math.round(point.y - (d.x + d.y) * row) });
-    const kept = this.io.offsets?.view;
-    let offset = kept && kept.camera === camera ? { x: kept.x, y: kept.y } : { x: 0, y: 0 };
-    let result = { ...unaimed, point: at(offset) };
-    for (let i = 0; i < AIM_MOVES; i++) {
-      const p = at(offset);
-      if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height * 0.8) break;
-      const ack = await this.io.move(p);
-      const seen = await this.sampleAfter(this.ackTime(ack) + AIM_SETTLE_MS, (o) => cameraKey(o) === camera && !!mouseTileOf(o), 1);
-      const shown = seen ? mouseTileOf(seen) : null;
-      result = { point: p, shown, matched: !!shown && shown.x === tile.x && shown.y === tile.y, moves: i + 1 };
-      if (!shown || result.matched) break;
-      const next = { x: offset.x + shown.x - tile.x, y: offset.y + shown.y - tile.y };
-      if (Math.abs(next.x) > MAX_AIM_OFFSET || Math.abs(next.y) > MAX_AIM_OFFSET) break;
-      offset = next;
-    }
-    if (result.matched && this.io.offsets) this.io.offsets.view = { camera, ...offset };
-    return result;
+    if (!this.io.move || !this.readerReady) return { point, shown: null, matched: false, moves: 0 };
+    return aimAtTile({ device: this.device, move: this.io.move, pause: this.io.pause, frame: this.io.frame, offsets: this.io.offsets }, point, tile);
   }
   /**
    * One terrain click in the active placement mode, classified from feedback events since

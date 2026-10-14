@@ -1867,3 +1867,114 @@ test("demolish_building reports nothing demolished, a tool that did not start, a
   assert.equal(far.json.status, "not_on_screen");
   assert.match(far.json.remedy, /further in/);
 });
+
+test("demolish_building and the panel tools aim a tile target by the tile the game picks under the pointer", async () => {
+  // Clicks projected at a tile went one tile off on Large Barren Desert's start (live 2026-10-14):
+  // a corner tile then misses its building, and a small building's middle opens nothing.
+  const small = { x1: 100, y1: 100, x2: 101, y2: 101 };
+  const inside = (t: { x: number; y: number }) => t.x >= small.x1 && t.x <= small.x2 && t.y >= small.y1 && t.y <= small.y2;
+  for (const error of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]) {
+    const label = JSON.stringify(error);
+    // The tile the game picks under a window pixel: tilePixel turned back at the simulated camera, `error` off.
+    const picked = (px: number, py: number, camera: number) => {
+      const u = (px - 960) / 32, v = (py - 540) / (1080 / 68) + 8 / 8.7;
+      return { x: 99 + camera + Math.round((u + v) / 2) + error.x, y: 100 + Math.round((v - u) / 2) + error.y };
+    };
+    const options = {
+      tiles: (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+        for (let x = small.x1; x <= small.x2; x++) for (let y = small.y1; y <= small.y2; y++) set("structure", x, y, 15);
+      },
+      cursor: (px: number, py: number, state: { camera: number }) => picked(px, py, state.camera),
+      runtime: timedRuntime().runtime,
+    };
+    const inspect = simulatedGame({ ...options, buildingAt: (x, y) => (inside(picked(x, y, inspect.state.camera)) ? 3 : undefined) });
+    const { json } = await inspect.run("inspect_building", { tile_x: 100, tile_y: 100 });
+    assert.equal(json.building?.name, "Woodcutter's Hut", `${label} ${JSON.stringify(json)}`);
+    assert.equal(inspect.actions.filter((a) => a.button === 1).length, 1, `opened at the first click: ${label}`);
+    const demolish = simulatedGame({ ...options, demolishable: (x, y) => inside(picked(x, y, demolish.state.camera)) });
+    const { json: gone } = await demolish.run("demolish_building", { tile_x: 100, tile_y: 100 });
+    assert.equal(gone.status, "demolished", `${label} ${JSON.stringify(gone)}`);
+  }
+});
+
+test("demolish_building clicks only where the game's tile under the pointer is the building's, never one drawn over it", async () => {
+  // A fletcher in front of a hovel's corner kept the game's tile on itself and took a demolish
+  // meant for the hovel (live 2026-10-14). Here a building in front (instance 16, on 102..103) is
+  // drawn over the target's (instance 15, on 100..101) tiles at x 101, or over all of them.
+  for (const allCovered of [false, true]) {
+    const label = allCovered ? "all covered" : "front column covered";
+    const ground = (px: number, py: number, camera: number) => {
+      const u = (px - 960) / 32, v = (py - 540) / (1080 / 68) + 8 / 8.7;
+      return { x: 99 + camera + Math.round((u + v) / 2), y: 100 + Math.round((v - u) / 2) };
+    };
+    const target = (t: { x: number; y: number }) => t.x >= 100 && t.x <= 101 && t.y >= 100 && t.y <= 101;
+    // The game's pick: the building in front wherever it is drawn over the target.
+    const picked = (px: number, py: number, camera: number) => {
+      const g = ground(px, py, camera);
+      return target(g) && (allCovered || g.x === 101) ? { x: 102, y: g.y } : g;
+    };
+    const demolished: string[] = [];
+    const game = simulatedGame({
+      tiles: (set) => {
+        for (let x = 100; x <= 101; x++) for (let y = 100; y <= 101; y++) set("structure", x, y, 15);
+        for (let x = 102; x <= 103; x++) for (let y = 100; y <= 103; y++) set("structure", x, y, 16);
+      },
+      cursor: (px, py, state) => picked(px, py, state.camera),
+      runtime: timedRuntime().runtime,
+      demolishable: (x, y) => {
+        const t = picked(x, y, game.state.camera);
+        demolished.push(target(t) ? "target" : "front");
+        return true;
+      },
+    });
+    const before = game.state.structures;
+    const { json } = await game.run("demolish_building", { tile_x: 101, tile_y: 101 });
+    if (allCovered) {
+      assert.equal(json.status, "covered", `${label} ${JSON.stringify(json)}`);
+      assert.match(json.remedy, /nothing was clicked/);
+      assert.deepEqual(demolished, [], `${label}: the building in front was left alone`);
+      assert.equal(game.state.structures, before);
+      assert.equal(game.state.action, 0, "demolish mode left");
+    } else {
+      assert.equal(json.status, "demolished", `${label} ${JSON.stringify(json)}`);
+      assert.deepEqual(demolished, ["target"], label);
+    }
+  }
+});
+
+test("demolish_building reads the view's tile map afresh once input has gone to the game since the observation", async () => {
+  // A demolish right after building, with no observation between, read the observation's map from
+  // before the hovel and the fletcher beside it stood, knew no building on the tile, and refused it
+  // as covered (live 2026-10-14). Here the build puts the target (instance 15, on 100..101) behind a
+  // building in front (instance 16, on 102..103) drawn over its tiles at x 101.
+  const standing = [{ x1: 102, y1: 100, x2: 103, y2: 103, id: 16 }];
+  const ground = (px: number, py: number, camera: number) => {
+    const u = (px - 960) / 32, v = (py - 540) / (1080 / 68) + 8 / 8.7;
+    return { x: 99 + camera + Math.round((u + v) / 2), y: 100 + Math.round((v - u) / 2) };
+  };
+  const target = (t: { x: number; y: number }) => t.x >= 100 && t.x <= 101 && t.y >= 100 && t.y <= 101;
+  const picked = (px: number, py: number, camera: number) => {
+    const g = ground(px, py, camera);
+    return target(g) && g.x === 101 && standing.length > 1 ? { x: 102, y: g.y } : g;
+  };
+  const demolished: string[] = [];
+  const game = simulatedGame({
+    tiles: (set) => standing.forEach((b) => { for (let x = b.x1; x <= b.x2; x++) for (let y = b.y1; y <= b.y2; y++) set("structure", x, y, b.id); }),
+    cursor: (px, py, state) => picked(px, py, state.camera),
+    runtime: timedRuntime().runtime,
+    blocked: () => {
+      standing.push({ x1: 100, y1: 100, x2: 101, y2: 101, id: 15 });
+      return false;
+    },
+    demolishable: (x, y) => {
+      demolished.push(target(picked(x, y, game.state.camera)) ? "target" : "front");
+      return true;
+    },
+  });
+  await game.observe();
+  const built = await game.run("build_structure", { placements: [{ name: "Woodcutter", tile_x: 100, tile_y: 100 }] });
+  assert.equal(built.json.placements[0].status, "placed", JSON.stringify(built.json));
+  const { json } = await game.run("demolish_building", { tile_x: 101, tile_y: 101 });
+  assert.equal(json.status, "demolished", JSON.stringify(json));
+  assert.deepEqual(demolished, ["target"]);
+});

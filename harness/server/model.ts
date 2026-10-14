@@ -105,7 +105,7 @@ const oneOf = <const T extends readonly string[]>(names: T, options: { descripti
   Type.Unsafe<T[number]>({ type: "string", enum: [...names], ...options });
 import { buildingInfo } from "./building-info.js";
 import { InventoryTracker } from "./inventory.js";
-import { Placer, type Ack } from "./placement.js";
+import { aimAtTile, Placer, type Ack } from "./placement.js";
 import { ackTime, anchorNames, centerOn, frameCache, goToTile, PLACEMENT_BOOKMARK, placeAdjacent, sampleAfter, sides, TOO_CLOSE_MARGIN, type AnchorContext, type MapExtent } from "./anchors.js";
 import { categories, MapView } from "./map-view.js";
 import { marketTrade, rationLevels, setRations, setTax, taxLevels, tradeGoods } from "./economy.js";
@@ -469,7 +469,8 @@ export function makeAgent(
   };
   // The observed view's tile map, read in the background from each observation while the game is
   // paused for the model, so find_sites and build_structure use it without spending game time.
-  let viewTiles: { frame: Frame; map: Promise<TileMap | null> } | null = null;
+  // `serial`: the device's input count when it was read (GameDevice.inputSerial).
+  let viewTiles: { frame: Frame; map: Promise<TileMap | null>; serial: number } | null = null;
   const tilesFor = (frame: Frame) => (viewTiles?.frame === frame ? viewTiles.map : readTileMap(frame, observedCameraSample));
   /** A camera's identity as cameraKey gives it for a reader sample; null without a camera. */
   const keyOf = (camera: TileCamera | null | undefined) => (camera ? cameraKey({ camera }) : null);
@@ -664,12 +665,25 @@ export function makeAgent(
       moved = true;
     }
     const key = keyOf(camera);
-    const map = observed && viewTiles?.frame === observed && key === observedCamera ? await viewTiles.map
+    // The observation's map only while nothing has been sent to the game since: these tools look for
+    // a building, and one placed or demolished since would be missing (a demolish read a map from
+    // before a hovel and the fletcher beside it were built, live 2026-10-14).
+    const map = observed && viewTiles?.frame === observed && key === observedCamera && viewTiles.serial === device.inputSerial ? await viewTiles.map
       : siteTiles?.key === key && siteTiles.serial === device.inputSerial ? siteTiles.map
       : await readTileMap(frame as Frame, camera);
     const drawn = map ? map.pixel(tile) : tilePixel(camera, frame, tile);
     return { pixel: onScreen(frame, drawn) ? drawn : tilePixel(camera, frame, tile), moved, map };
   };
+  /**
+   * The point to click for map tile `tile` from its projection `point`, aimed by the tile the game
+   * picks under the pointer (aimAtTile), with the run's view offsets: for demolish_building's and
+   * the panel tools' tile targets. Its moves go with the latest capture, like their tile clicks.
+   */
+  const aimClick = (ctx: AnchorContext, frame: Frame, point: { x: number; y: number }, tile: { x: number; y: number }, accept?: (shown: { x: number; y: number }) => boolean) =>
+    aimAtTile({
+      device, pause: ctx.pause, frame, offsets: anchorState,
+      move: async (p) => (await device.move(p, (device.latest ?? frame).id, Number.POSITIVE_INFINITY)) as Ack,
+    }, point, tile, accept);
   /**
    * Click open the panel of one of the player's buildings, for set_workshop and inspect_building:
    * targeted by map tile (any tile of its footprint; the camera is moved there when it is off
@@ -687,8 +701,9 @@ export function makeAgent(
     const frame = kind.status === "pixel" ? observed! : device.latest ?? (await device.capture());
     // Points to click, best first, and the building instance the tile map shows there (to tell
     // it from a neighbour drawn over it).
-    let points: { x: number; y: number }[] = [];
+    let points: { x: number; y: number; tile?: { x: number; y: number }; roof?: boolean }[] = [];
     let expectedId: number | undefined;
+    let panelMap: TileMap | null = null;
     if (kind.status === "tile") {
       const aim = await tileTarget({ x: kind.x, y: kind.y }, frame, signal);
       if ("reason" in aim) {
@@ -704,19 +719,22 @@ export function makeAgent(
       // The middle of the building on that tile first. A building in front of it (lower on screen) can
       // be drawn over its middle (a hovel over a blacksmith, live 2026-10-12), so then the back corner
       // of its footprint, and its roof above that, which buildings in front do not reach.
+      panelMap = aim.map;
       const id = aim.map?.structureAt({ x: kind.x, y: kind.y }) || undefined;
       const rect = id ? aim.map!.structureRect(id) : null;
       if (rect) {
         expectedId = id;
         const row = frame.height / (aim.map!.camera.tiles_high || 1);
-        const back = aim.map!.pixel({ x: rect.x1, y: rect.y1 });
+        const middle = { x: Math.floor((rect.x1 + rect.x2 + 1) / 2), y: Math.floor((rect.y1 + rect.y2 + 1) / 2) };
+        const corner = { x: rect.x1, y: rect.y1 };
+        const back = aim.map!.pixel(corner);
         points = [
-          aim.map!.pixel({ x: Math.floor((rect.x1 + rect.x2 + 1) / 2), y: Math.floor((rect.y1 + rect.y2 + 1) / 2) }),
-          back,
-          { x: back.x, y: Math.round(back.y - 1.5 * row) },
+          { ...aim.map!.pixel(middle), tile: middle },
+          { ...back, tile: corner },
+          { x: back.x, y: Math.round(back.y - 1.5 * row), roof: true },
         ].filter((p) => onScreen(frame, p));
       }
-      if (!points.length) points = [aim.pixel];
+      if (!points.length) points = [{ ...aim.pixel, tile: { x: kind.x, y: kind.y } }];
     } else {
       const target = { x: kind.x, y: kind.y };
       if (target.x >= frame.width || target.y >= frame.height * 0.82)
@@ -748,10 +766,21 @@ export function makeAgent(
     let opened: Record<string, unknown> | null = null;
     let read = false;
     const openedId = () => (opened?.selected_building as { id?: number } | null | undefined)?.id;
+    // A point at a footprint tile is aimed by the tile the game picks under the pointer; the roof,
+    // above the back corner, moves with the back corner's aim.
+    let shift = { x: 0, y: 0 };
     for (const [index, point] of points.entries()) {
+      let p = { x: point.x, y: point.y };
+      if (point.tile) {
+        // Any tile of the building will do: the pointer only has to be over it.
+        const map = panelMap;
+        const aimed = await aimClick(ctx, frame, p, point.tile, map && expectedId !== undefined ? (t) => map.structureAt(t) === expectedId : undefined);
+        shift = { x: aimed.point.x - point.x, y: aimed.point.y - point.y };
+        p = aimed.point;
+      } else if (point.roof) p = { x: point.x + shift.x, y: point.y + shift.y };
       // The first point gets a second click when no panel shows; the others are tried once each.
       for (let attempt = 0; attempt < (index === 0 ? 2 : 1) && !opened; attempt++) {
-        const ack = await click(point.x, point.y, 1);
+        const ack = await click(p.x, p.y, 1);
         opened = await sampleAfter(ctx, ackTime(ack), (o) => {
           read = true;
           return !!(o.selected_building as { type?: number } | null)?.type;
@@ -780,7 +809,7 @@ export function makeAgent(
     observedCamera = cameraKey(cameraSample);
     observedSpan = cameraSpanOf(cameraSample);
     observedCameraSample = observedCamera ? (cameraSample?.camera as TileCamera) : null;
-    viewTiles = { frame: observed, map: readTileMap(observed, observedCameraSample) };
+    viewTiles = { frame: observed, map: readTileMap(observed, observedCameraSample), serial: device.inputSerial };
     runtime?.session.check();
     runtime?.cycle.observe();
     refresh(observed);
@@ -1912,7 +1941,7 @@ export function makeAgent(
       name: "demolish_building",
       label: "Demolish a building",
       description:
-        "Demolish one of your buildings, targeted by map tile (tile_x/tile_y: any tile of its footprint, such as the `tile` build_structure reported) or by pixel (x/y in the latest screenshot, aimed at the building's body); give one pair. The harness selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. Statuses: demolished, not_demolished (nothing of yours there, or the game refused it; the keep cannot be demolished), not_selected (demolish mode did not start; the map was not clicked), unverified (no reader evidence either way), invalid_target and not_on_screen as for build_structure. Text only; one action.",
+        "Demolish one of your buildings, targeted by map tile (tile_x/tile_y: any tile of its footprint, such as the `tile` build_structure reported) or by pixel (x/y in the latest screenshot, aimed at the building's body); give one pair. The harness selects the game's demolish tool (the X on the red strip beside the construction tray), clicks the target, checks with the reader that the number of structures on the map fell, and right-clicks to leave demolish mode. Statuses: demolished, not_demolished (nothing of yours there, or the game refused it; the keep cannot be demolished), covered (another building is drawn over it where the pointer can reach; nothing was clicked), not_selected (demolish mode did not start; the map was not clicked), unverified (no reader evidence either way), invalid_target and not_on_screen as for build_structure. Text only; one action.",
       parameters: Type.Object({
         x: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with y" })),
         y: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with x" })),
@@ -1931,6 +1960,8 @@ export function makeAgent(
         if (kind.status === "pixel" && !observed) throw observeFirstError();
         const frame = kind.status === "pixel" ? observed! : device.latest ?? (await device.capture());
         let target: { x: number; y: number };
+        // The tile target's view as the tile map read it, for the building on the tile.
+        let targetMap: TileMap | null = null;
         if (kind.status === "tile") {
           const aim = await tileTarget({ x: kind.x, y: kind.y }, frame, signal);
           if ("reason" in aim) {
@@ -1943,6 +1974,7 @@ export function makeAgent(
           }
           if (aim.moved) observedClearedBy = "demolish_building";
           target = aim.pixel;
+          targetMap = aim.map;
         } else {
           target = { x: kind.x, y: kind.y };
           if (target.x >= frame.width || target.y >= frame.height * 0.82)
@@ -1984,6 +2016,40 @@ export function makeAgent(
             remedy: "The demolish tool did not start: right-click open ground with game_action to close any open panel, observe, then try again.",
           });
         const before = structures(mode);
+        // A tile target is aimed by the tile the game picks under the pointer: any tile of the building
+        // on it, at the tile asked, else at the back corner of its footprint (no building in front
+        // reaches it) or its middle. A building drawn over the spot keeps the game's tile on itself,
+        // and a click there would demolish it instead (a fletcher in front of a hovel's corner, live
+        // 2026-10-14), so with every spot covered nothing is clicked.
+        let aimed: Awaited<ReturnType<typeof aimClick>> | null = null;
+        if (kind.status === "tile") {
+          const asked = { x: kind.x, y: kind.y };
+          const id = targetMap?.structureAt(asked) || undefined;
+          const rect = id ? targetMap!.structureRect(id) : null;
+          const spots = [asked, ...(rect ? [{ x: rect.x1, y: rect.y1 }, { x: Math.floor((rect.x1 + rect.x2 + 1) / 2), y: Math.floor((rect.y1 + rect.y2 + 1) / 2) }] : [])]
+            .filter((t, i, all) => all.findIndex((u) => u.x === t.x && u.y === t.y) === i);
+          const map = targetMap;
+          const accept = map && id ? (t: { x: number; y: number }) => map.structureAt(t) === id : undefined;
+          for (const spot of spots) {
+            const drawn = spot === asked ? target : map ? map.pixel(spot) : null;
+            if (!drawn || !onScreen(frame, drawn)) continue;
+            const tried = await aimClick(ctx, frame, drawn, spot, accept);
+            aimed ??= tried;
+            if (tried.matched || !tried.shown) {
+              aimed = tried;
+              break;
+            }
+          }
+          if (aimed?.shown && !aimed.matched) {
+            await click(target.x, target.y, 3);
+            menuMemory = undefined;
+            return text({
+              status: "covered", tile_x: kind.x, tile_y: kind.y, cursorTile: aimed.shown,
+              remedy: "Another building is drawn over that building where the pointer can reach it, and a click would demolish that one instead, so nothing was clicked: give a tile at the back of the building (smaller tile_x + tile_y), or demolish the one in front first.",
+            });
+          }
+          if (aimed) target = aimed.point;
+        }
         const ack = await click(target.x, target.y, 1);
         const after = await sampleAfter(ctx, at(ack), (o) => (structures(o) ?? Infinity) < (before ?? -Infinity), 2);
         const latest = after ?? device.currentStats().observation;
@@ -1995,6 +2061,8 @@ export function makeAgent(
           status: outcome,
           ...(kind.status === "tile" ? { tile_x: kind.x, tile_y: kind.y } : {}),
           x: target.x, y: target.y,
+          // The tile the game picked under the pointer when the aim could not reach the one asked.
+          ...(aimed?.shown && !aimed.matched ? { cursorTile: aimed.shown } : {}),
           ...(outcome === "not_demolished"
             ? { remedy: "Nothing of yours was demolished there: aim at the building's body (a tile of its footprint), observe to check it still stands; the keep cannot be demolished." }
             : outcome === "unverified" ? { remedy: "Check the next observation or status to see whether it is gone." } : {}),

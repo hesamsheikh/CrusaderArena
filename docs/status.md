@@ -275,6 +275,17 @@ between September and October 2026.
     in 2 probes, two stockpiles at `find_sites` spots, a granary by `expand_storage` and two
     hovels in the stockpile's view were all placed at their first click, and a tile read showed
     each footprint exactly where asked, the stockpiles flush in a row.
+  - Over a building's image the game's tile under the pointer is one of that building's: a
+    grid of pointer moves over a hovel with a fletcher's workshop in front of it showed the
+    fletcher's tiles over the hovel's front corner, and the hovel's tiles over open ground
+    behind it. Demolishing that hovel by its far corner, behind the fletcher, aimed the pointer
+    three times without reaching a hovel tile and its click demolished the fletcher. Now
+    `demolish_building` takes any tile of its building, tries the back corner and the middle
+    after the tile asked, clicks only where the game shows one of them, and reads the view's
+    map afresh after input (its map had been from before the hovel stood): the same demolish
+    removed the hovel and left the fletcher and the hovel behind it standing. In the same run
+    `set_workshop` by tile set the fletcher to crossbows and `inspect_building` by tile read the
+    hovel.
 - The run overlay's speed, on 2026-10-14 (stand-in on Oasis by the Sea, 3 game minutes): the
   phase line went from "waiting · speed 40" through 45 to "speed 90" and back down to 40 in
   each fast wait, as the + and - presses went; panels rendered from the live status showed it.
@@ -786,11 +797,6 @@ between September and October 2026.
 
 ## Known issues
 
-- **Tile targets that are not aimed.** The reader's camera centre is a whole tile, and the
-  view can lie part of a tile from it, so a click projected at a tile can pick its neighbour
-  (see Runs). Placement clicks are aimed by the tile the game picks under the pointer;
-  `demolish_building`, `set_workshop` and `inspect_building` by tile still click the projected
-  pixel, which a tile off usually still lands on the building.
 - **Garbage-collector stalls.** Under Proton, the game's garbage collector can stop
   starting collections, paused or running, with or without the reader: about once per
   1,300–1,500 collections, or 0.75 times an hour of play, in recorded runs up to
