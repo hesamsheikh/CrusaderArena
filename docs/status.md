@@ -226,8 +226,11 @@ between September and October 2026.
     video rendered in the background after the runner went on (4:18, its recording
     compacted from 1,107 to 81 MB, the marker then removed), and the host held its
     interview after the runner exited. Saving took 96 to 124 seconds from the run's end,
-    against 237 to 256 for that day's 1.6.3 desert games; the keys, 95 to 103 of them,
-    now take 0.71 seconds each.
+    against 237 to 256 for that day's 1.6.3 desert games, with its 95 to 103 keys at 0.71
+    seconds each. Typed as one run in one bridge request, the 95 keys of an Oasis save took
+    13 seconds and the save 37 from the run's end, the name complete at the first attempt;
+    the load's 32 keys likewise, the Load Game dialog to the loaded map in 12 seconds
+    against 26.
 - The prompt cache key for Meta's models, on 2026-10-13: Muse Wonder's run on Oasis by
   the Sea at 1.5.1, its host given the key by `round-preload.ts`, read the cache on all
   106 requests, 96.9% of its input tokens. Its run the same morning without the key
@@ -436,7 +439,7 @@ between September and October 2026.
   - The episode runner: the video rendered in the background, one at a time behind a lock,
     its marker removed on a stop and recognised by packaging when left by a killed render,
     a hung step ended, and a render that cannot start never failing the episode; the last
-    interview left to the host; the save name typed on one capture. The runner's own waits
+    interview left to the host. The runner's own waits
     for the host's interviews have no automated test (episodes.ts runs on import).
   - [Warnings](context.md#warnings) for popularity, food and gold: when each comes up and
     comes up again, in the values of the observation that reports it or as it came up,
