@@ -372,7 +372,7 @@ between September and October 2026.
     work while paused, the shortest key press the game takes, and that a tick is the same
     game at 90 as at 40.
   - A screenshot's age counted in game seconds on the game clock (40 of them), with real
-    time only when there is no clock reading.
+    time only when there is no clock reading; input aimed by map tile exempt, as before.
   - `flat_view` toggling the view paused and taking its two images with the game running.
   - The tile of open ground kept around stockpiles, and the last spot for another
     stockpile kept free (`blocks_stockpile`).
@@ -532,7 +532,7 @@ between September and October 2026.
   fake keep panel (`economy.test.ts`). The live run recorded above (benchmark 1.2.0)
   predates this change and shows the static table's values.
 - The per-tool-call frame cache for input-only clicks and hotkeys (`anchors.ts`'s
-  `frame()`, reused for up to `FRAME_REUSE_MS` after a capture) and `build_structure`
+  `frame()`, reused until it is `FRAME_REUSE_GAME_SECONDS` old) and `build_structure`
   remembering the construction tray's open category across calls (falling back to the
   full category click when the reader does not confirm it), with fake game devices
   (`anchors.test.ts`, `device-lifecycle.test.ts`, `model-observation.test.ts`). Neither

@@ -109,9 +109,10 @@ questions during the run. The run is judged by the game's state when it ends.
   ${TICKS_PER_GAME_SECOND / GAME_SPEED} real seconds; \`+\` and \`-\` are disabled.
 - Game time passes only while the game runs. The host pauses it while you think, and it
   stays paused through the first tools of your reply if they only read (\`status\`,
-  \`get_inventory\`, \`find_sites\`, \`map_overview\`, \`flat_view\`, references, plan and notes).
-  From the first tool that acts, waits or takes a screenshot, the game runs until your
-  reply ends. So thinking and reading first cost no game time; read before you act.
+  \`get_inventory\`, \`find_sites\`, \`map_overview\`, references, plan and notes).
+  From the first tool that acts, waits or takes a screenshot (\`flat_view\` too), the game
+  runs until your reply ends. So thinking and reading first cost no game time; read before
+  you act.
 - A real-time limit of ${minutes(wallLimitMinutes)} also ends the run. It is a safety limit; game time
   is the budget.
 - Every request shows the game time left in minutes and seconds: \`run_clock\` in each

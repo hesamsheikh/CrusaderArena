@@ -102,8 +102,9 @@ speed keys, or the run ends. So every action, screenshot and gap before the next
 request happens at 40, and the model's game time is spent exactly as without fast waits.
 While the speed is not confirmed at 40, the host refuses any input to the game.
 
-A wait with a condition (`wait_and_observe` with `until`) can end at any moment, so it
-keeps the speed of 40. So do waits too short to gain: about 0.12 real seconds per key
+A wait with a condition (`wait_and_observe` with `until`) can end at any moment once the
+turn's minimum length has passed, so that part of it keeps the speed of 40 (the part the
+minimum turn still owes is a plain wait). So do waits too short to gain: about 0.12 real seconds per key
 press and a 1.3-second measurement make the host's waits of 5 to 8 game seconds a loss.
 A [warning](context.md#warnings) can end the model's other waits too: a fast wait checks
 for one at speed and comes back down when one comes up, a few game seconds later, all of

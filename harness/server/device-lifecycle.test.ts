@@ -153,6 +153,17 @@ test("a screenshot ages in game seconds on the game clock: 40 of them, however l
   await assert.rejects(device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id), /expired/);
 });
 
+test("input aimed from the live camera (an infinite age credit) takes any capture, however many game seconds old", async () => {
+  // A tile target's clicks (build_structure, demolish_building, set_workshop) use the frame only for
+  // the window: after text-only observations the latest capture can be minutes of play old.
+  const { device, clock } = bridged();
+  clock(10_000);
+  const frame = await device.capture();
+  clock(10_000 + 100 * 30);
+  await device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id, undefined, Number.POSITIVE_INFINITY);
+  await assert.rejects(device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id), /expired/, "a pixel target still ages");
+});
+
 test("the speed guard refuses game input while it throws, but not the host's pause and speed keys", async () => {
   const { device, sent } = bridged();
   const frame = await device.capture();

@@ -296,6 +296,8 @@ export const FRAME_MAX_AGE_GAME_SECONDS = 40;
  * and `clock` (the reader's latest reading) both have one for the same map, else from real time at
  * GAME_SPEED, less `creditMs` (time the host kept the game paused since), as in menus or a reader
  * gap. A clock that went back, or another map, means another game: the frame is too old for it.
+ * An infinite credit waives the age: input aimed from the live camera (a tile target) takes only
+ * the window's identity and size from the frame, so any capture serves it.
  */
 export function frameAgeSeconds(
   frame: Pick<Frame, "receivedAt" | "gameTick" | "mapName">,
@@ -303,6 +305,7 @@ export function frameAgeSeconds(
   now = Date.now(),
   creditMs = 0,
 ) {
+  if (creditMs === Number.POSITIVE_INFINITY) return 0;
   if (clock && typeof frame.gameTick === "number" && frame.mapName !== undefined) {
     if (frame.mapName !== clock.map || clock.tick < frame.gameTick) return Number.POSITIVE_INFINITY;
     return (clock.tick - frame.gameTick) / TICKS_PER_GAME_SECOND;

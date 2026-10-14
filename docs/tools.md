@@ -25,9 +25,9 @@ means the result includes an observation: a fresh screenshot plus the JSON readi
 described in [Context](context.md#observations), or, from `wait_and_observe` with
 `screenshot: false`, the same reading as text only (see
 [Text-only observations](context.md#text-only-observations)). Tools that click need a
-previous observation (they target its pixels) and refuse screenshots more than 30
-seconds old, not counting time the game spent paused by the host; a text-only
-observation does not supply one. Two exceptions need no observation at all:
+previous observation (they target its pixels) and refuse screenshots more than 40 game
+seconds old, counted on the game clock, so time the game spends paused does not count;
+a text-only observation does not supply one. Two exceptions need no observation at all:
 `find_sites`, and a `build_structure` placement given by map tile instead of pixels
 (see [Build](#build)); both read the live camera themselves.
 
@@ -136,7 +136,7 @@ else off every other building's ground); otherwise
 it steps a short distance along each axis. The spots are projected from the camera the
 placement's own click came from: the screenshot's for a pixel target, the live one for
 a tile target (with a tile map read for that view). Retries stop when that camera
-moves or placement mode ends, and a pixel target's also when its screenshot is 25
+moves or placement mode ends, and a pixel target's also when its screenshot is 34 game
 seconds old. Affordability is checked from the
 reader before each placement's first click, re-read so an earlier placement in the
 same call is accounted for; an unaffordable target is reported with

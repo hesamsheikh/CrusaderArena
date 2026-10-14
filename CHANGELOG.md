@@ -28,12 +28,12 @@ warnings can end the model's waits.
 
 ### Benchmark
 
-- Fast waits: the game time a run only waits for (the model's `wait_and_observe` without
-  `until`, and the host's own waits) is played at the game's top speed, 90, when that saves at
-  least 2 real seconds. The host presses `+` up, waits, and presses `-` back down early enough
-  to measure speed 40 again before the wait's last tick, setting it right with the speed keys
-  or ending the run if it cannot; while the speed is unconfirmed the host sends no input to the
-  game. Every action, screenshot and gap before the next model request stays at 40, so the
+- Fast waits: the game time a run only waits for (the model's `wait_and_observe`, but for the
+  part an `until` condition can end, and the host's own waits) is played at the game's top
+  speed, 90, when that saves at least 2 real seconds. The host presses `+` up, waits, and
+  presses `-` back down early enough to measure speed 40 again before the wait's last tick,
+  setting it right with the speed keys or ending the run if it cannot; while the speed is
+  unconfirmed the host sends no input to the game. Every action, screenshot and gap before the next model request stays at 40, so the
   model's game time is spent as before. On the 36 full runs of 2026-10-11 to 13 this would
   have saved 15–16% of their real time (30–42% for Claude Haiku and Sonnet 5.5, 1–8% for
   Gemini 4 Argon); the host's waits of 5 to 8 game seconds are too short to gain with one
@@ -41,7 +41,9 @@ warnings can end the model's waits.
   turns them off, and `progress.fastWaits` and the `fast_wait` events record what they did.
 - A screenshot can be used for input until it is 40 game seconds old, counted on the game
   clock (it was 30 real seconds less the time paused, the same at speed 40). The system
-  prompt and `observe` say so. Waits played fast count in full.
+  prompt and `observe` say so. Waits played fast count in full. Input aimed by map tile
+  (`build_structure`, `demolish_building`, `set_workshop`) still takes any capture, as before:
+  it uses the image only for the window.
 - `flat_view` takes both its images with the game running: a paused game draws "Game Paused"
   across the middle of the view, over every flat_view image until now. It still toggles the
   view with the game paused, and the game now runs on afterwards, as after an action.

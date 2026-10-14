@@ -139,7 +139,7 @@ the same way (seconds, `until`, the minimum turn, warnings) and returns the same
 `reader_unavailable_seconds` as above (no `width`/`height`, since there is no image),
 with a leading line saying no screenshot was taken and that `observe` or
 `wait_and_observe` gets one. It does not replace the targeting frame: a pixel-targeting
-tool still judges its thirty-second age limit against the last real screenshot.
+tool still judges its 40-game-second age limit against the last real screenshot.
 
 ### Warnings
 

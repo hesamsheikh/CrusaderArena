@@ -39,11 +39,12 @@ Reading tools (`observe`, `status`, `get_inventory`, `find_sites`, `flat_view`,
 `map_overview`, references, plan and notes) do not count.
 
 The game is paused while you think and stays paused until the first tool in your reply
-that acts, waits or observes; from then on it runs for the rest of the reply. Other
-reading tools therefore cost no game time when they come first: call them before your
-actions, or in a reply of their own. From that first tool, a reply runs at least the
-minimum turn length (see Time in your instructions): `observe` and `wait_and_observe`
-return the game only once it has passed, so act first and look last.
+that acts, waits or observes (`flat_view` too: it runs the game for its images); from
+then on it runs for the rest of the reply. Other reading tools therefore cost no game
+time when they come first: call them before your actions, or in a reply of their own.
+From that first tool, a reply runs at least the minimum turn length (see Time in your
+instructions): `observe` and `wait_and_observe` return the game only once it has
+passed, so act first and look last.
 
 ## What you see
 

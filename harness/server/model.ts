@@ -715,7 +715,7 @@ export function makeAgent(
   /**
    * Text-only observation: the same run_clock, stats, game_events and camera as `observe`, without
    * capturing or attaching a screenshot. It leaves the targeting frame (`observed`) untouched, so
-   * game_action, inspect_building and build_structure still judge their thirty-second age limit
+   * game_action, inspect_building and build_structure still judge their 40-game-second age limit
    * against the last real screenshot, not this call.
    */
   const observeText = async () => {
