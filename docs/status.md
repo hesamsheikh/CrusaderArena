@@ -358,6 +358,30 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The 1.7.0 changes, not yet run live (`game-speed.test.ts`, `session.test.ts`,
+  `controller.test.ts`, `device-lifecycle.test.ts`, `protocol.test.ts`, `anchors.test.ts`,
+  `tile-map.test.ts`, `model-observation.test.ts`, `game-save.test.ts`, `video.test.ts`,
+  `tools/video/test_render_queue.py`, `tools/dataset/test_dataset.py`):
+  - [Fast waits](how-it-works.md#fast-waits), on a simulated game clock: waits of 3 to 300
+    game seconds end at speed 40 before their last tick, short ones press nothing, a lost
+    `-` press and a lower top speed are set right by the end measurement, dead speed keys
+    turn fast waits off, and a run stopped in a fast wait presses the speed back down after
+    its final pause; the device refusing game input while the speed is unconfirmed. Not
+    known from the live game: the top speed and whether a late-game map holds it, a
+    message on screen or in the reader when the speed changes, whether the speed keys
+    work while paused, the shortest key press the game takes, and that a tick is the same
+    game at 90 as at 40.
+  - A screenshot's age counted in game seconds on the game clock (40 of them), with real
+    time only when there is no clock reading.
+  - `flat_view` toggling the view paused and taking its two images with the game running.
+  - The tile of open ground kept around stockpiles, and the last spot for another
+    stockpile kept free (`blocks_stockpile`).
+  - `build_structure` waiting after its closing right-click for the reader to show
+    placement mode ended, so a call straight after it selects the same building again
+    (reproduced with a reader sample that lags the right-click).
+  - The episode runner: the video rendered in the background, one at a time behind a lock;
+    the last interview left to the host; the save name typed on one capture.
+
 - The shims that bring two harness changes to rounds played on earlier versions
   (`cache-key.test.ts`, `overlay-feed.test.ts`, `test_overlay.py`; both also used in a
   run, above): the key added to the harness's own requests as Pi sends them and by the

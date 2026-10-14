@@ -17,10 +17,58 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.7.0] - 2026-10-14
+
+Runs take less real time. Waits are played at the game's top speed and every tick is the same
+game at any speed, so a run's game should be the same as on 1.6; this, the top speed and the
+speed keys' behaviour are still to be checked in the live game (see
+[Status](docs/status.md#tested-in-code-only)). A minor version because the placement rules
+around stockpiles change what models can build where.
+
+### Benchmark
+
+- Fast waits: the game time a run only waits for (the model's `wait_and_observe` without
+  `until`, and the host's own waits) is played at the game's top speed, 90, when that saves at
+  least 2 real seconds. The host presses `+` up, waits, and presses `-` back down early enough
+  to measure speed 40 again before the wait's last tick, setting it right with the speed keys
+  or ending the run if it cannot; while the speed is unconfirmed the host sends no input to the
+  game. Every action, screenshot and gap before the next model request stays at 40, so the
+  model's game time is spent as before. On the 36 full runs of 2026-10-11 to 13 this would
+  have saved 15–16% of their real time (30–42% for Claude Haiku and Sonnet 5.5, 1–8% for
+  Gemini 4 Argon); the host's waits of 5 to 8 game seconds are too short to gain with one
+  key press at a time. The run setting `fastWaits` (on by default; `--no-fast-waits`)
+  turns them off, and `progress.fastWaits` and the `fast_wait` events record what they did.
+- A screenshot can be used for input until it is 40 game seconds old, counted on the game
+  clock (it was 30 real seconds less the time paused, the same at speed 40). The system
+  prompt and `observe` say so. Waits played fast count in full.
+- `flat_view` takes both its images with the game running: a paused game draws "Game Paused"
+  across the middle of the view, over every flat_view image until now. It still toggles the
+  view with the game paused, and the game now runs on afterwards, as after an action.
+- Every spot the harness picks, and every `build_structure` target, keeps a tile of open
+  ground around stockpiles, as around granaries and armories (`access: touches_storage`);
+  another stockpile may still touch it.
+- They also leave one spot beside the stockpile where another stockpile fits
+  (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
+  `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,
+  GPT-6.1 Sol, Gemini 4 Argon and Muse Wonder on The Sinkhole, and others on the desert).
+- `build_structure` waits after its closing right-click until the reader shows placement
+  mode ended. A call straight after another one, placing the same building first, read the
+  end of the previous placement mode as its own selection failing and reported `not_selected`
+  for a building the game had selected: 17 placements in 9 calls (Gemini 4 Argon and Muse
+  Wonder, 1.5.1 to 1.6.3), found from a model's interview.
 
 ### Harness
 
+- The episode runner renders the run video in the background (`tools/video/render-queue.py`),
+  one render at a time on the machine and at low priority, and does not wait for it, so a
+  queue of runners starts the next game while the last one renders (about 5 minutes of render
+  and compaction per run before). `render.pending` marks a run folder until it is done, and
+  packaging refuses the run meanwhile.
+- The runner leaves the last episode's interview to the host and exits; a runner that finds an
+  interview still running waits for it before its agent run.
+- The end-of-run save types the save's name on one capture of the window instead of one per
+  key (about 100 keys), which made saving take 1.5 to 3.5 minutes.
+- The dashboard's new-run dialog has a Fast waits switch.
 - The game machine renders the game on its NVIDIA GPU instead of the integrated Intel GPU,
   which it used since September because the game stalled at the end of loading on the NVIDIA
   GPU. That stall no longer occurs (see [Status](docs/status.md#checked-in-the-live-game)).

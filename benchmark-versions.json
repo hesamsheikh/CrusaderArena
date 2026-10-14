@@ -1,5 +1,5 @@
 {
-  "current": "1.6.3",
+  "current": "1.7.0",
   "history": [
     {
       "version": "1.0.0",
@@ -222,6 +222,12 @@
       "fingerprint": "96c4682877ca393cfbdbe24694ecef8c225e721cf0a11a8a580a1675caf13a95",
       "date": "2026-10-13",
       "note": "Meta models get a prompt cache key, and rounds on earlier versions get it and the run overlay through a host preload and a runner feed; what a run plays and scores is unchanged"
+    },
+    {
+      "version": "1.7.0",
+      "fingerprint": "0f1369e2cf6a88d08b16f12d1d9d967ddec5598c7057b0825bc30645a4734d3e",
+      "date": "2026-10-14",
+      "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; build_structure waits for placement mode to end"
     }
   ]
 }
