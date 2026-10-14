@@ -711,7 +711,7 @@ test("fallbackObservation 'always' keeps sending a screenshot after a text-only 
 
 test("the briefing and controls describe the fallback-observation setting in force", () => {
   const whenNeeded = runSystemPrompt(fixture(1, 5, 10, {}, undefined, 0, undefined, "when-needed").run);
-  assert.match(whenNeeded, /sends\s+an observation: a screenshot if your reply used `game_action`, `inspect_building` or a\s+`build_structure` placement given by `x`\/`y`, otherwise the same stats, game events and\s+`run_clock` as text, with no image/);
+  assert.match(whenNeeded, /sends\s+an observation: a screenshot if your reply used `game_action` or aimed a tool at `x`\/`y`\s+pixels \(`build_structure`, `demolish_building`, `set_workshop`, `inspect_building`\),\s+otherwise the same stats, game events and `run_clock` as text, with no image/);
   assert.match(whenNeeded, /each such reply\s+and sends that text observation/);
   assert.match(whenNeeded, /That observation is a screenshot if the reply used `game_action`/);
   assert.doesNotMatch(whenNeeded, /always a screenshot/);

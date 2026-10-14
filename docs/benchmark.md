@@ -353,7 +353,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--wall-limit-minutes` | 360 | Real-time limit |
 | `--default-wait` | 5 | Game seconds the host waits after a turn that acted without looking |
 | `--min-turn-seconds` | 8 | Least game time a turn that runs the game takes (0 turns it off) |
-| `--fallback-observation` | `when-needed` | What the host sends after a turn that acted without looking: `when-needed` is text only unless the turn used `game_action`, `inspect_building` or a pixel placement (a screenshot then); `always` is a screenshot every time |
+| `--fallback-observation` | `when-needed` | What the host sends after a turn that acted without looking: `when-needed` is text only unless the turn used `game_action` or aimed `build_structure`, `demolish_building`, `set_workshop` or `inspect_building` by pixel (a screenshot then); `always` is a screenshot every time |
 | `--screenshot-width` | 1280 | Width the model's screenshots are scaled down to (0: the window's own size); see [Context](context.md#observations) |
 | `--context-budget` | 120000 | Working context budget in tokens |
 | `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |

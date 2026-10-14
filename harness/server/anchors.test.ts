@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { adjacentRays, cameraShift, FRAME_REUSE_GAME_SECONDS, frameCache, sideOrder, tilePixel } from "./anchors.js";
-import { describeBuilding, statusReport, storageOf } from "./status.js";
+import { describeBuilding, observationStats, statusReport, storageOf } from "./status.js";
 import type { Frame } from "../shared/protocol.js";
 
 const frame = { width: 1920, height: 1080 };
@@ -132,6 +132,39 @@ test("status lists popularity factors as the game's report does, with efficiency
   assert.equal(report.worker_efficiency_percent, 110);
   const early = desert(0);
   assert.ok(early.status === "ok" && !("worker_efficiency_percent" in early), "no efficiency before the game reckons one");
+});
+
+test("religion and the inn show at 0 once a chapel or an inn stands, and status counts the buildings", () => {
+  const report = (buildings?: Record<string, number>) => statusReport(sample({
+    gold: 300, population: 60, popularity: 64, map_name: "m", resources_by_name: {}, visible_messages: [],
+    ...(buildings ? { buildings } : {}),
+    settlement: {
+      month: 1, year: 1198, housing_cap: 66, peasants_available: 23, total_food: 80, months_of_food: 4,
+      rationing: 2, food_types_eaten: 1, food_types_available: 1, efficiency: 100, upcoming_popularity: 50,
+      popularity_factors: { food: 100, food_variety: 0, rationing: 100, tax: -50, fear_factor: 0, religion: 0, inn: 0 },
+    },
+  }));
+  const none = report();
+  assert.ok(none.status === "ok");
+  if (none.status !== "ok") return;
+  assert.deepEqual(none.popularity.factors, { food: 4, tax: -2 }, "zeros left out without the buildings");
+  assert.ok(!("buildings" in none));
+  // Kimi K3's Oasis game (1.6.3): a chapel stood for two game years and religion never showed.
+  const chapel = report({ "1": 8, "10": 8, "36": 1, "41": 1, "71": 2, "55": 1 });
+  assert.ok(chapel.status === "ok");
+  if (chapel.status !== "ok") return;
+  assert.deepEqual(chapel.popularity.factors, { food: 4, tax: -2, religion: 0 });
+  assert.deepEqual(chapel.buildings, { Hovel: 8, Stockpile: 2, Chapel: 1, Keep: 1 }, "piles as stockpiles, keep doors and the campfire left out");
+  const inn = report({ "22": 2, "37": 1 });
+  assert.ok(inn.status === "ok" && inn.popularity.factors && "religion" in inn.popularity.factors && "inn" in inn.popularity.factors);
+  // The stats beside each screenshot use the same factors.
+  const stats = observationStats(sample({
+    gold: 300, population: 60, popularity: 64, buildings: { "38": 1 },
+    settlement: { month: 1, year: 1198, housing_cap: 66, peasants_available: 23, total_food: 80, months_of_food: 4, rationing: 2,
+      food_types_eaten: 1, food_types_available: 1, efficiency: 100, upcoming_popularity: 0, popularity_factors: { tax: 0, religion: 0, inn: 0 } },
+  }));
+  assert.ok(stats.status === "ok" && stats.popularity.factors);
+  assert.deepEqual(stats.status === "ok" ? stats.popularity.factors : null, { religion: 0 });
 });
 
 test("building description separates staffed buildings from storage", () => {

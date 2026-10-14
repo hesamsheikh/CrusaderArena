@@ -83,6 +83,26 @@ warnings can end the model's waits.
   the popularity warning at 30:27, a minute or more earlier. The rates at which people eat
   were measured from recorded runs; only the host uses them. A fast wait comes back down to
   40 when a warning comes up.
+- From the 1.6.3 round's interviews, each checked against the runs' records:
+  - Religion and the inn show in the popularity factors at 0 once the player has a chapel,
+    church or cathedral, or an inn; factors at zero were left out. Five of the seven chapels
+    built that round never showed a religion factor, and three models could not tell a
+    chapel giving nothing from a factor the reader does not read.
+  - `status` counts the player's buildings by type, from the reader's counts.
+  - `inspect_building` takes a map tile, like `set_workshop` and `demolish_building`: three
+    calls that round failed for want of a fresh screenshot. By tile it clicks the building's
+    middle, then the back corner of its footprint and its roof, and says when only a
+    building drawn in front of it opened. `set_workshop` no longer sets the product of such a
+    building in front when it is a workshop too. The system prompt now names every tool aimed
+    by pixel among those that make the host's next observation a screenshot.
+  - `find_sites` says when no woodcutter spot has a tree in reach also when it searches
+    around a tile, naming the nearest grove or saying the map has none: GLM 5.3 Flash's tile
+    search on Large Barren Desert listed `"trees": 0` under the usual note, and it built four
+    woodcutters on a map with no trees.
+  - `expand_storage` and `place_near` go back to the anchor's view, with the building still
+    selected, when choosing a Stockpile, Granary or Armory or a refused stockpile moved the
+    view, as `build_structure` does. Four of GPT-6.1 Sol's five `expand_storage` calls on
+    Large Barren Desert stopped with `camera_moved`, two before trying any spot.
 
 ### Harness
 

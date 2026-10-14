@@ -489,6 +489,8 @@ function simulatedGame(options: {
   staleAfterExitMs?: number;
   /** Gold and popularity the reader shows, read afresh on every sample (600 and 90 by default). */
   economy?: { gold: number; popularity: number };
+  /** Going to a bookmark also ends placement mode (live it keeps it, 2026-10-12). */
+  bookmarkLeavesPlacement?: boolean;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -606,7 +608,10 @@ function simulatedGame(options: {
         if (state.sel === anchor.type) state.camera = anchor.camera;
         else state.sel = anchor.type;
       } else if (name.startsWith("SetBookmark")) bookmarks.set(name.slice(11), state.camera);
-      else if (name.startsWith("GotoBookmark") && bookmarks.has(name.slice(12))) state.camera = bookmarks.get(name.slice(12))!;
+      else if (name.startsWith("GotoBookmark") && bookmarks.has(name.slice(12))) {
+        state.camera = bookmarks.get(name.slice(12))!;
+        if (options.bookmarkLeavesPlacement) state.action = 0;
+      }
       return { at: Date.now() };
     },
     // A live stream's unavailable sample still carries its capture time.
@@ -837,7 +842,8 @@ test("expand_storage locates the stockpile by a rejected click, then probes outw
 });
 
 test("inspect_building reads the opened panel and closes it", async () => {
-  const game = simulatedGame({ buildingAt: (x, y) => (x === 700 && y === 500 ? 3 : undefined) });
+  // A timed runtime's waits return at once: a click that opens nothing waits 4 s for a panel, twice.
+  const game = simulatedGame({ buildingAt: (x, y) => (x === 700 && y === 500 ? 3 : undefined), runtime: timedRuntime().runtime });
   await game.observe();
   const { json } = await game.run("inspect_building", { x: 700, y: 500 });
   assert.equal(json.building.name, "Woodcutter's Hut");
@@ -845,6 +851,53 @@ test("inspect_building reads the opened panel and closes it", async () => {
   assert.equal(game.state.sel, null);
   const empty = await game.run("inspect_building", { x: 300, y: 300 });
   assert.equal(empty.json.building, null);
+  assert.match(empty.json.remedy, /give a tile of its footprint/);
+  // Over the HUD: a status with a remedy, nothing clicked.
+  const clicks = game.actions.length;
+  const hud = await game.run("inspect_building", { x: 300, y: 1000 });
+  assert.equal(hud.json.status, "invalid_target");
+  assert.equal(game.actions.length, clicks);
+});
+
+/** Simulated tile layers with one building instance (`id`) on the 4×4 footprint x 99–102, y 99–102. */
+const oneBuilding = (id: number) => (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+  for (let x = 99; x <= 102; x++) for (let y = 99; y <= 102; y++) set("structure", x, y, id);
+};
+
+test("inspect_building takes a map tile, with no screenshot, and clicks the middle of the building on it", async () => {
+  // The simulated reader names every open panel instance 15.
+  const game = simulatedGame({ tiles: oneBuilding(15), buildingAt: () => 3 });
+  const { json, images } = await game.run("inspect_building", { tile_x: 100, tile_y: 101 });
+  assert.equal(images, 0);
+  assert.equal(json.tile_x, 100);
+  assert.equal(json.building.name, "Woodcutter's Hut", JSON.stringify(json));
+  assert.ok(!("warning" in json));
+  assert.deepEqual(game.actions.map((a) => a.button), [1, 3], "one click on the building, one to close its panel");
+  assert.equal(game.captures(), 1, "one bookkeeping capture; no screenshot was ever taken");
+});
+
+test("a building drawn over the target: inspect_building says the panel is the one in front, set_workshop leaves it alone", async () => {
+  // The tile map shows instance 20 on the tile, but every click opens instance 15, the building in
+  // front: the middle, the back corner and the roof are each tried (Muse Wonder's fletchers behind
+  // an armory, 1.6.3).
+  const inspect = simulatedGame({ tiles: oneBuilding(20), buildingAt: () => 11 });
+  const { json } = await inspect.run("inspect_building", { tile_x: 100, tile_y: 100 });
+  assert.equal(json.building.name, "Armory", JSON.stringify(json));
+  assert.match(json.warning, /^This is the panel of the Armory drawn in front of the building on that tile/);
+  const left = inspect.actions.filter((a) => a.button === 1).length;
+  assert.equal(left, 3, "the middle, the back corner and the roof");
+  // A workshop in front of a workshop: its product stays as it was.
+  const workshop = { making: 17, next: 17 };
+  const set = simulatedGame({ tiles: oneBuilding(20), buildingAt: () => 12, workshop });
+  const { json: refused } = await set.run("set_workshop", { product: "crossbows", tile_x: 100, tile_y: 100 });
+  assert.equal(refused.status, "not_a_workshop", JSON.stringify(refused));
+  assert.equal(refused.opened, "Fletchers' Workshop");
+  assert.match(refused.reason, /drawn over this one/);
+  assert.equal(workshop.next, 17, "no product button was pressed");
+  // The workshop's own panel is set as before.
+  const own = simulatedGame({ tiles: oneBuilding(15), buildingAt: () => 12, workshop: { making: 17, next: 17 } });
+  const { json: done } = await own.run("set_workshop", { product: "crossbows", tile_x: 100, tile_y: 100 });
+  assert.equal(done.status, "set", JSON.stringify(done));
 });
 
 test("status summarises the reader without a screenshot or input", async () => {
@@ -1162,6 +1215,31 @@ test("place_near puts the first Armory against the keep from the tile map, with 
   assert.ok(disjoint(footprintRect(tileView(5).tileAt(json.placed[0]), 4), keep));
 });
 
+test("expand_storage goes back to the anchor's view when choosing the building moved the view", async () => {
+  // Choosing an Armory, Granary or Stockpile centres the view on the first one (live 2026-10-12); it
+  // stopped GPT-6.1 Sol's expand_storage with camera_moved before any spot was tried (1.6.3).
+  const armory = (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void, c: { x: number; y: number }) => {
+    for (let x = c.x - 2; x <= c.x + 1; x++) for (let y = c.y - 2; y <= c.y + 1; y++) set("structure", x, y, 4);
+  };
+  const game = simulatedGame({ anchors: { Armoury: { camera: 5, type: 11 } }, tiles: armory, onButton: (state) => { state.camera += 40; } });
+  await game.observe();
+  const { json } = await game.run("expand_storage", { kind: "armory", count: 1 });
+  assert.equal(json.status, "placed", JSON.stringify(json));
+  assert.deepEqual(game.hotkeys.filter((h) => h.includes("Bookmark")), ["SetBookmark9", "GotoBookmark9"]);
+  assert.equal(game.state.camera, 5, "placed from the anchor's view");
+  // A view that does not come back (the bookmark leaves placement mode, say) still stops the call.
+  const lost = simulatedGame({ anchors: { Armoury: { camera: 5, type: 11 } }, tiles: armory, onButton: (state) => { state.camera += 40; }, bookmarkLeavesPlacement: true });
+  await lost.observe();
+  const { json: stopped } = await lost.run("expand_storage", { kind: "armory", count: 1 });
+  assert.equal(stopped.stopped, "camera_moved", JSON.stringify(stopped));
+  assert.equal(stopped.probes, 0);
+  // A building that does not move the view sets no bookmark.
+  const hovel = simulatedGame({ anchors: { HomeKeep: { camera: 5, type: 41 } }, tiles: armory });
+  await hovel.observe();
+  await hovel.run("place_near", { building: "Hovel", anchor: "keep", count: 1 });
+  assert.ok(!hovel.hotkeys.some((h) => h.includes("Bookmark9")));
+});
+
 test("place_near refuses a Granary against another anchor while one stands, before any input", async () => {
   // Choosing it centres the view on the first granary (GLM 5.3 Flash against the keep, 2026-10-12).
   const game = simulatedGame({ buildings: { "19": 1 }, anchors: { HomeKeep: { camera: 5, type: 41 } } });
@@ -1263,6 +1341,29 @@ test("find_sites with no spot on the building's own ground in view searches arou
   const { json: built } = await game.run("build_structure", { placements: [{ name: "Iron Mine", tile_x: site.tile_x, tile_y: site.tile_y }] });
   assert.equal(built.placements[0].status, "placed", JSON.stringify(built));
   assert.equal(built.placements[0].view, "moved_to_tile");
+});
+
+test("find_sites says when no woodcutter spot has trees in reach: where the nearest grove is, or that the map has none", async () => {
+  // GLM 5.3 Flash's search around a tile on Large Barren Desert listed "trees": 0 under the usual
+  // note, and it built four woodcutters on a map with no trees (1.6.3).
+  const treeless = simulatedGame({ tiles: () => {} });
+  const around = await treeless.run("find_sites", { building: "Woodcutter", tile_x: 110, tile_y: 100, count: 2 });
+  assert.ok(allSites(around.json).length && allSites(around.json).every((s: any) => s.trees === 0), JSON.stringify(around.json));
+  assert.match(around.json.note, /^No trees within 12 tiles of these spots, so a woodcutter there would have nothing to cut\. map_overview lists no tree groves on this map\.$/);
+  const view = await treeless.run("find_sites", { building: "Woodcutter", count: 2 });
+  assert.match(view.json.note, /nothing to cut: map_overview lists no tree groves on this map/);
+  // A grove elsewhere on the map (block 150–159 of the summary): the note names it.
+  const grove = simulatedGame({
+    tiles: () => {},
+    mapRows: Array.from({ length: 200 }, (_, y) => (y >= 150 && y <= 159 ? ".150T10.40" : ".200")),
+  });
+  const far = await grove.run("find_sites", { building: "Woodcutter", tile_x: 110, tile_y: 100, count: 1 });
+  assert.match(far.json.note, /The nearest tree grove is around \(155, 155\): find_sites with that tile_x\/tile_y lists spots beside it\./);
+  // Spots with trees in reach keep the usual note.
+  const wooded = simulatedGame({ tiles: (set) => { set("organism", 112, 100, 1); set("logic", 112, 100, 0x8000 | 0x1000); set("logic", 112, 101, 0x8000 | 0x2000); } });
+  const near = await wooded.run("find_sites", { building: "Woodcutter", tile_x: 110, tile_y: 100, count: 1 });
+  assert.ok(allSites(near.json).some((s: any) => s.trees > 0), JSON.stringify(near.json));
+  assert.match(near.json.note, /^Sites are grouped by the ground under them/);
 });
 
 test("set_workshop clicks the workshop, presses the product's button, reads the choice back and closes the panel", async () => {

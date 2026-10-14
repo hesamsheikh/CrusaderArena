@@ -114,7 +114,7 @@ export function runResults(o: Observation, context: ResultsContext): Results {
     idle_peasants: number(s?.peasants_available),
     popularity: number(o.popularity),
     popularity_change: s ? Math.round((s.upcoming_popularity / FACTOR_UNITS_PER_POINT) * 100) / 100 : null,
-    popularity_factors: s ? popularityFactors(s) : null,
+    popularity_factors: s ? popularityFactors(s, byType) : null,
     taxes: level !== null && taxLevels[level]
       ? { level, name: taxLevels[level].label, gold_per_month: number(s?.tax_amount) }
       : null,

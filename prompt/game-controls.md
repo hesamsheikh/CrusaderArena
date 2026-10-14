@@ -22,10 +22,10 @@ of marked blocks below (when-needed and always): promptText keeps only the one m
    for less than the minimum turn length is topped up the same way.
 
 <!-- when-needed -->
-That observation is a screenshot if the reply used `game_action`, `inspect_building` or
-a `build_structure` placement given by `x`/`y`, or called no tools at all. Otherwise it
-is the same stats and game events as text, with no image; `observe` and
-`wait_and_observe` give you a screenshot.
+That observation is a screenshot if the reply used `game_action`, aimed `build_structure`,
+`demolish_building`, `set_workshop` or `inspect_building` at `x`/`y` pixels, or called no
+tools at all. Otherwise it is the same stats and game events as text, with no image;
+`observe` and `wait_and_observe` give you a screenshot.
 <!-- /when-needed -->
 <!-- always -->
 That observation is always a screenshot.
@@ -57,7 +57,8 @@ passed, so act first and look last.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
   `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population
   (with housing and idle peasants), popularity (with its upcoming change and factors, in
-  the game's popularity points), `tax_level`, food, the `goods` in stock by name (a good
+  the game's popularity points; a factor at zero is left out, except religion and the inn
+  once you have a chapel, church, cathedral or inn), `tax_level`, food, the `goods` in stock by name (a good
   not listed there has none), `storage` (stockpile piles, empty piles and, for each
   stored good, how much more of it can be delivered, counting the empty piles that any
   good can take; granary food and room; armory weapons and room, once one stands; with a
@@ -102,10 +103,10 @@ read the live camera themselves and need no screenshot.
   `save_view` / `go_to_view` bookmark places you revisit. `navigate_minimap` clicks
   the minimap.
 - **Run the economy:** `status` summarises the settlement (housing, idle peasants,
-  popularity factors, food, goods). `get_inventory` reads stored goods with the change
-  since your last call. `inspect_building` reports a building's workers, inputs and
-  access to the keep. `set_tax` sets taxes and `set_rations` the granary's rations;
-  `market_trade` buys and sells at your marketplace.
+  popularity factors, food, goods, your buildings by type). `get_inventory` reads stored
+  goods with the change since your last call. `inspect_building` (by map tile or pixel)
+  reports a building's workers, inputs and access to the keep. `set_tax` sets taxes and
+  `set_rations` the granary's rations; `market_trade` buys and sells at your marketplace.
 - **Let time pass:** `wait_and_observe(seconds)`, optionally `until` a good, gold,
   population, food or idle peasants reaches an amount.
 - **Look things up:** `building_info(name)` (purpose, default cost, workers,

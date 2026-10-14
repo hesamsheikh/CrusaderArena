@@ -123,9 +123,9 @@ questions during the run. The run is judged by the game's state when it ends.
     fallbackObservation === "always"
       ? " a screenshot."
       : `
-  an observation: a screenshot if your reply used \`game_action\`, \`inspect_building\` or a
-  \`build_structure\` placement given by \`x\`/\`y\`, otherwise the same stats, game events and
-  \`run_clock\` as text, with no image.`
+  an observation: a screenshot if your reply used \`game_action\` or aimed a tool at \`x\`/\`y\`
+  pixels (\`build_structure\`, \`demolish_building\`, \`set_workshop\`, \`inspect_building\`),
+  otherwise the same stats, game events and \`run_clock\` as text, with no image.`
   }${minTurnSeconds > 0 ? `
 - A reply whose tools run the game lasts at least ${minTurnSeconds} game seconds, counted from when
   the host starts pausing the game for it (the game runs on for a moment until the pause

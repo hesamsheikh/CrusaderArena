@@ -400,6 +400,16 @@ between September and October 2026.
     brought back to 40 early, on a simulated game. The food rates come from recorded runs
     (food falling with no deliveries, against population and the rations set); how often
     each warning comes up was replayed on 97 recorded runs, not seen in a run.
+  - Changes from the 1.6.3 round's interviews, on simulated readings and a simulated game:
+    religion and the inn shown at 0 while the reader counts a chapel, church, cathedral or
+    inn; `status` counting the player's buildings by type; `find_sites` saying when no
+    woodcutter spot has a tree in reach, also around a tile, with the nearest grove or none
+    on the map; `inspect_building` by map tile, and it and `set_workshop` reporting a
+    building drawn in front of the one on the tile (`set_workshop` then pressing nothing);
+    `expand_storage` and `place_near` going back to the anchor's bookmarked view after
+    choosing a Stockpile, Granary or Armory moved it. Not known from the live game: that a
+    bookmark taken at the anchor before choosing a storage building brings the view back with
+    it still selected there too (seen for `build_structure` tile targets, 2026-10-12).
   - The runner rebuilding the game machine's reader unless its programs were built from
     the reader sources of the version a run plays (`version-checkout.test.ts`, with a fake
     game machine; the build command also run in a shell with a stand-in `cmake`). The

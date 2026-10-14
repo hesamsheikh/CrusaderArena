@@ -5,6 +5,7 @@ import { Placer, SAMPLE_POLL_SECONDS, type Ack, type Observation } from "./place
 import { anchorFootprintTiles, footprintOf } from "./footprints.js";
 import { footprintRect, onScreen, STRUCTURE_TYPES, tilePixel as projectTile, type Rect, type TileMap } from "./tile-map.js";
 import { shortfall } from "./building-info.js";
+import { VIEW_JUMPERS } from "./building-types.js";
 
 /**
  * Buildings the game can centre on with its own hotkeys (settings.cfg ||KEYS||).
@@ -94,6 +95,7 @@ async function placeFromMap(
   preferred: Side | undefined,
   placed: { x: number; y: number; side?: Side; lateral?: number; tilesOut?: number }[],
   anchorCamera: string,
+  back: (camera: string | null) => Promise<string | null>,
 ) {
   // Storage must touch storage of its kind: a new armory too ("Needs to be placed adjacent to the
   // armory.", live 2026-10-12). The first of its kind goes anywhere, so it is placed against the
@@ -125,9 +127,11 @@ async function placeFromMap(
     const site = touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, storage ? 0 : 3))[0]
       ?? (storage ? touching.flatMap((r) => map.sitesBeside(building, r, 1, preferred, 0, { spaced: false }))[0] : undefined);
     if (!site) { stopped = attempts ? "no_more_free_spots" : "no_free_spot_in_view"; break; }
-    const sample = await sampleAfter(ctx, 0, () => true, 1);
-    const camera = cameraKey(sample);
-    if (cameraShift(camera, anchorCamera) > 1) { stopped = "camera_moved"; break; }
+    let sample = await sampleAfter(ctx, 0, () => true, 1);
+    if (cameraShift(cameraKey(sample), anchorCamera) > 1) {
+      if (!(await back(cameraKey(sample)))) { stopped = "camera_moved"; break; }
+      sample = await sampleAfter(ctx, 0, () => true, 1);
+    }
     // The spot's tile through the camera as it is now: the map's camera can be a tile off from
     // the view the click lands in, and a tile pushes a flush spot into the anchor (both of a
     // stockpile's flush spots refused after a bookmark return, Kimi K3, 2026-10-12).
@@ -414,12 +418,28 @@ export async function placeAdjacent(
   // (about 3 s on the game machine in a 2026-10-11 run's records) runs while the building is
   // selected, which leaves the camera where it is; a failed read falls back to probing.
   const reading = ctx.tiles?.(frame).catch(() => null);
+  // Choosing a Stockpile, Granary or Armory centres the view on the first one of its kind, which can
+  // be another view than the anchor's, and a refused stockpile jumps it to the stockpile: either
+  // stopped GPT-6.1 Sol's expand_storage with camera_moved, in 4 of 5 calls on Large Barren Desert,
+  // two before any spot was tried (1.6.3). As build_structure does, bookmark the anchor's view first
+  // and go back to it, which keeps the building selected (a bookmark works in placement mode, live
+  // 2026-10-12).
+  const jumps = VIEW_JUMPERS.has(building);
+  if (jumps) await ctx.hotkey(`SetBookmark${PLACEMENT_BOOKMARK}`);
+  /** The camera once back within a tile of the anchor's view with the building still selected, or null. */
+  const back = async (camera: string | null) => {
+    if (cameraShift(camera, anchorCamera) <= 1) return camera;
+    if (!jumps) return null;
+    const ack = await ctx.hotkey(`GotoBookmark${PLACEMENT_BOOKMARK}`);
+    const seen = await sampleAfter(ctx, ackTime(ack), (o) => cameraShift(cameraKey(o), anchorCamera) <= 1, 2);
+    return seen && placementOf(seen)?.action === 5 ? cameraKey(seen) : null;
+  };
   if ((await placer.select(building)) === "failed")
     return { status: "not_selected" as const, anchor, placed, probes: 0 };
   const map = await reading;
   let mapProbes = 0;
   if (map) {
-    const viaMap = await placeFromMap(ctx, map, placer, building, anchor, count, preferred, placed, anchorCamera);
+    const viaMap = await placeFromMap(ctx, map, placer, building, anchor, count, preferred, placed, anchorCamera, back);
     // Every spot the map gave was refused without a word: the map and the game disagree about
     // where the click landed, so probe the view from the anchor outward instead of giving up.
     const probeOn = viaMap && viaMap.stopped === "no_more_free_spots" && viaMap.silent === viaMap.probes;
@@ -446,8 +466,8 @@ export async function placeAdjacent(
         break outer;
       }
       // A stockpile rejection re-centres on the stockpile, which can differ by a tile from the bookmark.
-      const camera = cameraKey(await sampleAfter(ctx, 0, () => true, 1));
-      if (cameraShift(camera, anchorCamera) > 1) {
+      const camera = await back(cameraKey(await sampleAfter(ctx, 0, () => true, 1)));
+      if (!camera) {
         stopped = "camera_moved";
         break outer;
       }

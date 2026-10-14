@@ -14,17 +14,28 @@ export const points = (units: number) => Math.round((units / FACTOR_UNITS_PER_PO
 type Settlement = { popularity_factors: Record<string, number>; church_bonus?: number | null };
 
 /**
- * The monthly popularity factors as the game's Popularity report lists them, in points, zeros left
- * out: food once (its parts are in `foodPopularity`), and religion with the church and cathedral
- * bonus, which the reader gives apart from the blessing and in the same units (75 for a church and
- * a cathedral, which the game showed as +3; live 2026-10-10). They add up to the game's coming change.
+ * Factors that come from the player's own buildings, by the engine types that give them (chapel,
+ * church and cathedral; inn). Once one stands they show at 0 too: with zeros left out, three models
+ * could not tell a chapel that gave no religion from a factor the reader does not read (Kimi K3,
+ * Muse Wonder and Claude Opus 5.5, 1.6.3).
  */
-export function popularityFactors(s: Settlement) {
+const BUILDING_FACTORS: Record<string, readonly number[]> = { religion: [36, 37, 38], inn: [22] };
+
+/**
+ * The monthly popularity factors as the game's Popularity report lists them, in points, zeros left
+ * out except religion and the inn while `owned` (the reader's building counts by type) has a building
+ * that gives them: food once (its parts are in `foodPopularity`), and religion with the church and
+ * cathedral bonus, which the reader gives apart from the blessing and in the same units (75 for a
+ * church and a cathedral, which the game showed as +3; live 2026-10-10). They add up to the game's
+ * coming change.
+ */
+export function popularityFactors(s: Settlement, owned?: Record<string, number> | null) {
   const factors: Record<string, number> = {};
   for (const [name, units] of Object.entries(s.popularity_factors))
     if (!foodParts.has(name)) factors[name] = points(units);
   if (s.church_bonus) factors.religion = (factors.religion ?? 0) + points(s.church_bonus);
-  return Object.fromEntries(Object.entries(factors).filter(([, value]) => value !== 0));
+  const standing = (name: string) => !!owned && (BUILDING_FACTORS[name] ?? []).some((type) => (owned[String(type)] ?? 0) > 0);
+  return Object.fromEntries(Object.entries(factors).filter(([name, value]) => value !== 0 || standing(name)));
 }
 
 /** What the rations and the number of foods eaten each add to the food factor, in points. */

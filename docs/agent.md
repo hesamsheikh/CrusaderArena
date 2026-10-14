@@ -35,10 +35,11 @@ A turn is one model reply plus the tool calls in it.
    pass (5 game seconds) and sends an observation. A reply that called no tools always
    gets a screenshot. Otherwise the run setting `fallbackObservation` decides: with
    `"when-needed"` (the default) it is a screenshot only if the turn sent input that
-   works from the screenshot (any `game_action`, `inspect_building`, or a
-   `build_structure` placement given by `x`/`y`; a placement given by tile does not
-   count), and otherwise the same stats, game events and `run_clock` as text, with no
-   image (see [Text-only observations](context.md#text-only-observations)); with
+   works from the screenshot (any `game_action`, or `build_structure`,
+   `demolish_building`, `set_workshop` or `inspect_building` aimed by `x`/`y`; a target
+   given by tile does not count), and otherwise the same stats, game events and
+   `run_clock` as text, with no image (see
+   [Text-only observations](context.md#text-only-observations)); with
    `"always"` it is a screenshot every time, as in every run before 1.3.0. A turn that
    ends with a fresh observation, or only read, goes straight to the next request (but
    see the limit on reading-only turns below).

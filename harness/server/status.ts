@@ -1,7 +1,7 @@
 import type { Stats } from "../shared/protocol.js";
 import { FACTOR_UNITS_PER_POINT, foodPopularity, popularityFactors } from "../shared/popularity.js";
 import { buildingTypeNames } from "./anchors.js";
-import { buildingTypes } from "./building-types.js";
+import { buildingTypes, namedBuildings } from "./building-types.js";
 import { inventoryGroups } from "./inventory.js";
 
 const months = ["January", "February", "March", "April", "May", "June", "July", "August",
@@ -27,7 +27,7 @@ const popularityOf = (o: Observation) => {
     ...(s
       ? {
           upcoming_change: points(s.upcoming_popularity),
-          factors: popularityFactors(s),
+          factors: popularityFactors(s, o.buildings),
         }
       : {}),
   };
@@ -190,6 +190,10 @@ export function statusReport(
     },
     stockpile: pick(inventoryGroups.stockpile),
     ...(storageOf(o) ? { storage: storageOf(o) } : {}),
+    // The player's buildings by name, from the reader's counts by type (Gemini 4 Argon asked for
+    // them to manage 100+ buildings, 1.6.3). A building counts from the click that places it, as
+    // build_structure's own_buildings evidence relies on.
+    ...(o.buildings ? { buildings: namedBuildings(o.buildings) } : {}),
     troops: o.own_troops?.total,
     structures_map_wide: o.structures?.count,
     placement_mode: placementOf(o),

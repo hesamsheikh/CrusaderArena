@@ -825,8 +825,8 @@ export class RunController {
   /**
    * Whether the host's own fallback observation should be a screenshot right now:
    * `fallbackObservation: "always"` always is; otherwise only a turn that sent input working from
-   * the screenshot (any game_action, inspect_building, a build_structure placement given in
-   * pixels) is.
+   * the screenshot (any game_action, or build_structure, demolish_building, set_workshop or
+   * inspect_building aimed in pixels) is.
    */
   private fallbackNeedsScreenshot() {
     return this.runtime.config.fallbackObservation === "always" || this.cycle.pixelInput;

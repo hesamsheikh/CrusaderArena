@@ -602,9 +602,10 @@ export function makeAgent(
   let groundView: MapView | undefined;
   /**
    * The centre of the nearest area of `building`'s own ground (ownGround) to `from` whose centre is
-   * not in the current view (find_sites already searched that), or null when the map has none.
+   * not in the current view (find_sites already searched that; `anywhere` counts the view too), or
+   * null when the map has none.
    */
-  const nearestGround = async (building: string, from: { x: number; y: number }) => {
+  const nearestGround = async (building: string, from: { x: number; y: number }, anywhere = false) => {
     try {
       groundView ??= new MapView(await device.mapSummary());
     } catch (error) {
@@ -617,7 +618,7 @@ export function makeAgent(
       : own === "oil" ? groundView.areas("P", 1) : own === "oasis_grass" ? groundView.areas("Os", 60) : [];
     const camera = await readLiveCamera();
     const frame = device.latest;
-    const inView = (t: { x: number; y: number }) => !!camera && !!frame && onScreen(frame, tilePixel(camera, frame, t));
+    const inView = (t: { x: number; y: number }) => !anywhere && !!camera && !!frame && onScreen(frame, tilePixel(camera, frame, t));
     const distance = (t: { x: number; y: number }) => Math.hypot(t.x - from.x, t.y - from.y);
     return areas.map((a) => a.centre).filter((c) => !inView(c)).sort((a, b) => distance(a) - distance(b))[0] ?? null;
   };
@@ -668,6 +669,105 @@ export function makeAgent(
       : await readTileMap(frame as Frame, camera);
     const drawn = map ? map.pixel(tile) : tilePixel(camera, frame, tile);
     return { pixel: onScreen(frame, drawn) ? drawn : tilePixel(camera, frame, tile), moved, map };
+  };
+  /**
+   * Click open the panel of one of the player's buildings, for set_workshop and inspect_building:
+   * targeted by map tile (any tile of its footprint; the camera is moved there when it is off
+   * screen) or by pixel in the latest screenshot. Leaves placement or demolish mode first. Returns
+   * the reading with the panel open, for the caller to read and then `close`, or `result`, a status
+   * to return as it is when the target cannot be clicked. `covered`: the panel that opened is not
+   * the building the tile map shows on the tile, but one drawn over it.
+   */
+  const openPanel = async (tool: string, noun: string, args: { x?: number; y?: number; tile_x?: number; tile_y?: number }, signal?: AbortSignal) => {
+    const kind = targetKind({ name: "", ...args });
+    const where = kind.status === "tile" ? { tile_x: kind.x, tile_y: kind.y } : kind.status === "pixel" ? { x: kind.x, y: kind.y } : {};
+    if (kind.status === "invalid")
+      return { result: { status: "invalid_target", reason: kind.reason, remedy: "Give x and y from the latest screenshot, or tile_x and tile_y, not both." } };
+    if (kind.status === "pixel" && !observed) throw observeFirstError();
+    const frame = kind.status === "pixel" ? observed! : device.latest ?? (await device.capture());
+    // Points to click, best first, and the building instance the tile map shows there (to tell
+    // it from a neighbour drawn over it).
+    let points: { x: number; y: number }[] = [];
+    let expectedId: number | undefined;
+    if (kind.status === "tile") {
+      const aim = await tileTarget({ x: kind.x, y: kind.y }, frame, signal);
+      if ("reason" in aim) {
+        observedClearedBy = tool;
+        return {
+          result: {
+            status: "not_on_screen", ...where, reason: aim.reason,
+            remedy: aim.camera ? `The camera cannot centre near that tile (map edge?): give a tile of the ${noun} further in.` : READER_RETRY,
+          },
+        };
+      }
+      if (aim.moved) observedClearedBy = tool;
+      // The middle of the building on that tile first. A building in front of it (lower on screen) can
+      // be drawn over its middle (a hovel over a blacksmith, live 2026-10-12), so then the back corner
+      // of its footprint, and its roof above that, which buildings in front do not reach.
+      const id = aim.map?.structureAt({ x: kind.x, y: kind.y }) || undefined;
+      const rect = id ? aim.map!.structureRect(id) : null;
+      if (rect) {
+        expectedId = id;
+        const row = frame.height / (aim.map!.camera.tiles_high || 1);
+        const back = aim.map!.pixel({ x: rect.x1, y: rect.y1 });
+        points = [
+          aim.map!.pixel({ x: Math.floor((rect.x1 + rect.x2 + 1) / 2), y: Math.floor((rect.y1 + rect.y2 + 1) / 2) }),
+          back,
+          { x: back.x, y: Math.round(back.y - 1.5 * row) },
+        ].filter((p) => onScreen(frame, p));
+      }
+      if (!points.length) points = [aim.pixel];
+    } else {
+      const target = { x: kind.x, y: kind.y };
+      if (target.x >= frame.width || target.y >= frame.height * 0.82)
+        return { result: { status: "invalid_target", ...where, reason: "Over the bottom HUD or outside the screenshot.", remedy: `Aim at the ${noun}'s body above the bottom panel in the latest screenshot, or give tile_x/tile_y.` } };
+      const current = device.currentStats().observation;
+      if (observedCamera && cameraKey(current) && cameraKey(current) !== observedCamera) {
+        observed = null;
+        observedClearedBy = tool;
+        return { result: { status: "camera_moved", remedy: "Observe, then target it by pixel from the new screenshot, or by tile_x/tile_y." } };
+      }
+      points = [target];
+    }
+    runtime?.cycle.action(kind.status === "pixel");
+    const ctx = anchorContext(signal);
+    const credit = kind.status === "pixel" ? Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs) : Number.POSITIVE_INFINITY;
+    const click = async (x: number, y: number, button: 1 | 3) => {
+      if (signal?.aborted) throw new Error("Stopped");
+      runtime?.phase("acting");
+      const ack = await device.action({ type: "click", x, y, button }, (kind.status === "pixel" ? frame : device.latest ?? frame).id, () => runtime?.session.check(), credit);
+      log("action", JSON.stringify({ type: "click", x, y, button }));
+      return ack as Ack;
+    };
+    const close = () => click(Math.round(frame.width / 2), Math.round(frame.height * 0.12), 3);
+    // Leave placement or demolish mode first, so the click opens the building's panel.
+    if ([5, DEMOLISHING].includes(placementOf(device.currentStats().observation)?.action ?? 0)) await close();
+    // A panel shows in the reader about 0.6 s after the click (live 2026-10-12), but none showed
+    // within 2 s twice in GLM 5.3 Flash's 1.6.0 trial, when the reader also had gaps: wait up to 4 s,
+    // click once more, and tell a reader without readings from a click that opened nothing.
+    let opened: Record<string, unknown> | null = null;
+    let read = false;
+    const openedId = () => (opened?.selected_building as { id?: number } | null | undefined)?.id;
+    for (const [index, point] of points.entries()) {
+      // The first point gets a second click when no panel shows; the others are tried once each.
+      for (let attempt = 0; attempt < (index === 0 ? 2 : 1) && !opened; attempt++) {
+        const ack = await click(point.x, point.y, 1);
+        opened = await sampleAfter(ctx, ackTime(ack), (o) => {
+          read = true;
+          return !!(o.selected_building as { type?: number } | null)?.type;
+        }, 4);
+      }
+      // Another building's panel: a neighbour drawn over this point. Close it and try the next one.
+      if (opened && expectedId !== undefined && openedId() !== expectedId && index < points.length - 1) {
+        await close();
+        opened = null;
+        continue;
+      }
+      if (opened) break;
+    }
+    const type = (opened?.selected_building as { type?: number } | null | undefined)?.type;
+    const covered = !!opened && expectedId !== undefined && openedId() !== expectedId;
+    return { kind, where, frame, ctx, click, close, opened, read, type, covered };
   };
   const observe = async () => {
     runtime?.session.check();
@@ -1578,15 +1678,26 @@ export function makeAgent(
           };
         })]));
         const groundNote = "Sites are grouped by the ground under them (plain, oasis_grass, stone, iron_ore, oil, or several joined by +): oasis grass is the only farmland, and stone, iron ore and oil the only ground of quarries, iron mines and pitch rigs. Sites in one group do not overlap each other. Pass tile_x/tile_y to build_structure (no screenshot needed; it moves the camera to a tile off screen)";
+        // Woodcutter spots with no tree in reach, where a woodcutter would cut nothing.
+        const treeless = (sites: Site[]) => args.building === "Woodcutter" && sites.length > 0 && sites.every((site) => !site.trees);
+        const noGroves = () => !!groundView && groundView.groves().length === 0;
         if (args.tile_x !== undefined && args.tile_y !== undefined) {
           const centre = { x: args.tile_x, y: args.tile_y };
           const groups = await sitesAround(centre);
           if (!groups) return text({ status: "unavailable", error: tileMapError ?? "No tile data for that area.", remedy: "Call find_sites again." });
           const sites = Object.values(groups).flat();
+          // The view search says when no woodcutter spot has trees in reach; this one listed "trees": 0
+          // under the usual note, and GLM 5.3 Flash built four woodcutters on Large Barren Desert,
+          // which has no trees (1.6.3). Point to the nearest grove, or say the map has none.
+          const grove = treeless(sites) ? await nearestGround(args.building, centre, true) : undefined;
           return text({
             building: args.building, footprintTiles: footprintOf(args.building), searchedAround: { tile_x: centre.x, tile_y: centre.y },
             sites: listed(groups),
-            note: sites.length ? `${groundNote}.` : `Nothing fits within ${SEARCH_RADIUS} tiles of (${centre.x}, ${centre.y}). map_overview shows the map's open ground, deposits and farmland.`,
+            note: grove !== undefined
+              ? `No trees within ${WOODCUTTER_REACH} tiles of these spots, so a woodcutter there would have nothing to cut. ` + (
+                grove ? `The nearest tree grove is around (${grove.x}, ${grove.y}): find_sites with that tile_x/tile_y lists spots beside it.`
+                  : noGroves() ? "map_overview lists no tree groves on this map." : "map_overview lists the tree groves.")
+              : sites.length ? `${groundNote}.` : `Nothing fits within ${SEARCH_RADIUS} tiles of (${centre.x}, ${centre.y}). map_overview shows the map's open ground, deposits and farmland.`,
           });
         }
         let map: TileMap | null;
@@ -1630,8 +1741,10 @@ export function makeAgent(
           ...nearIgnored,
           // Grouped by the ground under them, so the model sees what each spot would take.
           sites: listed(groups),
-          note: sites.length && args.building === "Woodcutter" && sites.every((site) => !site.trees)
-            ? `No trees within ${WOODCUTTER_REACH} tiles of these spots, in this view or around the map's groves. map_overview lists tree groves.`
+          note: treeless(sites)
+            ? noGroves()
+              ? `No trees within ${WOODCUTTER_REACH} tiles of these spots, so a woodcutter there would have nothing to cut: map_overview lists no tree groves on this map.`
+              : `No trees within ${WOODCUTTER_REACH} tiles of these spots, in this view or around the map's groves. map_overview lists tree groves.`
             : sites.length
             ? `${groundNote}${screenshot ? ", or x/y, pixels in the latest screenshot" : "; no x/y, since no screenshot shows this view"}.`
             : args.building === "Quarry" || args.building === "Iron Mine" || args.building === "Pitch Rig"
@@ -1746,7 +1859,7 @@ export function makeAgent(
       name: "status",
       label: "Settlement status",
       description:
-        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, placement mode, open building panel, camera and saved views. No screenshot and no game input.",
+        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, your buildings counted by type (from the click that places each), placement mode, open building panel, camera and saved views. No screenshot and no game input.",
       parameters: Type.Object({}),
       execute: async () => {
         const budget = runtime ? runClock(runtime.session) : undefined;
@@ -1851,53 +1964,37 @@ export function makeAgent(
       name: "inspect_building",
       label: "Inspect a building",
       description:
-        "Click one of your buildings at x/y in the latest image (aim at the building body), read its panel from the game reader (workers present/needed, vacancies, working, access to the keep, missing inputs, turned off; for a fletcher, poleturner or blacksmith also the product it is making and the next one), then close the panel. Text only. Use it when a producer seems idle.",
-      parameters: Type.Object({ x: Type.Integer({ minimum: 0 }), y: Type.Integer({ minimum: 0 }) }),
+        "Read the panel of one of your buildings, targeted by map tile (tile_x/tile_y: any tile of its footprint, such as the `tile` build_structure reported; the camera is moved there when it is off screen) or by pixel (x/y in the latest screenshot, on the building's body); give one pair. The harness clicks it, reads its panel from the game reader (workers present/needed, vacancies, working, access to the keep, missing inputs, turned off; for a fletcher, poleturner or blacksmith also the product it is making and the next one), then closes the panel. By tile it clicks the building's middle, then the back corner of its footprint and its roof, past a building drawn in front of it; `warning` says when only the one in front opened. invalid_target, camera_moved and not_on_screen as for build_structure. Text only; one action. Use it when a producer seems idle.",
+      parameters: Type.Object({
+        x: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with y" })),
+        y: Type.Optional(Type.Integer({ minimum: 0, description: "pixel target, latest screenshot: give with x" })),
+        tile_x: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_y" })),
+        tile_y: Type.Optional(Type.Integer({ minimum: 1, maximum: 799, description: "map-tile target, no screenshot needed: give with tile_x" })),
+      }),
       execute: async (_id, args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
-        if (!observed) throw observeFirstError();
-        const frame = observed;
-        if (args.x >= frame.width || args.y >= frame.height * 0.82)
-          throw new Error("Target must be a building in the visible world, not the HUD: aim above the bottom panel in the latest screenshot.");
-        const current = device.currentStats().observation;
-        if (observedCamera && cameraKey(current) && cameraKey(current) !== observedCamera) {
-          observed = null;
-          observedClearedBy = "inspect_building";
-          throw new Error("The camera moved since your last image; observe before inspecting.");
-        }
-        runtime?.cycle.action(true);
-        const ctx = anchorContext(signal);
-        const ageCreditMs = Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs);
-        const click = (x: number, y: number, button: 1 | 3) =>
-          device.action({ type: "click", x, y, button }, frame.id, () => runtime?.session.check(), ageCreditMs)
-            .then((ack) => { log("action", JSON.stringify({ type: "click", x, y, button })); return ack as { at?: number }; });
-        if ([5, 6].includes(placementOf(current)?.action ?? 0)) await click(args.x, args.y, 3);
-        const ack = await click(args.x, args.y, 1);
-        let selected = null;
-        let workshop: { making?: number; next?: number } | null | undefined;
-        // A panel shows in the reader about 0.6 s after the click (live 2026-10-12): wait up to 3 s.
-        for (let i = 0; i < 120 && !selected; i++) {
-          const stats = device.currentStats();
-          if (stats.status === "ok" && (stats.captured_unix_ms ?? 0) >= (ack?.at ?? 0) && stats.observation?.selected_building) {
-            selected = stats.observation.selected_building;
-            workshop = stats.observation.selected_workshop;
-          } else await ctx.pause(0.025);
-        }
+        // By pixel only until 1.7.0: three calls in the 1.6.3 round failed for want of a fresh screenshot, and
+        // the models inspected little (Claude Sonnet 5.5: "I could have inspected buildings but didn't").
+        const panel = await openPanel("inspect_building", "building", args, signal);
+        const text = (value: unknown, details = {}) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details });
+        if ("result" in panel) return text(panel.result);
+        const { where, frame, close, opened, read, covered } = panel;
         // Right-click open terrain near the top of the view to close the panel.
-        await click(Math.round(frame.width / 2), Math.round(frame.height * 0.12), 3);
-        return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify(selected
-              ? {
-                  building: { ...describeBuilding(selected), ...(workshop ? { making: productName(workshop.making), next: productName(workshop.next) } : {}) },
-                  note: "keep_access false matched the panel's 'No access to keep' once and later cleared; recheck before acting on it.",
-                }
-              : { building: null, note: "No building panel opened; aim at the building body in a fresh image." }),
-          }],
-          details: { frameId: frame.id },
-        };
+        await close();
+        const selected = opened?.selected_building as Parameters<typeof describeBuilding>[0] | null | undefined;
+        const workshop = opened?.selected_workshop as { making?: number; next?: number } | null | undefined;
+        if (!selected)
+          return text(read
+            ? { ...where, building: null, note: "No building panel opened at the target.", remedy: "Aim at the building's body in a fresh screenshot, or give a tile of its footprint." }
+            : { ...where, building: null, note: "The game reader had no reading after the clicks.", remedy: READER_RETRY }, { frameId: frame.id });
+        const building = { ...describeBuilding(selected), ...(workshop ? { making: productName(workshop.making), next: productName(workshop.next) } : {}) };
+        return text({
+          ...where,
+          building,
+          ...(covered ? { warning: `This is the panel of the ${building.name ?? "building"} drawn in front of the building on that tile, which no click reached: give a pixel on the hidden building's body from a screenshot, if any of it shows.` } : {}),
+          note: "keep_access false matched the panel's 'No access to keep' once and later cleared; recheck before acting on it.",
+        }, { frameId: frame.id });
       },
     }),
     defineTool({
@@ -1917,107 +2014,25 @@ export function makeAgent(
         runtime?.session.check();
         const text = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }], details: {} });
         const wanted = WORKSHOP_PRODUCTS[args.product];
-        const kind = targetKind({ name: "", ...args });
-        const where = kind.status === "tile" ? { tile_x: kind.x, tile_y: kind.y } : kind.status === "pixel" ? { x: kind.x, y: kind.y } : {};
-        if (kind.status === "invalid")
-          return text({ status: "invalid_target", reason: kind.reason, remedy: "Give x and y from the latest screenshot, or tile_x and tile_y, not both." });
-        if (kind.status === "pixel" && !observed) throw observeFirstError();
-        const frame = kind.status === "pixel" ? observed! : device.latest ?? (await device.capture());
-        let target: { x: number; y: number };
-        // Points to click, best first, and the building instance the tile map shows there (to tell
-        // it from a neighbour drawn over it).
-        let points: { x: number; y: number }[] = [];
-        let expectedId: number | undefined;
-        if (kind.status === "tile") {
-          const aim = await tileTarget({ x: kind.x, y: kind.y }, frame, signal);
-          if ("reason" in aim) {
-            observedClearedBy = "set_workshop";
-            return text({
-              status: "not_on_screen", ...where, reason: aim.reason,
-              remedy: aim.camera ? "The camera cannot centre near that tile (map edge?): give a tile of the workshop further in." : READER_RETRY,
-            });
-          }
-          if (aim.moved) observedClearedBy = "set_workshop";
-          // The middle of the building on that tile first. A building in front of it (lower on screen) can
-          // be drawn over its middle (a hovel over a blacksmith, live 2026-10-12), so then the back corner
-          // of its footprint, and its roof above that, which buildings in front do not reach.
-          const id = aim.map?.structureAt({ x: kind.x, y: kind.y }) || undefined;
-          const rect = id ? aim.map!.structureRect(id) : null;
-          if (rect) {
-            expectedId = id;
-            const row = frame.height / (aim.map!.camera.tiles_high || 1);
-            const back = aim.map!.pixel({ x: rect.x1, y: rect.y1 });
-            points = [
-              aim.map!.pixel({ x: Math.floor((rect.x1 + rect.x2 + 1) / 2), y: Math.floor((rect.y1 + rect.y2 + 1) / 2) }),
-              back,
-              { x: back.x, y: Math.round(back.y - 1.5 * row) },
-            ].filter((p) => onScreen(frame, p));
-          }
-          target = points[0] ?? aim.pixel;
-          if (!points.length) points = [target];
-        } else {
-          target = { x: kind.x, y: kind.y };
-          if (target.x >= frame.width || target.y >= frame.height * 0.82)
-            return text({ status: "invalid_target", ...where, reason: "Over the bottom HUD or outside the screenshot.", remedy: "Aim at the workshop's body above the bottom panel in the latest screenshot, or give tile_x/tile_y." });
-          const current = device.currentStats().observation;
-          if (observedCamera && cameraKey(current) && cameraKey(current) !== observedCamera) {
-            observed = null;
-            observedClearedBy = "set_workshop";
-            return text({ status: "camera_moved", remedy: "Observe, then target it by pixel from the new screenshot, or by tile_x/tile_y." });
-          }
-          points = [target];
-        }
-        runtime?.cycle.action(kind.status === "pixel");
-        const ctx = anchorContext(signal);
-        const credit = kind.status === "pixel" ? Math.max(0, (runtime?.pausedMilliseconds?.() ?? 0) - observedPausedMs) : Number.POSITIVE_INFINITY;
-        const click = async (x: number, y: number, button: 1 | 3) => {
-          if (signal?.aborted) throw new Error("Stopped");
-          runtime?.phase("acting");
-          const ack = await device.action({ type: "click", x, y, button }, (kind.status === "pixel" ? frame : device.latest ?? frame).id, () => runtime?.session.check(), credit);
-          log("action", JSON.stringify({ type: "click", x, y, button }));
-          return ack as Ack;
-        };
+        const panel = await openPanel("set_workshop", "workshop", args, signal);
+        if ("result" in panel) return text(panel.result);
+        const { kind, where, frame, ctx, click, close, opened, read, type, covered } = panel;
         const workshopOf = (o: Record<string, unknown> | null | undefined) => {
           const w = o?.selected_workshop as { type?: number; making?: number; next?: number } | null | undefined;
           return w && typeof w.type === "number" ? w : null;
         };
-        const close = () => click(Math.round(frame.width / 2), Math.round(frame.height * 0.12), 3);
-        // Leave placement or demolish mode first, so the click opens the building's panel.
-        if ([5, DEMOLISHING].includes(placementOf(device.currentStats().observation)?.action ?? 0)) await close();
-        // A panel shows in the reader about 0.6 s after the click (live 2026-10-12), but none showed
-        // within 2 s twice in GLM 5.3 Flash's 1.6.0 trial, when the reader also had gaps: wait up to 4 s,
-        // click once more, and tell a reader without readings from a click that opened nothing.
-        let opened: Record<string, unknown> | null = null;
-        let read = false;
-        const openedId = () => (opened?.selected_building as { id?: number } | null | undefined)?.id;
-        for (const [index, point] of points.entries()) {
-          // The first point gets a second click when no panel shows; the others are tried once each.
-          for (let attempt = 0; attempt < (index === 0 ? 2 : 1) && !opened; attempt++) {
-            const ack = await click(point.x, point.y, 1);
-            opened = await sampleAfter(ctx, ackTime(ack), (o) => {
-              read = true;
-              return !!(o.selected_building as { type?: number } | null)?.type;
-            }, 4);
-          }
-          // Another building's panel: a neighbour drawn over this point. Close it and try the next one.
-          if (opened && expectedId !== undefined && openedId() !== expectedId && index < points.length - 1) {
-            await close();
-            opened = null;
-            continue;
-          }
-          if (opened) break;
-        }
-        const type = (opened?.selected_building as { type?: number } | null | undefined)?.type;
         if (!opened && !read) {
           await close();
           return text({ status: "unverified", ...where, reason: "The game reader had no reading after the clicks.", remedy: READER_RETRY });
         }
-        if (!opened || type === undefined || !(type in WORKSHOP_BUTTONS)) {
+        // A panel of the building drawn in front of the one on the tile is not the target, even when
+        // it is a workshop too: its product is left alone.
+        if (!opened || type === undefined || covered || !(type in WORKSHOP_BUTTONS)) {
           if (opened) await close();
           return text({
             status: "not_a_workshop", ...where,
             ...(type !== undefined ? { opened: buildingTypes[type] ?? `type ${type}` } : { reason: "No building panel opened at the target." }),
-            ...(type !== undefined && expectedId !== undefined && openedId() !== expectedId ? { reason: "Another building is drawn over this one; give a pixel on its body from a screenshot." } : {}),
+            ...(type !== undefined && covered ? { reason: "Another building is drawn over this one; give a pixel on its body from a screenshot." } : {}),
             remedy: kind.status === "tile" ? "Give a tile of a Fletcher's, Poleturner's or Blacksmith's Workshop (build_structure reports each one's tile)." : "Aim at the workshop's body in a fresh screenshot, or give its tile.",
           });
         }

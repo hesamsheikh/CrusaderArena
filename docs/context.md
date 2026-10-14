@@ -110,7 +110,7 @@ The `stats` summary contains:
 | `date` | In-game month and year, such as "July 1194" |
 | `gold` | Gold |
 | `population` | Current population, housing and idle peasants |
-| `popularity` | Current popularity, the upcoming change, and the nonzero monthly factors behind it, in the game's own popularity points, as the game's Popularity report lists them: food counted once, religion including the church and cathedral bonus. They add up to the upcoming change |
+| `popularity` | Current popularity, the upcoming change, and the nonzero monthly factors behind it, in the game's own popularity points, as the game's Popularity report lists them: food counted once, religion including the church and cathedral bonus. They add up to the upcoming change. Religion and the inn also show at 0 once the player has a chapel, church or cathedral, or an inn (the reader's building counts), so a building that gives nothing shows as a zero rather than a missing line |
 | `worker_efficiency_percent` | Worker efficiency from the fear factor, as the game's Fear Factor report shows it; absent before the game reckons it, early in a game |
 | `tax_level` | 0 (largest bribe) to 11, with 3 meaning no tax; the same scale as `set_tax` |
 | `food` | Total food, rations (`none`, `half`, `full`, `extra`, `double`), food types eaten and available, and, when either is nonzero, what the rations and the variety of foods each add to the food factor |
@@ -173,8 +173,8 @@ The run setting `fallbackObservation` (`--fallback-observation`, default `when-n
 picks what the host's own observation is after a turn that acted without looking or
 ran short of the minimum turn, and for the reading-only top-up from the 12th such
 reply: `when-needed` sends this text-only observation unless the turn sent input that
-works from the screenshot (any `game_action`, `inspect_building`, or a `build_structure`
-placement given by `x`/`y`), and a screenshot then; `always` sends a
+works from the screenshot (any `game_action`, or `build_structure`, `demolish_building`,
+`set_workshop` or `inspect_building` aimed by `x`/`y`), and a screenshot then; `always` sends a
 screenshot every time, as every run before 1.3.0 did, for comparison. A reply with no
 tool calls, the first observation of timed play and the observation after a compaction
 are screenshots under either setting. The host logs each push as a `host_observation`
