@@ -134,6 +134,21 @@ test("a long wait goes up to the top speed and is back at 40, measured, before i
   assert.ok(g.now() < 25_000 && wait.savedMs > 18_000, JSON.stringify(wait));
 });
 
+test("the speed setting the overlay shows rises to 90 in a long wait and is 40 again after it", async () => {
+  const g = running();
+  const fast = new FastWaits(g.control, 40.4);
+  const seen = new Set<number>();
+  const sleep = g.control.sleep;
+  g.control.sleep = async (ms) => {
+    seen.add(fast.speed);
+    await sleep(ms);
+  };
+  assert.equal(fast.speed, 40);
+  await fast.run(g.ticks() + 60 * 30);
+  assert.equal(Math.max(...seen), 90);
+  assert.equal(fast.speed, 40);
+});
+
 test("waits of any length end at 40 before their last tick, and short ones press nothing", async () => {
   for (const seconds of [3, 5, 8, 10, 15, 20, 30, 45, 90, 180, 300]) {
     const g = running();

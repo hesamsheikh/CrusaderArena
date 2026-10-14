@@ -429,7 +429,7 @@ test("fast waits get the host's waits and the model's, and the run records what 
   const targets: number[] = [];
   let f!: ReturnType<typeof fixture>;
   const stub: FastWaitsLike = {
-    normal: true, corrections: 0,
+    normal: true, corrections: 0, speed: 40,
     run: async (target) => {
       targets.push(target);
       f.advanceTicks(target - 1000 + 1); // The fake game runs past the wait's end.
@@ -453,7 +453,7 @@ test("a run that ends during a fast wait presses the speed back down once the ga
   let f!: ReturnType<typeof fixture>;
   let raised = 0;
   const stub: FastWaitsLike = {
-    normal: true, corrections: 0,
+    normal: true, corrections: 0, speed: 40,
     run: async () => {
       stub.normal = false;
       raised = 7;
@@ -485,7 +485,7 @@ function failingFastWaits(getFixture: () => ReturnType<typeof fixture>) {
   let raised = 0;
   let tick = 1000;
   const stub: FastWaitsLike = {
-    normal: true, corrections: 0,
+    normal: true, corrections: 0, speed: 40,
     run: async (target) => {
       getFixture().advanceTicks(target - tick + 1);
       tick = target + 1;
@@ -545,7 +545,7 @@ test("an operator stop during a fast wait still takes the speed back down, witho
   let f!: ReturnType<typeof fixture>;
   let raised = 0;
   const stub: FastWaitsLike = {
-    normal: true, corrections: 0,
+    normal: true, corrections: 0, speed: 40,
     run: async () => {
       stub.normal = false;
       raised = 6;

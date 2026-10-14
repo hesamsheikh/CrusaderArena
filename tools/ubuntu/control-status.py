@@ -122,6 +122,9 @@ class Monitor:
         if 'cost' in data:
             cost = data['cost']
             self.state['cost'] = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else None
+        if 'speed' in data:
+            speed = data['speed']
+            self.state['speed'] = speed if isinstance(speed, int) and not isinstance(speed, bool) else None
         if isinstance(data.get('stats'), dict):
             self.state['stats'] = {k:v for k,v in data['stats'].items() if k in ('gold','population','troops','paused','popularity','net_worth') and isinstance(v,(int,bool))}
         if data.get('event'):

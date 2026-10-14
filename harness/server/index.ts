@@ -110,6 +110,8 @@ let currentRun: Promise<void> | undefined;
 let agent: Agent | undefined;
 /** The active run's game time used and budget, live from its session, and its tool calls (for the game machine's overlay). */
 let runClock: (() => { used: number; total: number; toolCalls: number }) | undefined;
+/** The game speed setting the active run has the game at (fast waits raise it), for the overlay. */
+let runSpeed: (() => number | null) | undefined;
 /**
  * The last run to end, with its conversation, kept for the interview after its episode
  * (POST /api/agent/interview) until the next run starts.
@@ -480,6 +482,7 @@ app.post("/api/agent/run", async (req, res) => {
       state.tokens = run.tokens;
       broadcast();
       runClock = () => ({ used: controller.session.gameUsedTicks() / TICKS_PER_GAME_SECOND, total: controller.session.gameBudgetSeconds, toolCalls: controller.toolCalls });
+      runSpeed = () => controller.gameSpeedSetting();
       outcome = await controller.runSession();
       state.modelStatus = outcome === "error" ? "error" : "ready";
     } catch (e) {
@@ -496,6 +499,7 @@ app.post("/api/agent/run", async (req, res) => {
       state.running = false;
       state.streamingText = "";
       runClock = undefined;
+      runSpeed = undefined;
       agent = undefined;
       stopCurrent = undefined;
       interruptCurrent = undefined;
@@ -641,6 +645,7 @@ const tick = setInterval(() => {
     turns: state.turns,
     tokens: state.tokens,
     clock: state.running && runClock ? runClock() : null,
+    speed: state.running && runSpeed ? runSpeed() : null,
     cost: run?.cost ?? null,
     stats: stats
       ? {

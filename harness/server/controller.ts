@@ -83,7 +83,7 @@ export function isTransientProviderError(message?: string) {
 }
 
 /** What the controller uses of FastWaits (game-speed.ts). */
-export type FastWaitsLike = Pick<FastWaits, "run" | "recover" | "restore" | "normal" | "off" | "corrections">;
+export type FastWaitsLike = Pick<FastWaits, "run" | "recover" | "restore" | "normal" | "off" | "corrections" | "speed">;
 
 export class RunController {
   readonly session: Session;
@@ -580,6 +580,10 @@ export class RunController {
   }
   /** Fast waits (run config `fastWaits`, game-speed.ts), from the first tick of the budget. */
   private fastWaits?: FastWaitsLike;
+  /** The speed setting the host has the game at, for the run overlay; null until it is set for timed play. */
+  gameSpeedSetting(): number | null {
+    return this.fastWaits?.speed ?? (this.progress.gameSpeed ? GAME_SPEED : null);
+  }
   /**
    * Plays the run's waits fast from now on (Session.waitGame hands each one over), with the
    * device refusing game input whenever the speed is not confirmed at GAME_SPEED. Each wait played

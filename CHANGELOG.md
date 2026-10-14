@@ -127,6 +127,8 @@ warnings can end the model's waits.
   game machine's window bridge instead of one capture and one request a key: about 100 keys
   made saving take 1.5 to 3.5 minutes, and 0.71 seconds a key still with one capture.
 - The dashboard's new-run dialog has a Fast waits switch.
+- The run overlay shows the game's speed setting beside the phase ("speed 90" while a wait
+  is played fast), or "paused" while the game is paused.
 - The game machine renders the game on its NVIDIA GPU instead of the integrated Intel GPU,
   which it used since September because the game stalled at the end of loading on the NVIDIA
   GPU. That stall no longer occurs (see [Status](docs/status.md#checked-in-the-live-game)).

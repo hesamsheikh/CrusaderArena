@@ -292,8 +292,10 @@ or any other window has focus. The monitor never appears in the agent's screensh
 
 For people watching the game machine's screen, the monitor also starts an overlay
 (`tools/ubuntu/overlay.py`): a panel at the top centre of the screen with the model and
-benchmark, the game time used and left as a progress bar, and a line of figures (net
-worth, gold, people, popularity, turns, tool calls and the run's cost so far). It shows
+benchmark, the run's phase and the game's speed setting beside it (40, up to 90 while a
+[fast wait](how-it-works.md#fast-waits) plays, or "paused"), the game time used and left as
+a progress bar, and a line of figures (net worth, gold, people, popularity, turns, tool
+calls and the run's cost so far). It shows
 only while a run has a game clock, reading the same status file as the monitor, which the
 host updates every second with the session's live game time; it exits 30 seconds after
 the bridge goes.

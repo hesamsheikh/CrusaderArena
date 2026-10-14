@@ -37,7 +37,7 @@ Host machine (tested: macOS)                Game machine (tested: Ubuntu 26.04, 
 | Memory guard | Game machine | Closes the game before runaway memory growth exhausts the machine | `tools/ubuntu/monitor-memory.py` |
 | Recorder | Game machine | Captures frames for an edited run video | `tools/ubuntu/record-window.py` |
 | Control monitor | Game machine | Terminal window showing what the harness is doing, with a local stop key | `tools/ubuntu/control-status.py` |
-| Run overlay | Game machine | Panel on the screen (not in the agent's screenshots) with the model, the game time used and left, and the run's figures | `tools/ubuntu/overlay.py` |
+| Run overlay | Game machine | Panel on the screen (not in the agent's screenshots) with the model, the game speed, the game time used and left, and the run's figures | `tools/ubuntu/overlay.py` |
 
 The host starts every game-machine helper on demand over SSH. Nothing on the game
 machine listens on the network.

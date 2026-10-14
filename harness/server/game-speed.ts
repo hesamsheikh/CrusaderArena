@@ -154,6 +154,10 @@ export class FastWaits {
   ) {
     this.steps = Math.round((speeds.fast - speeds.normal) / speeds.step);
   }
+  /** The speed setting the keys have taken the game to: the benchmark speed, or above it in a fast wait. */
+  get speed() {
+    return this.speeds.normal + this.speeds.step * this.raised;
+  }
   /** Ticks per real second `k` presses above the benchmark speed. */
   private rate(k: number) {
     return (this.normalRate * (this.speeds.normal + this.speeds.step * k)) / this.speeds.normal;

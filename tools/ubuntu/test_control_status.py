@@ -46,6 +46,10 @@ class MonitorTests(unittest.TestCase):
         self.assertIsNone(self.monitor.state['cost'])
         self.monitor.update({'clock': {'used': 'x', 'total': 2000}})
         self.assertIsNone(self.monitor.state['clock'], 'a malformed clock is dropped')
+        self.monitor.update({'speed': 90})
+        self.assertEqual(self.monitor.state['speed'], 90)
+        self.monitor.update({'speed': True})
+        self.assertIsNone(self.monitor.state['speed'], 'only a whole number')
     def test_closing_monitor_stops_input(self):
         self.monitor.started -= 10
         self.assertEqual(self.monitor.control(), 'stop')

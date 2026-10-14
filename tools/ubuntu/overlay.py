@@ -27,7 +27,7 @@ BASE = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'cr
 WIDTH, HEIGHT = 660, 88
 GONE_SECONDS = 30
 FEED_SECONDS = 4
-FEED_KEYS = ('phase', 'model', 'run', 'turns', 'tokens', 'clock', 'tool_calls', 'cost', 'stats')
+FEED_KEYS = ('phase', 'model', 'run', 'turns', 'tokens', 'clock', 'tool_calls', 'cost', 'stats', 'speed')
 START_EVERY_SECONDS = 10
 FEED_IDLE_SECONDS = 60
 FONTS = Path('/usr/share/fonts/truetype/dejavu')
@@ -161,9 +161,13 @@ def panel(status, now):
     ]
     if isinstance(cost, (int, float)) and not isinstance(cost, bool):
         figures.append(f'${cost:.2f}')
+    # The game's speed setting beside the phase: 40 for play, up to 90 while a wait is played fast.
+    speed = status.get('speed')
+    pace = 'paused' if stats.get('paused') is True else (
+        f'speed {speed}' if isinstance(speed, int) and not isinstance(speed, bool) else '')
     return {
         'title': f'{model} · {benchmark}' if benchmark else model,
-        'phase': str(status.get('phase') or '').lower(),
+        'phase': '  ·  '.join(part for part in (str(status.get('phase') or '').lower(), pace) if part),
         'fraction': used / total,
         'used': f'{clock_text(used)} / {clock_text(total)} game time',
         'left': f'{clock_text(total - used)} left',
