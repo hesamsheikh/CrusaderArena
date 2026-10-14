@@ -286,6 +286,19 @@ between September and October 2026.
     removed the hovel and left the fletcher and the hovel behind it standing. In the same run
     `set_workshop` by tile set the fletcher to crossbows and `inspect_building` by tile read the
     hovel.
+- 1.7.0 with three models again, on 2026-10-14, after aimed clicks (3b7ddd4): 10 game minutes
+  each, GLM 5.3 Flash on Large Barren Desert, GPT-6 Luna on The Sinkhole and Claude Haiku 5.5
+  on Oasis by the Sea, each interviewed after; all three valid, about $0.07 together. Every save
+  went through, the desert's 106 keys too.
+  - Aimed clicks: 50 of 55 placements went through, 19 of 19, 17 of 17 and 14 of 19; Haiku's 5
+    were refused for its own targets (a granary not touching the one standing, a hovel in the
+    signpost's zone, farms off oasis grass or with no open side). No aim failed to reach its
+    tile and no demolish was `covered`. GLM's save, loaded and read, had all 19 footprints on
+    the tiles asked. Luna's `set_workshop` and Haiku's `demolish_building` by tile went
+    through. Placements took 6.8, 8.2 and 7.4 seconds each, camera moves included.
+  - Fast waits saved 89 and 92 seconds in GLM's and Haiku's runs; Luna never waited. During
+    Haiku's run the overlay showed "thinking · paused" while it thought, "acting · speed 40"
+    and its waits rising to speed 60 or 75 and back to 40.
 - The run overlay's speed, on 2026-10-14 (stand-in on Oasis by the Sea, 3 game minutes): the
   phase line went from "waiting · speed 40" through 45 to "speed 90" and back down to 40 in
   each fast wait, as the + and - presses went; panels rendered from the live status showed it.
