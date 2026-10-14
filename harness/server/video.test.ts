@@ -141,3 +141,24 @@ test("a background render starts the queue detached, marks the run pending and r
   assert.ok(existsSync(path.join(dir, "render.pending")));
   assert.equal(readFileSync(path.join(dir, "render.log"), "utf8"), "", "its output goes to the run's render.log");
 });
+
+test("a background render that cannot start never throws: it says so and takes the marker away", async () => {
+  // An episode is scored by then: a throw here made the runner replay it as an infrastructure failure.
+  const dir = mkdtempSync(path.join(tmpdir(), "arena-video-"));
+  const lines: string[] = [];
+  const thrown = renderInBackground(dir, undefined, "Episode 1: ", () => { throw new Error("spawn EACCES"); }, (l) => lines.push(l));
+  assert.equal(thrown, null);
+  assert.ok(!existsSync(path.join(dir, "render.pending")));
+  assert.deepEqual(lines, ["Episode 1: Video render could not start: spawn EACCES"]);
+  // A command that cannot run fails after the spawn, as an error event: no listener crashed the runner.
+  const emitter = Object.assign(new EventEmitter(), { unref: () => {} }) as unknown as ChildProcess;
+  const child = renderInBackground(dir, undefined, "", () => emitter, (l) => lines.push(l));
+  assert.equal(child, emitter);
+  assert.ok(existsSync(path.join(dir, "render.pending")));
+  emitter.emit("error", new Error("spawn python3 ENOENT"));
+  assert.ok(!existsSync(path.join(dir, "render.pending")));
+  assert.equal(lines.at(-1), "Video render could not start: spawn python3 ENOENT");
+  // A run folder that cannot be written to (a disk full, say) does not throw either.
+  assert.equal(renderInBackground(path.join(dir, "missing", "folder"), undefined, "", () => emitter, (l) => lines.push(l)), null);
+  assert.match(lines.at(-1)!, /Video render could not start: ENOENT/);
+});

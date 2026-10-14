@@ -7,15 +7,18 @@ The episode runner starts this detached once an episode is scored (harness/serve
 renderInBackground), so the next episode can start meanwhile. It waits for a lock on
 harness/runtime/render.lock, so renders on this machine go one at a time across runners, then runs
 render-video.py and compact-recording.py at low priority (nice 15), so they do not slow a run being
-played. <run>/render.pending exists until it is done; packaging refuses the run until then
-(tools/dataset/package.py). Progress lines go to stdout and, with --log, are appended to that file
-(the series' runner.log) after --prefix; the last stdout line is a JSON summary.
+played. <run>/render.pending, holding this process's id, exists until it is done; packaging lists
+the run as a problem until then, so it is not uploaded (tools/dataset/package.py). A stop (SIGTERM,
+SIGHUP, Ctrl-C) ends the step running, removes the marker and releases the lock; a step that runs
+past STEP_SECONDS is ended as hung. Progress lines go to stdout and, with --log, are appended to
+that file (the series' runner.log) after --prefix; the last stdout line is a JSON summary.
 """
 import argparse
 import fcntl
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import time
@@ -25,23 +28,64 @@ ROOT = HERE.parents[1]
 LOCK = ROOT / 'harness' / 'runtime' / 'render.lock'
 PENDING = 'render.pending'
 NICE = 15
+# Renders took 3-10 minutes and compactions 1.5-2.5 (runs of 2026-10-11 to 13): an hour is a hang.
+STEP_SECONDS = 3600
 
 
-def run_step(script, run_dir):
+def stop(process):
+    """End a step: SIGTERM first, so render-video.py can end its ffmpeg itself, then SIGKILL."""
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def run_command(command, timeout=STEP_SECONDS):
+    """Run one step's command: its exit code, stdout and stderr, or None and a reason when it hung."""
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            stop(process)
+            process.communicate()
+            return None, '', f'stopped after {timeout // 60} minutes without finishing'
+        except BaseException:
+            # A stop (SystemExit from the signal handler) or Ctrl-C: the child must not live on.
+            stop(process)
+            raise
+    return process.returncode, stdout, stderr
+
+
+def run_step(script, run_dir, timeout=STEP_SECONDS):
     """One of the video tools on run_dir, at low priority: its JSON result (None on failure) and its last error line."""
     command = [sys.executable, str(HERE / script), str(run_dir), '--quiet']
     if os.name != 'nt':
         command = ['nice', '-n', str(NICE)] + command
-    result = subprocess.run(command, capture_output=True, text=True)
-    lines = result.stdout.strip().splitlines()
+    code, stdout, stderr = run_command(command, timeout)
+    if code is None:
+        return None, stderr
+    lines = stdout.strip().splitlines()
     data = None
-    if result.returncode == 0 and lines:
+    if code == 0 and lines:
         try:
             data = json.loads(lines[-1])
         except ValueError:
             data = None
-    errors = result.stderr.strip().splitlines()
-    return data, (errors[-1] if errors else f'exit {result.returncode}')
+    errors = stderr.strip().splitlines()
+    return data, (errors[-1] if errors else f'exit {code}')
+
+
+def stop_on_signals():
+    """SIGTERM and SIGHUP end the queue like Ctrl-C: the finally clauses run, so the marker goes."""
+    def stopped(signum, _frame):
+        raise SystemExit(128 + signum)
+    for name in ('SIGTERM', 'SIGHUP'):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stopped)
 
 
 def minutes(seconds):
@@ -53,7 +97,8 @@ def process(run_dir, say, step=run_step, lock_path=LOCK):
     """Render, then compact, holding the machine-wide lock; render.pending goes once this is done."""
     summary = {'run': str(run_dir), 'video': None, 'compaction': None}
     pending = run_dir / PENDING
-    pending.touch()
+    # This process's id: packaging tells a render still going from one stopped before its end.
+    pending.write_text(str(os.getpid()))
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_path, 'a') as lock:
@@ -96,6 +141,7 @@ def main(argv=None):
             with open(args.log, 'a', encoding='utf-8') as log:
                 log.write(f"[{time.strftime('%H:%M:%S', time.gmtime())}] {line}\n")
 
+    stop_on_signals()
     summary = process(run_dir, say, step=run_step, lock_path=LOCK)
     print(json.dumps(summary), flush=True)
     return 0 if summary['video'] else 1

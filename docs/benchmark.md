@@ -291,7 +291,7 @@ episodes are independent games of the same save; `--playbook` makes them a
    background (`tools/video/render-queue.py`): one render at a time on this machine, at low
    priority, with its output in the run folder's `render.log` and its outcome added to
    `runner.log`. The runner does not wait for it, and `render.pending` marks the run folder
-   until it is done (packaging refuses the run meanwhile).
+   until it is done (packaging lists the run as a problem meanwhile, so it is not uploaded).
 7. If the episode counts (see below), [interviews](#the-interview) the agent about it.
 
 When an episode counts and there is a next one, step 7's interview and the next episode's

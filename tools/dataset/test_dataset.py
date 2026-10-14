@@ -5,10 +5,12 @@
 import base64
 import io
 import json
+import os
 import random
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -342,9 +344,20 @@ class PackageTest(Fixture):
 
     def test_a_run_whose_video_is_still_rendering_is_a_problem(self):
         folders = self.make_series()
-        (self.runs / folders[0] / 'render.pending').write_text('')
+        (self.runs / folders[0] / 'render.pending').write_text(str(os.getpid()))
         self.assertIn('episode 1: the video is still rendering (render.pending; render.log follows it)',
                       self.package().manifest['problems'])
+
+    def test_a_render_stopped_before_its_end_says_how_to_finish_it(self):
+        # A queue killed outright (SIGKILL, a crash) leaves its marker with the id of a process gone.
+        folders = self.make_series()
+        gone = subprocess.Popen([sys.executable, '-c', 'pass'])
+        gone.wait()
+        (self.runs / folders[0] / 'render.pending').write_text(str(gone.pid))
+        problems = [p for p in self.package().manifest['problems'] if 'render' in p]
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(f'the video render stopped before finishing (render.pending is left by process {gone.pid}', problems[0])
+        self.assertIn('tools/video/render-queue.py', problems[0])
 
     def test_patches_of_one_minor_version_compare_and_share_a_folder(self):
         folders = self.make_series()

@@ -179,6 +179,8 @@ async function frame() {
   checkStop();
   return api<Frame>("frame");
 }
+/** Real time after which a run of keys sent on one capture (send's `shared`) captures again. */
+const SHARED_FRAME_MS = 15_000;
 /**
  * Send one input on a fresh frame, or on `shared.frame` when given (a run of keys needs only the
  * window's identity, so one capture serves them all). The bridge refuses input while another
@@ -187,6 +189,9 @@ async function frame() {
  */
 async function send(action: (f: Frame) => GameAction, shared?: { frame?: Frame }) {
   for (let attempt = 0; ; attempt++) {
+    // A long run of keys (the save's ~110) takes a fresh capture now and then, so it stays well
+    // inside the screenshot age limit even where that falls back to real time (no reader clock).
+    if (shared?.frame && Date.now() - shared.frame.receivedAt > SHARED_FRAME_MS) shared.frame = undefined;
     const f = shared?.frame ?? (await frame());
     if (shared) shared.frame = f;
     try {
@@ -639,8 +644,7 @@ async function playEpisode(
     } else log("No results: the game was never read.");
     // Rendered in the background, one render at a time on this Mac and at low priority, while
     // the next episode (or the next runner's) plays; its lines join this runner.log when done.
-    if (run?.config?.recordVideo && run.progress?.recording?.frames) {
-      renderInBackground(dir, logFile, `Episode ${n}: `);
+    if (run?.config?.recordVideo && run.progress?.recording?.frames && renderInBackground(dir, logFile, `Episode ${n}: `, undefined, log)) {
       backgroundRenders++;
       log(`Episode ${n}: video render queued in the background (${path.join(dir, "render.log")})`);
     }
@@ -821,11 +825,13 @@ async function interview(runId: string, series: RunSeries, follow: { detached: b
 /**
  * Waits while the host at `url` is still interviewing an earlier run (a runner leaves its last
  * interview to the host: runSeries), since the host refuses an agent run until it ends; one still
- * running after INTERVIEW_MINUTES is stopped.
+ * running after INTERVIEW_MINUTES is stopped, and waited for until it has ended (the host takes a
+ * moment to wind an interview down, and an agent run sent meanwhile was refused).
  */
 async function waitForHostInterview(url = base, stoppable = true) {
-  const deadline = Date.now() + INTERVIEW_MINUTES * 60_000;
+  let deadline = Date.now() + INTERVIEW_MINUTES * 60_000;
   let logged = false;
+  let stopped = false;
   for (;;) {
     if (stoppable) checkStop();
     const state = await fetch(url + "state").then((res) => res.json() as Promise<State>).catch(() => undefined);
@@ -836,11 +842,16 @@ async function waitForHostInterview(url = base, stoppable = true) {
       logged = true;
     }
     if (Date.now() > deadline) {
+      if (stopped) {
+        log("The interview did not end within a minute of stopping it; going on.");
+        return;
+      }
       log(`That interview is still running after ${INTERVIEW_MINUTES} minutes; stopping it.`);
       await fetch(url + "agent/stop", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Crusader-Client": "dashboard" }, body: "{}",
       }).catch(() => {});
-      return;
+      stopped = true;
+      deadline = Date.now() + 60_000;
     }
     await sleep(2000);
   }
@@ -1076,8 +1087,13 @@ async function playElsewhere(round: Round) {
     return await new Promise<number>((resolve) => child.on("close", (code) => resolve(code ?? 1)));
   } finally {
     stopFeed?.();
-    // A round's runner may leave its last interview to its host, which stopping it would end.
-    await waitForHostInterview(`http://127.0.0.1:${port}/api/`, false);
+    // The round's runner is done, so a stop is this runner's again: it ends the wait below. A round's
+    // runner may leave its last interview to its host, which stopping the host would end.
+    process.removeAllListeners("SIGINT");
+    process.removeAllListeners("SIGTERM");
+    process.on("SIGINT", requestStop);
+    process.on("SIGTERM", requestStop);
+    await waitForHostInterview(`http://127.0.0.1:${port}/api/`, true).catch(() => log("Stopped waiting for the round host's interview."));
     await stopHost(host);
     log(`${round.version} host stopped`);
   }

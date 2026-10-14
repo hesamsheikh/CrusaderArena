@@ -225,7 +225,7 @@
     },
     {
       "version": "1.7.0",
-      "fingerprint": "7db51e852c6bcd67f1be3df631a2ad2b235e92df78636b0d824f34fba1322fa4",
+      "fingerprint": "e11fb73ed4a63fd2e8d79dab58137e8e266e55f640e413afe168f4b00f77aacb",
       "date": "2026-10-14",
       "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; the game machine's reader is rebuilt unless it was built from the version's sources"
     }

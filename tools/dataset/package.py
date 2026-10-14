@@ -269,6 +269,26 @@ def comparable(version: str | None) -> str | None:
     return f'v{match[1]}.{match[2]}' if match else None
 
 
+def render_pending(run_dir: Path) -> str | None:
+    """Why the run's video is not done yet, from its render.pending: still rendering, or stopped.
+
+    render-queue.py writes its process id there and removes the marker when it ends, a stop
+    included; a marker whose process is gone was left by one killed outright (SIGKILL, a crash)."""
+    marker = run_dir / 'render.pending'
+    if not marker.exists():
+        return None
+    pid = marker.read_text(errors='replace').strip()
+    if pid.isdigit():
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return (f'the video render stopped before finishing (render.pending is left by process {pid}, which is gone): '
+                    f'run python3 tools/video/render-queue.py {run_dir} again')
+        except PermissionError:
+            pass
+    return 'the video is still rendering (render.pending; render.log follows it)'
+
+
 def check_run(run_dir: Path, run: dict, row: dict | None, outcome: str | None = None) -> list[str]:
     if row is None:
         return ['npm run report could not read the run']
@@ -291,8 +311,9 @@ def check_run(run_dir: Path, run: dict, row: dict | None, outcome: str | None = 
             problems.append(f'the score is from "{episode.get("source")}", not a final reading')
     # The episode runner renders in the background (tools/video/render-queue.py): until it is done
     # video.mp4 may be missing or half written, and the recording not yet compacted.
-    if (run_dir / 'render.pending').exists():
-        problems.append('the video is still rendering (render.pending; render.log follows it)')
+    pending = render_pending(run_dir)
+    if pending:
+        problems.append(pending)
     for name in REQUIRED:
         if name != 'episode.json' and not (run_dir / name).is_file():
             problems.append(f'no {name}' + (' (record the run: npm run episodes -- --record)' if name == 'video.mp4' else ''))

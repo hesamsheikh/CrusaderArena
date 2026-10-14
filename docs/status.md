@@ -390,8 +390,11 @@ between September and October 2026.
   - `build_structure` waiting after its closing right-click for the reader to show
     placement mode ended, so a call straight after it selects the same building again
     (reproduced with a reader sample that lags the right-click).
-  - The episode runner: the video rendered in the background, one at a time behind a lock;
-    the last interview left to the host; the save name typed on one capture.
+  - The episode runner: the video rendered in the background, one at a time behind a lock,
+    its marker removed on a stop and recognised by packaging when left by a killed render,
+    a hung step ended, and a render that cannot start never failing the episode; the last
+    interview left to the host; the save name typed on one capture. The runner's own waits
+    for the host's interviews have no automated test (episodes.ts runs on import).
   - [Warnings](context.md#warnings) for popularity, food and gold: when each comes up and
     comes up again, `wait_and_observe` ended early after the minimum turn, and a fast wait
     brought back to 40 early, on a simulated game. The food rates come from recorded runs

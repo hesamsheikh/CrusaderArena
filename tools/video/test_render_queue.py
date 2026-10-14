@@ -4,9 +4,13 @@
 """
 import fcntl
 import json
+import os
 from pathlib import Path
 from runpy import run_path
+import signal
+import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -82,7 +86,7 @@ class RenderQueueTest(unittest.TestCase):
         def step(script, run_dir):
             return ({'output': 'v.mp4', 'seconds': 61.0}, '') if script == 'render-video.py' else ({'run-1': {'source_bytes': 2e6, 'video_bytes': 1e6}}, '')
 
-        with mock.patch.dict(queue['process'].__globals__, {'run_step': step, 'LOCK': self.lock}), \
+        with mock.patch.dict(queue['process'].__globals__, {'run_step': step, 'LOCK': self.lock, 'stop_on_signals': lambda: None}), \
                 mock.patch('builtins.print', side_effect=lambda *a, **k: printed.append(a[0])):
             code = queue['main']([str(self.run_dir), '--log', str(log), '--prefix', 'Episode 2: '])
         self.assertEqual(code, 0)
@@ -90,6 +94,59 @@ class RenderQueueTest(unittest.TestCase):
         self.assertRegex(lines[0], r'^\[\d\d:\d\d:\d\d\] Episode 2: Video saved: v\.mp4 \(1:01\)\.$')
         self.assertRegex(lines[1], r'Episode 2: Recording compacted: 2 MB -> 1 MB\.$')
         self.assertEqual(json.loads(printed[-1])['video']['output'], 'v.mp4')
+
+    def test_the_marker_holds_the_queue_process_id(self):
+        def step(script, run_dir):
+            self.assertEqual((run_dir / 'render.pending').read_text(), str(os.getpid()))
+            return None, 'stop here'
+
+        self.process(step)
+
+    def test_a_stop_during_a_step_removes_the_marker_and_releases_the_lock(self):
+        # A reboot, a logout or kill sends SIGTERM or SIGHUP; the marker used to stay for good.
+        saved = {name: signal.getsignal(getattr(signal, name)) for name in ('SIGTERM', 'SIGHUP')}
+        try:
+            queue['stop_on_signals']()
+
+            def step(script, run_dir):
+                os.kill(os.getpid(), signal.SIGTERM)
+                time.sleep(5)
+                return None, 'not reached'
+
+            with self.assertRaises(SystemExit):
+                self.process(step)
+        finally:
+            for name, handler in saved.items():
+                signal.signal(getattr(signal, name), handler)
+        self.assertFalse((self.run_dir / 'render.pending').exists())
+        with open(self.lock, 'a') as other:
+            fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_a_hung_step_is_ended_after_its_time(self):
+        started = time.monotonic()
+        code, _, reason = queue['run_command']([sys.executable, '-c', 'import time; time.sleep(60)'], timeout=1)
+        self.assertIsNone(code)
+        self.assertTrue(reason.startswith('stopped after'), reason)
+        self.assertLess(time.monotonic() - started, 20)
+
+    def test_a_stop_while_a_step_runs_ends_the_step_too(self):
+        # The step's process must not render on after the queue is stopped, outside the lock.
+        pid_file = self.root / 'child.pid'
+        script = f'import os, time; open({str(pid_file)!r}, "w").write(str(os.getpid())); time.sleep(60)'
+
+        def alarm(signum, frame):
+            raise SystemExit(128 + signum)
+
+        saved = signal.signal(signal.SIGALRM, alarm)
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 1.0)
+            with self.assertRaises(SystemExit):
+                queue['run_command']([sys.executable, '-c', script], timeout=30)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, saved)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid_file.read_text()), 0)
 
 
 if __name__ == '__main__':

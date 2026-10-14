@@ -90,11 +90,15 @@ warnings can end the model's waits.
   one render at a time on the machine and at low priority, and does not wait for it, so a
   queue of runners starts the next game while the last one renders (about 5 minutes of render
   and compaction per run before). `render.pending` marks a run folder until it is done, and
-  packaging refuses the run meanwhile.
+  packaging lists the run as a problem meanwhile; a render that is stopped removes its marker,
+  and one killed outright leaves its process id there, which packaging recognises.
 - The runner leaves the last episode's interview to the host and exits; a runner that finds an
-  interview still running waits for it before its agent run.
+  interview still running waits for it before its agent run, and for one it had to stop
+  (after 30 minutes) until it has ended. Ctrl-C ends a runner's wait for a round host's
+  interview.
 - The end-of-run save types the save's name on one capture of the window instead of one per
-  key (about 100 keys), which made saving take 1.5 to 3.5 minutes.
+  key (about 100 keys), which made saving take 1.5 to 3.5 minutes; a capture serves 15
+  seconds of keys at most.
 - The dashboard's new-run dialog has a Fast waits switch.
 - The game machine renders the game on its NVIDIA GPU instead of the integrated Intel GPU,
   which it used since September because the game stalled at the end of loading on the NVIDIA

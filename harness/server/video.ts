@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { closeSync, openSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -105,26 +105,43 @@ function compactRecording(
  * video.mp4 and compacts the recording once no other render on this machine is running (a lock),
  * at low priority, with its output in <run>/render.log and its outcome lines appended to `logFile`
  * after `prefix`. <run>/render.pending exists until it is done. The episode runner can then exit,
- * so a queue of runners starts the next game while this one renders.
+ * so a queue of runners starts the next game while this one renders. Never throws: an episode is
+ * scored and saved by now, and a failure here must not count against it; when the queue cannot
+ * start, `log` says so, the marker goes, and it returns null.
  */
 export function renderInBackground(
   runDirectory: string,
   logFile?: string,
   prefix = "",
   spawnQueue: (command: string, args: string[], options: SpawnOptions) => ChildProcess = spawn,
-) {
-  // Written before the job starts, so packaging sees the render coming even before it begins.
-  writeFileSync(path.join(runDirectory, "render.pending"), "");
-  const out = openSync(path.join(runDirectory, "render.log"), "a");
+  log: (line: string) => void = () => {},
+): ChildProcess | null {
+  const marker = path.join(runDirectory, "render.pending");
+  const failed = (error: unknown) => {
+    try {
+      rmSync(marker, { force: true });
+    } catch {}
+    log(`${prefix}Video render could not start: ${error instanceof Error ? error.message : String(error)}`);
+  };
   try {
-    const child = spawnQueue(
-      process.env.PYTHON || "python3",
-      [queueScript, runDirectory, ...(logFile ? ["--log", logFile] : []), ...(prefix ? ["--prefix", prefix] : [])],
-      { detached: true, stdio: ["ignore", out, out] },
-    );
-    child.unref();
-    return child;
-  } finally {
-    closeSync(out);
+    // Written before the job starts, so packaging sees the render coming even before it begins.
+    writeFileSync(marker, "");
+    const out = openSync(path.join(runDirectory, "render.log"), "a");
+    try {
+      const child = spawnQueue(
+        process.env.PYTHON || "python3",
+        [queueScript, runDirectory, ...(logFile ? ["--log", logFile] : []), ...(prefix ? ["--prefix", prefix] : [])],
+        { detached: true, stdio: ["ignore", out, out] },
+      );
+      // A command that cannot run (no python3) fails after the spawn, as an event.
+      child.on("error", failed);
+      child.unref();
+      return child;
+    } finally {
+      closeSync(out);
+    }
+  } catch (error) {
+    failed(error);
+    return null;
   }
 }

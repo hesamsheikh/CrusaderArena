@@ -167,10 +167,14 @@ ends. The episode runner renders after the scorecard instead, in the background:
 `tools/video/render-queue.py` takes a lock on `harness/runtime/render.lock`, so renders
 on this machine run one at a time across runners, then renders and compacts at low
 priority (`nice 15`), writing its output to `<run>/render.log` and its outcome to the
-series' `runner.log`. `<run>/render.pending` exists until it is done, and
-`npm run package` refuses the run meanwhile. The runner does not wait for it, so a queue
-of runners starts the next game while the last one renders. A wait played fast shows in
-the video as faster idle play.
+series' `runner.log`. `<run>/render.pending`, holding the queue's process id, exists
+until it is done; `npm run package` lists the run as a problem meanwhile, so
+`npm run upload` refuses the bundle, and it names a marker whose process is gone (a render
+killed outright) with the command that renders it again. A stop (SIGTERM, SIGHUP, Ctrl-C)
+ends the render step, removes the marker and releases the lock; a step still running after
+an hour is ended as hung. The runner does not wait for the render, so a queue of runners
+starts the next game while the last one renders; if the queue cannot start, the runner
+logs it and goes on. A wait played fast shows in the video as faster idle play.
 
 - **Recording.** A separate SSH session captures the game window only, scaled to
   1600 × 900: 10 frames per second for 2.5 seconds after each input, 4 otherwise.
