@@ -50,7 +50,9 @@ warnings can end the model's waits.
   view with the game paused, and the game now runs on afterwards, as after an action.
 - Every spot the harness picks, and every `build_structure` target, keeps a tile of open
   ground around stockpiles, as around granaries and armories (`access: touches_storage`);
-  another stockpile may still touch it.
+  another stockpile may still touch it, and so may the keep. A stockpile target is moved or
+  retried only to spots flush with the stockpile, where the game takes one, as
+  `expand_storage` looks.
 - They also leave one spot beside the stockpile where another stockpile fits
   (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
   `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,
@@ -63,7 +65,8 @@ warnings can end the model's waits.
   `access: no_route`, one that would close another building's last way `cuts_route`, and
   both are moved like a blocked target. The way is searched on the tile map from the keep's
   courtyard or the edge of the area read; trees, bushes and farm fields count as walkable
-  until the live game shows otherwise.
+  until the live game shows otherwise. Churches, which have no peasant job, need neither a
+  way nor an open side.
 - `build_structure` waits after its closing right-click until the reader shows placement
   mode ended. A call straight after another one, placing the same building first, read the
   end of the previous placement mode as its own selection failing and reported `not_selected`

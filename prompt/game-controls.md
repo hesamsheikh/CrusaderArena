@@ -124,8 +124,8 @@ placed or tried (whether given by tile or worked out from the pixel):
 - `not_placed`: nothing happened. The harness then retries at the nearest spots where
   the game's tile data shows the whole footprint free (off oasis grass, stone, iron ore
   and oil unless it is the building's own ground), up to 6 per placement and 12 per
-  call, never onto your other targets in the
-  call. It does the same when a farm is
+  call, never onto your other targets in the call; another stockpile only flush with the
+  stockpile, where the game takes one. It does the same when a farm is
   refused for its ground or a building is "too close" to the signpost. `at` and
   `offsetTiles` say where it was placed instead; `not_placed` with `retries` means no
   nearby spot worked, so choose other ground. Pass `exact: true` to forbid retries.
@@ -176,7 +176,7 @@ Game rules for placement:
   takes to keep stone from piling up while the oxen are away. An iron mine needs iron
   ore and no tether: its miners carry the iron. `find_sites` finds spots for both.
 - A building with workers (everything but hovels, the marketplace, stockpiles,
-  granaries, armories and the good and bad things) needs at least one whole side of open ground:
+  granaries, armories, churches and the good and bad things) needs at least one whole side of open ground:
   its workers go in and out there, and one closed in on all four sides by buildings,
   trees, rocks, water or cliffs stays empty. Pack them in two rows back to back or in
   blocks of four, so each keeps an outer side. `find_sites`, `place_near`,

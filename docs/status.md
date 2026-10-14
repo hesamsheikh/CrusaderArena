@@ -377,12 +377,14 @@ between September and October 2026.
   - A screenshot's age counted in game seconds on the game clock (40 of them), with real
     time only when there is no clock reading; input aimed by map tile exempt, as before.
   - `flat_view` toggling the view paused and taking its two images with the game running.
-  - The tile of open ground kept around stockpiles, and the last spot for another
-    stockpile kept free (`blocks_stockpile`).
+  - The tile of open ground kept around stockpiles (the keep may touch them), the last
+    spot for another stockpile kept free (`blocks_stockpile`), also after a target was
+    refused there, and a stockpile target moved or retried only flush with the stockpile.
   - [Routes to the keep](tools.md#build) (`no_route`, `cuts_route`): walled-in spots
     refused, a gap, the courtyard or the read area's edge giving a way, water and
-    mountains closing one, and the searches that skip most of the work agreeing with a
-    plain search of the whole area on random walled towns. Not known from the live game:
+    mountains closing one, a footprint on a building's only way in refused, churches
+    needing none, and the searches that skip most of the work agreeing with a plain
+    search of the whole area on random walled towns with nooks. Not known from the live game:
     whether people cross trees, bushes and farm fields (counted walkable), and whether the
     game's own keep access matches these ways.
   - `build_structure` waiting after its closing right-click for the reader to show

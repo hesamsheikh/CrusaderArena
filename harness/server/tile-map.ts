@@ -79,7 +79,7 @@ const SIGNPOST_TYPE = STRUCTURE_TYPES.signpost;
  * and got no worker while 19 peasants stood idle; one beside it with an open side was staffed). Two
  * rows back to back, or blocks of four, leave each an outer side.
  */
-const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary", "Armory", ...decorationNames]);
+const noWorkers = new Set(["Hovel", "Marketplace", "Stockpile", "Granary", "Armory", "Chapel", "Church", "Cathedral", ...decorationNames]);
 export const needsOpenSide = (building: string) => !noWorkers.has(building);
 /**
  * Buildings people must walk to from the keep: those with workers, who come from the keep's
@@ -93,6 +93,8 @@ export const needsRoute = (building: string) => needsOpenSide(building) || ["Sto
  */
 const noOpenSideTypes = new Set<number>([STRUCTURE_TYPES.hovel, STRUCTURE_TYPES.pile, STRUCTURE_TYPES.armory, STRUCTURE_TYPES.granary,
   STRUCTURE_TYPES.market, STRUCTURE_TYPES.keep, STRUCTURE_TYPES.courtyard, SIGNPOST_TYPE,
+  // Chapel, church and cathedral: no peasant job (prompt/game-mechanics.md).
+  36, 37, 38,
   // Good and bad things (the game's eStructs: gallows to garden, cesspit to dunking stool, statue to pond).
   ...[62, 63, 64, 65, 66, 91, 92, 93, 94, 95, 96, 97, 98, 100, 101, 102, 103, 104]]);
 /** Engine types of storage, which needs a route (needsRoute) though no open side: piles, granaries, armories. */
@@ -210,17 +212,17 @@ export class TileMap {
     if (t.x < x0 || t.y < y0 || t.x >= x0 + w || t.y >= y0 + h) return undefined;
     return this.region.layers[layer][(t.y - y0) * w + (t.x - x0)];
   }
-  /** Buildable: inside the read region, no building, no organism, no animal, ordinary land. */
-  free(t: Tile) {
-    return (this.value("occupancy", t) ?? 0) >= 0 && this.ground(t);
+  /** Buildable: inside the read region, no building, no organism, no animal, ordinary land, not under `claims`. */
+  free(t: Tile, claims: readonly Rect[] = this.claimed) {
+    return (this.value("occupancy", t) ?? 0) >= 0 && this.ground(t, claims);
   }
-  /** Inside the read region, no building or organism, ordinary land, not claimed. */
-  private ground(t: Tile) {
+  /** Inside the read region, no building or organism, ordinary land, not under `claims` (the spots claimed during this call). */
+  private ground(t: Tile, claims: readonly Rect[] = this.claimed) {
     const logic = this.value("logic", t);
     if (logic === undefined) return false;
     if (this.value("structure", t) || this.value("organism", t)) return false;
     if (!(logic & GROUND) || (logic >>> 0) & ~BUILDABLE) return false;
-    return !this.claimed.some((r) => inside(t, r));
+    return !claims.some((r) => inside(t, r));
   }
   /**
    * Ground workers can cross that nothing stands on: buildable land (animals move away) or the
@@ -365,7 +367,7 @@ export class TileMap {
     const sides = sidesOf(f);
     return f.needsOpenSide
       ? sides.some((side) => side.every((t) => this.open(t, closed)) && side.some((t) => this.reached(reach, t)))
-      : sides.some((side) => side.some((t) => this.reached(reach, t)));
+      : sides.some((side) => side.some((t) => this.reached(reach, t) && !closed.some((r) => inside(t, r))));
   }
   /**
    * Whether `rect` for `building` leaves it, and every building with a route now, a route from the
@@ -383,12 +385,15 @@ export class TileMap {
     const intact = this.walkableAround(rect, planned) || this.stillReached(rect, before, steps);
     const after = intact ? before : this.reach(closed).reach;
     if (needsRoute(building) && !this.routed({ ...rect, needsOpenSide: needsOpenSide(building) }, closed, after)) return "no_route";
-    if (intact) return null;
-    // A building loses its route only if a tile beside the footprint reached the keep before and
-    // does not now: a way that went through the footprint enters it from such a tile.
-    if (!sidesOf(rect).some((side) => side.some((t) => this.reached(before, t) && !this.reached(after, t)))) return null;
+    // A building loses its way in if the footprint covers the tiles beside it that people reach,
+    // or, when the reach changed, if a way to it went through the footprint: such a way enters it
+    // from a tile beside it, which reached the keep before and does not now. Without that, only a
+    // neighbour touching the footprint can lose its way.
+    const changed = !intact && sidesOf(rect).some((side) => side.some((t) => this.reached(before, t) && !this.reached(after, t)));
+    const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
     for (const n of [...this.existing(), ...this.claimed, ...planned]) {
       if (!(n.needsRoute ?? (n.building ? needsRoute(n.building) : n.needsOpenSide)) || overlaps(n, rect)) continue;
+      if (!changed && !overlaps(n, ring)) continue;
       if (this.routed(n, planned, before) && !this.routed(n, closed, after)) return "cuts_route";
     }
     return null;
@@ -415,7 +420,8 @@ export class TileMap {
   /**
    * Whether a footprint for `building` would touch a granary, armory or stockpile (or, for one of
    * those, any other building) with no tile between them: built, placed during this call, or
-   * `planned`. Another of the same kind may touch it, and so may the keep's open courtyard.
+   * `planned`. Another of the same kind may touch it, and so may the keep and its open courtyard
+   * (the first stockpile stands against the keep, so every flush spot on that side touches it).
    */
   touchesStorage(building: string, rect: Rect, planned: readonly Footprint[] = []) {
     const own = SPACED_STORAGE[building];
@@ -427,7 +433,7 @@ export class TileMap {
         const id = this.value("structure", { x, y });
         if (!id) continue;
         const type = types[id];
-        if (type === undefined || type === STRUCTURE_TYPES.courtyard || type === own) continue;
+        if (type === undefined || type === STRUCTURE_TYPES.courtyard || type === STRUCTURE_TYPES.keep || type === own) continue;
         if (own !== undefined || Object.values(SPACED_STORAGE).includes(type)) return true;
       }
     for (const n of [...this.claimed, ...planned]) {
@@ -459,11 +465,13 @@ export class TileMap {
    * Whether a footprint would cover the last spot beside a stockpile where another stockpile still
    * fits: one of the run's commonest dead ends was a stockpile boxed in by other buildings, after
    * which expand_storage found no room and goods stopped coming in (runs of 2026-10-12 and 13).
-   * Spots taken during this call, or `planned`, do not count as room. A stockpile with no room left
-   * already, or whose surroundings lie partly outside the read region, sets no limit.
+   * Buildings placed during this call, or `planned`, take room; spots only refused during it do
+   * not (a refused target that covered the last spot would otherwise turn the guard off). A
+   * stockpile with no room left already, or whose surroundings lie partly outside the read region,
+   * sets no limit.
    */
   blocksStockpile(rect: Rect, planned: readonly Footprint[] = []) {
-    const taken = [...this.claimed, ...planned];
+    const taken = [...this.claimed.filter((c) => c.building), ...planned];
     return this.stockpileSpots().some((spots) => {
       const room = spots.filter((s) => !taken.some((t) => overlaps(t, s)));
       return room.length > 0 && room.every((s) => overlaps(s, rect));
@@ -471,7 +479,8 @@ export class TileMap {
   }
   /**
    * For each stockpile cluster wholly read with the ground around it, the footprints flush beside
-   * its squares where another stockpile fits (as expand_storage looks for them).
+   * its squares where another stockpile fits (as expand_storage looks for them), on the map as
+   * read: what this call places takes room in blocksStockpile.
    */
   private stockpileSpots() {
     if (this.stockpileRoom) return this.stockpileRoom;
@@ -497,7 +506,7 @@ export class TileMap {
           for (let other = lo - (size - 1 - a); other <= hi + a; other++) {
             const t = along === "x" ? { x: fixed, y: other } : { x: other, y: fixed };
             const spot = footprintRect(t, size);
-            if (!spots.some((s) => s.x1 === spot.x1 && s.y1 === spot.y1) && this.fits("Stockpile", t).ok) spots.push(spot);
+            if (!spots.some((s) => s.x1 === spot.x1 && s.y1 === spot.y1) && this.fits("Stockpile", t, true, []).ok) spots.push(spot);
           }
         }
       this.stockpileRoom.push(spots);
@@ -630,8 +639,11 @@ export class TileMap {
     const r = footprintRect(centre, footprintOf(building));
     return this.signpostTiles().some((t) => Math.hypot(t.x - r.x1, t.y - r.y1) <= radius + 5);
   }
-  /** Whether `building` fits with its footprint centred (by the game's rule) on `centre`. */
-  fits(building: string, centre: Tile, reserve = true): { ok: boolean; oasisShare?: number; reason?: string } {
+  /**
+   * Whether `building` fits with its footprint centred (by the game's rule) on `centre`, off the
+   * spots claimed during this call (or only `claims`).
+   */
+  fits(building: string, centre: Tile, reserve = true, claims: readonly Rect[] = this.claimed): { ok: boolean; oasisShare?: number; reason?: string } {
     const rect = footprintRect(centre, footprintOf(building));
     const farm = farmNames.has(building);
     const resource = resourceGround[building];
@@ -639,7 +651,7 @@ export class TileMap {
     for (let x = rect.x1; x <= rect.x2; x++)
       for (let y = rect.y1; y <= rect.y2; y++) {
         const t = { x, y };
-        if (!this.free(t)) return { ok: false, reason: "blocked" };
+        if (!this.free(t, claims)) return { ok: false, reason: "blocked" };
         total++;
         const logic = this.value("logic", t)! >>> 0;
         if (resource && logic & resource.bit) ground++;
@@ -733,7 +745,7 @@ export class TileMap {
     found.sort((a, b) => farmNames.has(building)
       ? Math.floor(a.d / 2) - Math.floor(b.d / 2) || (b.oasisShare ?? 0) - (a.oasisShare ?? 0)
       : a.d - b.d);
-    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count, avoid);
+    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count, avoid, options.spaced);
   }
   /**
    * Woodcutter sites closest to trees (in 4-tile bands of the distance to the nearest tree), the
@@ -753,7 +765,7 @@ export class TileMap {
       return { ...s, trees: within, band: within ? Math.floor(nearest / 4) : Infinity };
     });
     found.sort((a, b) => a.band - b.band || a.d - b.d);
-    return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count);
+    return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count, [], options.spaced);
   }
   /** Every site within `radius` tiles of `near` (default: the camera centre), with its distance. */
   private candidates(building: string, near?: Tile, radius = 20, avoid: Footprint[] = [], options: SiteOptions = {}) {
@@ -817,10 +829,29 @@ export class TileMap {
           if (s) found.push({ ...s, side, gap });
         }
       }
-    return this.distinct(building, found, count);
+    return this.distinct(building, found, count, [], options.spaced);
+  }
+  /**
+   * Spots for another stockpile, nearest `near` first: flush beside a stockpile square, the only
+   * place the game takes one ("Needs to be placed adjacent to the stockpile"), so build_structure
+   * retries a stockpile only there, as expand_storage looks. As there, spots that keep the tile of
+   * open ground around storage come first, then those that do not rather than none. `avoid`:
+   * footprints about to be placed.
+   */
+  stockpileSitesNear(near: Tile, count = 1, avoid: readonly Footprint[] = []): Site[] {
+    const squares = this.storageRects("Stockpile");
+    const size = footprintOf("Stockpile");
+    const distance = (s: Site) => Math.max(Math.abs(s.tile.x - near.x), Math.abs(s.tile.y - near.y));
+    for (const spaced of [true, false]) {
+      const found = squares.flatMap((r) => this.sitesBeside("Stockpile", r, 64, undefined, 0, { spaced }))
+        .filter((s) => !avoid.some((a) => overlaps(a, footprintRect(s.tile, size))))
+        .sort((p, q) => distance(p) - distance(q));
+      if (found.length) return this.distinct("Stockpile", found, count, avoid, spaced);
+    }
+    return [];
   }
   /** Sites in order that neither overlap nor close each other's last open side. */
-  private distinct(building: string, sites: Site[], count: number, planned: readonly Footprint[] = []) {
+  private distinct(building: string, sites: Site[], count: number, planned: readonly Footprint[] = [], spaced = true) {
     const size = footprintOf(building);
     const chosen: Site[] = [];
     const taken: Footprint[] = [];
@@ -828,7 +859,7 @@ export class TileMap {
       if (chosen.length >= count) break;
       const r = footprintRect(s.tile, size);
       if (taken.some((c) => overlaps(r, c))) continue;
-      if (taken.length && !this.access(building, s.tile, [...planned, ...taken]).ok) continue;
+      if (taken.length && !this.access(building, s.tile, [...planned, ...taken], spaced).ok) continue;
       chosen.push(s);
       taken.push({ ...r, needsOpenSide: needsOpenSide(building), building });
     }

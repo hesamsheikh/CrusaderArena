@@ -1172,12 +1172,16 @@ export function makeAgent(
                 }
                 for (const p of placedAt)
                   avoid.push({ ...footprintRect(p.tile ?? map.tileAt(p), p.size), needsOpenSide: needsOpenSide(p.name), building: p.name });
-                // Each refused spot (the target first) is claimed, with a margin after "Too close to …",
-                // and the nearest remaining fit is computed afresh.
-                map.claim(plan.name, origin, tooClose(result) ? TOO_CLOSE_MARGIN : 0);
+                // Each spot the game refused (the target first) is claimed, with a margin after "Too
+                // close to …", and the nearest remaining fit is computed afresh. A target moved for
+                // access was never clicked: the map refuses it by itself, and claiming it would count
+                // as room taken beside the stockpile.
+                if (!moveForAccess) map.claim(plan.name, origin, tooClose(result) ? TOO_CLOSE_MARGIN : 0);
+                // The game takes another stockpile only flush with the stockpile, so it is retried there.
+                const stockpile = plan.name === "Stockpile" && map.storageRects("Stockpile").length > 0;
                 next = () => {
                   if (retrySkipped) return undefined;
-                  const site = map.sitesNear(plan.name, origin, 1, 12, avoid)[0];
+                  const site = stockpile ? map.stockpileSitesNear(origin, 1, avoid)[0] : map.sitesNear(plan.name, origin, 1, 12, avoid)[0];
                   return site && {
                     x: site.x, y: site.y, tile: site.tile, offsetTiles: [site.tile.x - origin.x, site.tile.y - origin.y],
                     ...(site.oasisShare !== undefined ? { oasisShare: site.oasisShare } : {}),

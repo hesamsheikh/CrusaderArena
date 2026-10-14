@@ -388,12 +388,14 @@ test("route checks agree with a search of the whole region on random towns", () 
   // two, granaries in some (people need a way to a tile beside one), and water; a house or a
   // granary tried on free ground, anywhere or by a gap, is checked against a plain search.
   let seed = 7;
-  const random = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2147483648) % n);
+  // The generator's high bits: its low ones repeat every few draws, so `% n` of them never picked some cases.
+  const random = (n: number) => Math.floor(((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648) * n);
   const { x0, y0, w, h } = TileMap.regionFor(camera);
   const outcomes: Record<string, number> = {};
   for (let town = 0; town < 12; town++) {
     const typesOf: Record<string, number> = {};
     const gaps: [number, number][] = [];
+    const mouths: [number, number][] = [];
     const layout = region((set) => {
       for (let k = 0; k < 8; k++) {
         const size = 8 + random(9);
@@ -412,6 +414,20 @@ test("route checks agree with a search of the whole region on random towns", () 
           fill(set, "structure", gx, gy, gx + 2, gy + 2, 1000 + k);
           typesOf[String(1000 + k)] = STRUCTURE_TYPES.granary;
         }
+      }
+      // Granaries in nooks: walls on three sides, open on one, the case a footprint on the
+      // nook's mouth cuts without changing anyone else's way.
+      for (let k = 0; k < 6; k++) {
+        const gx = x0 + 6 + random(w - 14), gy = y0 + 6 + random(h - 14), open = random(4), wall = 3000 + k;
+        fill(set, "structure", gx, gy, gx + 3, gy + 3, 2000 + k);
+        typesOf[String(2000 + k)] = STRUCTURE_TYPES.granary;
+        typesOf[String(wall)] = STRUCTURE_TYPES.hovel;
+        if (open !== 0) fill(set, "structure", gx - 1, gy - 1, gx + 4, gy - 1, wall);
+        if (open !== 1) fill(set, "structure", gx - 1, gy + 4, gx + 4, gy + 4, wall);
+        if (open !== 2) fill(set, "structure", gx - 1, gy - 1, gx - 1, gy + 4, wall);
+        if (open !== 3) fill(set, "structure", gx + 4, gy - 1, gx + 4, gy + 4, wall);
+        // The footprint that covers the whole mouth, centred by the game's rule (c - 2 .. c + 1).
+        mouths.push(open === 0 ? [gx + 2, gy - 2] : open === 1 ? [gx + 2, gy + 6] : open === 2 ? [gx - 2, gy + 2] : [gx + 6, gy + 2]);
       }
       for (let k = 0; k < 4; k++) {
         const x = x0 + random(w - 8), y = y0 + random(h - 8);
@@ -445,12 +461,15 @@ test("route checks agree with a search of the whole region on random towns", () 
     const granaries = map.storageRects("Granary");
     const before = reachable();
     let checked = 0;
-    for (let k = 0; k < 400; k++) {
+    for (let k = 0; k < 600; k++) {
       const building = random(2) ? "Hovel" : "Granary";
-      const gap = gaps.length && random(2) ? gaps[random(gaps.length)] : null;
-      const t = gap
-        ? { x: Math.min(Math.max(gap[0] - 3 + random(7), x0 + 3), x0 + w - 4), y: Math.min(Math.max(gap[1] - 3 + random(7), y0 + 3), y0 + h - 4) }
-        : { x: x0 + 3 + random(w - 7), y: y0 + 3 + random(h - 7) };
+      const pick = random(4);
+      const gap = gaps.length && pick < 2 ? gaps[random(gaps.length)] : null;
+      const t = pick === 3 && mouths.length
+        ? (([x, y]) => ({ x, y }))(mouths[random(mouths.length)])
+        : gap
+          ? { x: Math.min(Math.max(gap[0] - 3 + random(7), x0 + 3), x0 + w - 4), y: Math.min(Math.max(gap[1] - 3 + random(7), y0 + 3), y0 + h - 4) }
+          : { x: x0 + 3 + random(w - 7), y: y0 + 3 + random(h - 7) };
       const rect = footprintRect(t, 4);
       let free = true;
       for (let x = rect.x1; x <= rect.x2; x++) for (let y = rect.y1; y <= rect.y2; y++) if (!walkable(x, y)) free = false;
@@ -466,6 +485,116 @@ test("route checks agree with a search of the whole region on random towns", () 
   }
   // The towns hold every case, not only open ground.
   assert.ok(outcomes.ok > 100 && outcomes.no_route >= 5 && outcomes.cuts_route >= 5, JSON.stringify(outcomes));
+});
+
+test("a footprint on a building's only way in cuts its route, though nothing else changes", () => {
+  // A granary in a nook walled by houses on three sides, open only along y = 99 (review, 2026-10-14).
+  const nook = new TileMap({
+    ...region((set) => {
+      fill(set, "structure", 100, 100, 103, 103, 5);
+      fill(set, "structure", 99, 99, 99, 104, 40);
+      fill(set, "structure", 104, 99, 104, 104, 40);
+      fill(set, "structure", 99, 104, 104, 104, 40);
+    }),
+    structure_types: { "5": STRUCTURE_TYPES.granary, "40": STRUCTURE_TYPES.hovel },
+  }, camera, frame);
+  // Another granary or a house right on that row (100..103 × 96..99) used to pass.
+  assert.deepEqual(nook.access("Granary", { x: 102, y: 98 }, [], false), { ok: false, reason: "cuts_route" });
+  assert.deepEqual(nook.access("Hovel", { x: 102, y: 98 }, [], false), { ok: false, reason: "cuts_route" });
+  assert.deepEqual(nook.access("Hovel", { x: 102, y: 97 }, [], false), { ok: false, reason: "cuts_route" }, "a tile further out");
+  assert.deepEqual(nook.access("Hovel", { x: 108, y: 95 }, [], false), { ok: true });
+});
+
+test("churches need neither an open side nor a route: they have no peasant job", () => {
+  const walled = new TileMap({ ...region((set) => ring(set, 92, 92, 108, 108, "structure", 40)), structure_types: types }, camera, frame);
+  for (const building of ["Chapel", "Church", "Cathedral"]) assert.deepEqual(walled.access(building, { x: 100, y: 100 }), { ok: true }, building);
+  // A chapel (type 36) behind the only gap sets no route limit either.
+  const yard = new TileMap({
+    ...region((set) => { ring(set, 92, 92, 108, 108, "structure", 40, [[100, 92], [101, 92]]); fill(set, "structure", 99, 99, 104, 104, 36); }),
+    structure_types: { ...types, "36": 36 },
+  }, camera, frame);
+  assert.deepEqual(yard.access("Hovel", { x: 101, y: 90 }), { ok: true });
+});
+
+test("storage may touch the keep, as it touches the keep's courtyard", () => {
+  const map = new TileMap({
+    ...region((set) => fill(set, "structure", 92, 98, 99, 105, 41)),
+    structure_types: { "41": STRUCTURE_TYPES.keep },
+  }, camera, frame);
+  // A granary on tile 102, 100 covers 100..103: flush against the keep at x = 99.
+  assert.deepEqual(map.access("Granary", { x: 102, y: 100 }), { ok: true });
+  assert.deepEqual(map.access("Stockpile", { x: 102, y: 100 }), { ok: true });
+});
+
+/** A stockpile at 100..104 with room for one more only down-right, in 105..109 × 100..104 (trees close the rest). */
+function lastRoom() {
+  return new TileMap({
+    ...region((set) => {
+      stockpile(set, 100, 100, 1);
+      fill(set, "organism", 90, 90, 99, 115, 1);
+      fill(set, "organism", 90, 90, 115, 99, 1);
+      fill(set, "organism", 90, 105, 104, 115, 1);
+      set("organism", 105, 99, 1);
+      set("organism", 105, 105, 1);
+    }),
+    structure_types: piles(1),
+  }, camera, frame);
+}
+
+test("a spot refused during the call does not count as room taken beside the stockpile", () => {
+  // A house on tile 108, 102 covers the last room; build_structure refuses it without a click.
+  // Claimed as refused, it emptied the room, and the guard let the next spot take it (review).
+  const map = lastRoom();
+  assert.deepEqual(map.access("Hovel", { x: 108, y: 102 }), { ok: false, reason: "blocks_stockpile" });
+  map.claim("Hovel", { x: 108, y: 102 });
+  assert.deepEqual(map.access("Hovel", { x: 108, y: 106 }), { ok: false, reason: "blocks_stockpile" }, "covers the room's row 104");
+  // Also when the room is first worked out after such a claim.
+  const late = lastRoom();
+  late.claim("Hovel", { x: 108, y: 102 }, 1);
+  assert.deepEqual(late.access("Hovel", { x: 108, y: 106 }), { ok: false, reason: "blocks_stockpile" });
+  // A building placed there does take the room, and then the stockpile has none left to keep.
+  const placed = lastRoom();
+  placed.claim("Hovel", { x: 108, y: 102 }, 0, true);
+  assert.deepEqual(placed.access("Hovel", { x: 108, y: 108 }), { ok: true });
+});
+
+test("another stockpile is retried only flush with the stockpile, keeping open ground first", () => {
+  // A stockpile at 100..104 with a house against its down-right side (105..108 × 100..103).
+  const map = new TileMap({
+    ...region((set) => { stockpile(set, 100, 100, 1); fill(set, "structure", 105, 100, 108, 103, 40); }),
+    structure_types: { ...piles(1), "40": STRUCTURE_TYPES.hovel },
+  }, camera, frame);
+  const flush = (t: { x: number; y: number }) => {
+    const r = footprintRect(t, 5);
+    const touches = r.x1 <= 105 && 100 <= r.x2 + 1 && r.y1 <= 105 && 100 <= r.y2 + 1;
+    return touches && !(r.x1 <= 104 && 100 <= r.x2 && r.y1 <= 104 && 100 <= r.y2);
+  };
+  const [site] = map.stockpileSitesNear({ x: 108, y: 106 });
+  assert.ok(site && flush(site.tile), JSON.stringify(site));
+  assert.deepEqual(map.access("Stockpile", site.tile), { ok: true }, "the nearest that keeps a tile from the house");
+  // Trees close three sides and a house stands past the fourth: the one flush spot touches it,
+  // and is taken rather than none.
+  const crowded = new TileMap({
+    ...region((set) => {
+      stockpile(set, 100, 100, 1);
+      fill(set, "organism", 95, 95, 109, 99, 1);
+      fill(set, "organism", 95, 105, 109, 109, 1);
+      fill(set, "organism", 95, 100, 99, 104, 1);
+      fill(set, "structure", 110, 100, 113, 103, 40);
+    }),
+    structure_types: { ...piles(1), "40": STRUCTURE_TYPES.hovel },
+  }, camera, frame);
+  const [tight] = crowded.stockpileSitesNear({ x: 107, y: 102 });
+  assert.ok(tight && flush(tight.tile), JSON.stringify(tight));
+  assert.equal(crowded.access("Stockpile", tight.tile).reason, "touches_storage");
+});
+
+test("spots beside a building chosen without the open-ground rule are all offered", () => {
+  // Houses flush against a granary: with spaced off, three of them, not one (review: distinct
+  // checked later spots with the rule on).
+  const map = new TileMap({ ...region((set) => fill(set, "structure", 100, 100, 103, 103, 5)), structure_types: { "5": STRUCTURE_TYPES.granary } }, camera, frame);
+  assert.equal(map.sitesBeside("Hovel", { x1: 100, y1: 100, x2: 103, y2: 103 }, 3, undefined, 0, { spaced: false }).length, 3);
+  assert.equal(map.sitesBeside("Hovel", { x1: 100, y1: 100, x2: 103, y2: 103 }, 3, undefined, 0).length, 0, "with it on, none touch the granary");
 });
 
 test("route checks keep a find_sites search over a busy view quick", () => {

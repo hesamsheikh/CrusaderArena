@@ -154,7 +154,7 @@ off the ground of other buildings; scrub counts as plain. A target the model giv
 itself is clicked as given.
 
 **Open sides.** A building with workers (every building except hovels, the
-marketplace, stockpiles, granaries, armories and the good and bad things) needs one whole side of open ground: its workers
+marketplace, stockpiles, granaries, armories, churches and the good and bad things) needs one whole side of open ground: its workers
 go in and out there, and one closed in on all four sides stays empty. In the tile map
 a side is open when every tile along it is buildable ground with nothing on it, or the
 keep's courtyard; trees, bushes, rocks, water, cliffs, farm fields and buildings close
@@ -170,9 +170,11 @@ warns.
 target, keeps one tile of open ground between a granary, armory or stockpile and any
 other building, built, placed earlier in the call or planned in it; another granary may
 touch a granary, another armory an armory and another stockpile a stockpile, and the
-keep's courtyard does not count. A target that would touch one is moved like a blocked
-one and reports `access: touches_storage` (with `exact`, placed as asked with the
-warning). `place_near` beside a granary, the armoury or the stockpile therefore places at
+keep and its courtyard do not count. A target that would touch one is moved like a
+blocked one and reports `access: touches_storage` (with `exact`, placed as asked with
+the warning). A stockpile target is moved, and retried, only to spots flush with the
+stockpile, where the game takes one: those that keep the tile of open ground first,
+else one that does not, as `expand_storage` does. `place_near` beside a granary, the armoury or the stockpile therefore places at
 a gap of one tile. Any flush stockpile touches the pile at each end of its side, since
 the walkway between a stockpile's piles is one tile wide.
 
@@ -191,14 +193,15 @@ to walk from the keep: to an open side of the new building if it has workers, to
 tile beside it if it is storage (goods are carried there), and the same for every
 building that has one now, built, placed earlier in the call or planned in it. A
 footprint people could not walk to reports `access: no_route`; one that would close
-another building's last way reports `access: cuts_route`; both are moved like a blocked
-target (with `exact`, placed as asked with the warning). The way is searched over the
+another building's last way, by walling it off or by standing on the tiles beside it
+that people reach, reports `access: cuts_route`; both are moved like a blocked target
+(with `exact`, placed as asked with the warning). The way is searched over the
 tile map: from the keep's courtyard, or from the edge of the area read, since the
 ground beyond is unknown and taken to lead to the keep. Buildings (but the courtyard),
 water, mountains and rock close it; trees, bushes and farm fields count as walkable,
 which can only let a walled-off spot through, never refuse a good one. Which of them
-people really cross is still to be checked in the live game. Hovels, the marketplace
-and the good and bad things need no way.
+people really cross is still to be checked in the live game. Hovels, the marketplace,
+churches and the good and bad things need no way.
 
 **Tile map.** An external read of the game's own tile layers for the current view
 (about 2 seconds, read-only). It knows where structures, trees and rock are, which
