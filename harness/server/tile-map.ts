@@ -128,6 +128,9 @@ const UNWALKABLE = 0x100000 | 0x10 | 0x20 | 0x80;
  */
 const SPACED_STORAGE: Record<string, number> = { Granary: STRUCTURE_TYPES.granary, Armory: STRUCTURE_TYPES.armory, Stockpile: STRUCTURE_TYPES.pile };
 export type Site = { tile: Tile; x: number; y: number; oasisShare?: number; side?: string; gap?: number; trees?: number; ground?: string };
+/** Buildings a new one of which must touch one of its kind once the player has one. */
+export type StorageKind = "Stockpile" | "Granary" | "Armory";
+export const isStorageKind = (name: string): name is StorageKind => name === "Stockpile" || name === "Granary" || name === "Armory";
 /**
  * How a spot is chosen. `reserve` (the default): keep off every other building's ground, for
  * spots the harness picks itself. Without it, as find_sites offers spots for the model to choose
@@ -546,7 +549,7 @@ export class TileMap {
    * Stockpile or granary footprints in the region. A stockpile's square starts at a pile, or three
    * tiles before it when a pile of the same square lies there; a granary is one 4×4 building.
    */
-  storageRects(kind: "Stockpile" | "Granary" | "Armory"): Rect[] {
+  storageRects(kind: StorageKind): Rect[] {
     if (kind === "Granary") return this.rectsOfType(STRUCTURE_TYPES.granary);
     if (kind === "Armory") return this.rectsOfType(STRUCTURE_TYPES.armory);
     const piles = this.rectsOfType(STRUCTURE_TYPES.pile);
@@ -832,21 +835,21 @@ export class TileMap {
     return this.distinct(building, found, count, [], options.spaced);
   }
   /**
-   * Spots for another stockpile, nearest `near` first: flush beside a stockpile square, the only
-   * place the game takes one ("Needs to be placed adjacent to the stockpile"), so build_structure
-   * retries a stockpile only there, as expand_storage looks. As there, spots that keep the tile of
-   * open ground around storage come first, then those that do not rather than none. `avoid`:
-   * footprints about to be placed.
+   * Spots for another stockpile, granary or armory, nearest `near` first: flush beside one of its
+   * kind, the only place the game takes one once one stands ("Needs to be placed adjacent to the
+   * granary"), so find_sites lists and build_structure retries them only there, as expand_storage
+   * looks. As there, spots that keep the tile of open ground around storage come first, then those
+   * that do not rather than none. `avoid`: footprints about to be placed.
    */
-  stockpileSitesNear(near: Tile, count = 1, avoid: readonly Footprint[] = []): Site[] {
-    const squares = this.storageRects("Stockpile");
-    const size = footprintOf("Stockpile");
+  storageSitesNear(kind: StorageKind, near: Tile, count = 1, avoid: readonly Footprint[] = []): Site[] {
+    const rects = this.storageRects(kind);
+    const size = footprintOf(kind);
     const distance = (s: Site) => Math.max(Math.abs(s.tile.x - near.x), Math.abs(s.tile.y - near.y));
     for (const spaced of [true, false]) {
-      const found = squares.flatMap((r) => this.sitesBeside("Stockpile", r, 64, undefined, 0, { spaced }))
+      const found = rects.flatMap((r) => this.sitesBeside(kind, r, 64, undefined, 0, { spaced }))
         .filter((s) => !avoid.some((a) => overlaps(a, footprintRect(s.tile, size))))
         .sort((p, q) => distance(p) - distance(q));
-      if (found.length) return this.distinct("Stockpile", found, count, avoid, spaced);
+      if (found.length) return this.distinct(kind, found, count, avoid, spaced);
     }
     return [];
   }

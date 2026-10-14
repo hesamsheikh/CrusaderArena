@@ -491,6 +491,10 @@ function simulatedGame(options: {
   economy?: { gold: number; popularity: number };
   /** Going to a bookmark also ends placement mode (live it keeps it, 2026-10-12). */
   bookmarkLeavesPlacement?: boolean;
+  /** Engine building types by instance id in the tile reads (structure_types). */
+  structureTypes?: Record<string, number>;
+  /** The reader's storage positions and contents (observation.storage). */
+  storage?: Record<string, unknown>;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -517,6 +521,7 @@ function simulatedGame(options: {
       map_name: "m", visible_messages: state.messages, gold: options.economy?.gold ?? 600, population: 2,
       popularity: options.economy?.popularity ?? 90,
       ...(options.buildings ? { buildings: options.buildings } : {}),
+      ...(options.storage ? { storage: options.storage } : {}),
       resources_by_name: { wood_planks: state.wood },
       structures: { count: state.structures, limit: 3999 },
       placement: { action: state.action, sub_action: state.sub },
@@ -595,7 +600,7 @@ function simulatedGame(options: {
         options.tiles!((layer, x, y, v) => {
           if (x >= x0 && y >= y0 && x < x0 + w && y < y0 + h) layers[layer][(y - y0) * w + (x - x0)] = v;
         }, { x: 99 + state.camera, y: 100 });
-        return { x0, y0, w, h, stable: true, layers };
+        return { x0, y0, w, h, stable: true, layers, ...(options.structureTypes ? { structure_types: options.structureTypes } : {}) };
       },
     } : {}),
     mapSummary: async () => ({ size: 200, rows: options.mapRows ?? Array.from({ length: 200 }, () => ".200"), bounds: { x0: 0, y0: 0, x1: 199, y1: 199 } }),
@@ -1341,6 +1346,38 @@ test("find_sites with no spot on the building's own ground in view searches arou
   const { json: built } = await game.run("build_structure", { placements: [{ name: "Iron Mine", tile_x: site.tile_x, tile_y: site.tile_y }] });
   assert.equal(built.placements[0].status, "placed", JSON.stringify(built));
   assert.equal(built.placements[0].view, "moved_to_tile");
+});
+
+test("find_sites offers another granary only flush with the one standing, wherever it is asked", async () => {
+  // The game refuses a second granary anywhere else ("Needs to be placed adjacent to the granary."),
+  // and four 1.6.3 games and a live test placed one where find_sites had said (2026-10-14).
+  const standing = { x1: 100, y1: 98, x2: 103, y2: 101 };
+  const granary = (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+    for (let x = standing.x1; x <= standing.x2; x++) for (let y = standing.y1; y <= standing.y2; y++) set("structure", x, y, 7);
+  };
+  const game = simulatedGame({
+    tiles: granary, structureTypes: { "7": 19 }, buildings: { "19": 1 },
+    storage: { piles: [], granaries: [{ tile: [standing.x1, standing.y1], amount: 40, capacity: 250 }], truncated: false },
+  });
+  // Asked around a tile 60 away: the search moves to the granary.
+  const { json } = await game.run("find_sites", { building: "Granary", tile_x: 160, tile_y: 100, count: 2 });
+  assert.deepEqual([json.searchedAround.tile_x, json.searchedAround.tile_y], [standing.x1, standing.y1], JSON.stringify(json));
+  assert.match(json.searchedAround.why, /must touch one of your granaries/);
+  const sites = allSites(json);
+  assert.equal(sites.length, 2, JSON.stringify(json));
+  for (const s of sites) {
+    const f = footprintRect({ x: s.tile_x, y: s.tile_y }, 4);
+    const touching = f.x1 <= standing.x2 + 1 && standing.x1 <= f.x2 + 1 && f.y1 <= standing.y2 + 1 && standing.y1 <= f.y2 + 1;
+    assert.ok(touching && disjoint(f, standing), JSON.stringify(s));
+  }
+  assert.match(json.note, /flush with your granaries/);
+  // In the view too.
+  const view = await game.run("find_sites", { building: "Granary", count: 1 });
+  assert.match(view.json.searchedAround.why, /must touch one of your granaries/);
+  // With no granary yet, the usual search.
+  const first = simulatedGame({ tiles: () => {} });
+  const { json: plain } = await first.run("find_sites", { building: "Granary", count: 1 });
+  assert.ok(!plain.searchedAround && allSites(plain).length === 1, JSON.stringify(plain));
 });
 
 test("find_sites says when no woodcutter spot has trees in reach: where the nearest grove is, or that the map has none", async () => {

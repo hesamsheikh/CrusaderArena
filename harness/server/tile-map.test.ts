@@ -569,7 +569,7 @@ test("another stockpile is retried only flush with the stockpile, keeping open g
     const touches = r.x1 <= 105 && 100 <= r.x2 + 1 && r.y1 <= 105 && 100 <= r.y2 + 1;
     return touches && !(r.x1 <= 104 && 100 <= r.x2 && r.y1 <= 104 && 100 <= r.y2);
   };
-  const [site] = map.stockpileSitesNear({ x: 108, y: 106 });
+  const [site] = map.storageSitesNear("Stockpile", { x: 108, y: 106 });
   assert.ok(site && flush(site.tile), JSON.stringify(site));
   assert.deepEqual(map.access("Stockpile", site.tile), { ok: true }, "the nearest that keeps a tile from the house");
   // Trees close three sides and a house stands past the fourth: the one flush spot touches it,
@@ -584,9 +584,30 @@ test("another stockpile is retried only flush with the stockpile, keeping open g
     }),
     structure_types: { ...piles(1), "40": STRUCTURE_TYPES.hovel },
   }, camera, frame);
-  const [tight] = crowded.stockpileSitesNear({ x: 107, y: 102 });
+  const [tight] = crowded.storageSitesNear("Stockpile", { x: 107, y: 102 });
   assert.ok(tight && flush(tight.tile), JSON.stringify(tight));
   assert.equal(crowded.access("Stockpile", tight.tile).reason, "touches_storage");
+});
+
+test("another granary or armory is offered only flush with one of its kind", () => {
+  // A granary at 100..103 and an armory at 120..123: the game takes a new one only touching its
+  // kind ("Needs to be placed adjacent to the granary."), so the spots touch it, nearest the asked
+  // tile first, wherever that tile is.
+  const map = new TileMap({
+    ...region((set) => { fill(set, "structure", 100, 100, 103, 103, 5); fill(set, "structure", 120, 100, 123, 103, 6); }),
+    structure_types: { "5": STRUCTURE_TYPES.granary, "6": STRUCTURE_TYPES.armory },
+  }, camera, frame);
+  const touches = (t: { x: number; y: number }, r: { x1: number; y1: number; x2: number; y2: number }) => {
+    const f = footprintRect(t, 4);
+    return f.x1 <= r.x2 + 1 && r.x1 <= f.x2 + 1 && f.y1 <= r.y2 + 1 && r.y1 <= f.y2 + 1 && !(f.x1 <= r.x2 && r.x1 <= f.x2 && f.y1 <= r.y2 && r.y1 <= f.y2);
+  };
+  const granaries = map.storageSitesNear("Granary", { x: 90, y: 115 }, 3);
+  assert.equal(granaries.length, 3);
+  assert.ok(granaries.every((s) => touches(s.tile, { x1: 100, y1: 100, x2: 103, y2: 103 })), JSON.stringify(granaries));
+  const [armory] = map.storageSitesNear("Armory", { x: 130, y: 101 });
+  assert.ok(armory && touches(armory.tile, { x1: 120, y1: 100, x2: 123, y2: 103 }), JSON.stringify(armory));
+  // None of a kind in the area: no spots.
+  assert.deepEqual(new TileMap(region(() => {}), camera, frame).storageSitesNear("Granary", { x: 100, y: 100 }), []);
 });
 
 test("spots beside a building chosen without the open-ground rule are all offered", () => {

@@ -125,8 +125,8 @@ placed or tried (whether given by tile or worked out from the pixel):
 - `not_placed`: nothing happened. The harness then retries at the nearest spots where
   the game's tile data shows the whole footprint free (off oasis grass, stone, iron ore
   and oil unless it is the building's own ground), up to 6 per placement and 12 per
-  call, never onto your other targets in the call; another stockpile only flush with the
-  stockpile, where the game takes one. It does the same when a farm is
+  call, never onto your other targets in the call; another stockpile, granary or armory
+  only flush with one of its kind, where the game takes one. It does the same when a farm is
   refused for its ground or a building is "too close" to the signpost. `at` and
   `offsetTiles` say where it was placed instead; `not_placed` with `retries` means no
   nearby spot worked, so choose other ground. Pass `exact: true` to forbid retries.
@@ -163,8 +163,9 @@ Game rules for placement:
   wheat and hops farm 9; apple orchard and dairy farm 10. Space targets in one call at
   least a footprint apart.
 - A new stockpile must touch an existing stockpile, a new granary the granary, and a new
-  armory the armory: use `expand_storage`. A failed stockpile placement makes the game jump the camera to the
-  existing stockpile.
+  armory the armory: use `expand_storage`, or `find_sites`, which then lists only such
+  spots. A failed stockpile placement makes the game jump the camera to the existing
+  stockpile.
 - Hovels, workshops, food processors, the marketplace, inn and military buildings cannot
   be built within about 12 tiles of the signpost (the wooden board the road leads to).
   Woodcutters, stockpiles, granaries, armories, farms, quarries and mines may be.

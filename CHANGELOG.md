@@ -51,9 +51,12 @@ warnings can end the model's waits.
   view with the game paused, and the game now runs on afterwards, as after an action.
 - Every spot the harness picks, and every `build_structure` target, keeps a tile of open
   ground around stockpiles, as around granaries and armories (`access: touches_storage`);
-  another stockpile may still touch it, and so may the keep. A stockpile target is moved or
-  retried only to spots flush with the stockpile, where the game takes one, as
-  `expand_storage` looks.
+  another stockpile may still touch it, and so may the keep. A stockpile, granary or armory
+  target, once one of its kind stands, is moved or retried only to spots flush with one, where
+  the game takes it, as `expand_storage` looks; and `find_sites` lists only such spots for
+  them, beside the one nearest the asked spot. Its usual search had offered spots the game
+  refused ("Needs to be placed adjacent to the granary."), in four 1.6.3 games and in a live
+  test.
 - They also leave one spot beside the stockpile where another stockpile fits
   (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
   `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,

@@ -415,7 +415,9 @@ between September and October 2026.
   - A screenshot's age counted in real time when there is no game-clock reading.
   - The tile of open ground kept around stockpiles (the keep may touch them), the last
     spot for another stockpile kept free (`blocks_stockpile`), also after a target was
-    refused there, and a stockpile target moved or retried only flush with the stockpile.
+    refused there, and a stockpile, granary or armory target moved or retried only flush
+    with one of its kind; `find_sites` listing only such spots for them, beside the one
+    nearest the asked spot, from the reader's storage positions.
   - [Routes to the keep](tools.md#build) (`no_route`, `cuts_route`): walled-in spots
     refused, a gap, the courtyard or the read area's edge giving a way, water and
     mountains closing one, a footprint on a building's only way in refused, churches
