@@ -247,7 +247,10 @@ listens on the network. The window bridge:
 - exposes only finite clicks, drags and key presses, never a held key. The runner types a
   save's name as one run of up to 200 allowed keys in one request, each held 70 ms with
   50 ms between them, after one such check for the whole run; the agent's tools have no
-  runs of keys.
+  runs of keys;
+- answers one request at a time, in order. The host gives each 12 seconds (a run of keys
+  0.25 seconds more a key) from when the bridge gets to it, so its status line and
+  keepalive ping can wait behind a long run, and ends the connection when one runs out.
 
 This bridge is written for the tested GNOME, Xwayland and Proton setup and refuses
 states it does not recognise. It limits what the tools can do; it is not a sandbox

@@ -144,6 +144,38 @@ test("a run of keys goes to the bridge in one request, each key announced, with 
   assert.equal(calls.filter((c) => c.op === "action").length, 1, "nothing sent for a refused run");
 });
 
+test("a request's time starts when the bridge gets to it, so the status line behind a save's run of keys does not time out", async (t) => {
+  // The bridge answers one request at a time, in order. GLM 5.3 Flash's and GPT-6 Luna's saves
+  // (live, 2026-10-14) typed about 100 keys in one 13 s request; the status line the host sends
+  // every second waited behind it past its own 12 s, and the timeout disconnected the game.
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const closed: string[] = [];
+  const device = new GameDevice(() => {}, (reason) => closed.push(reason));
+  const sent: { id: string; op: string }[] = [];
+  Object.assign(device, {
+    connected: true,
+    child: { stdin: { writable: true, write: (line: string) => void sent.push(JSON.parse(line)), end() {} }, kill() {} },
+  });
+  const rpc = (op: string, timeoutMs?: number): Promise<unknown> => (device as any).rpc(op, {}, timeoutMs);
+  const answer = (op: string) => device.bridgeLine(JSON.stringify({ id: sent.find((s) => s.op === op)!.id, result: { op } }));
+  const keys = rpc("action", 12_000 + 100 * 250);
+  t.mock.timers.tick(500);
+  const status = rpc("status");
+  t.mock.timers.tick(13_000);
+  assert.deepEqual(closed, [], "the status line waits for the keys");
+  answer("action");
+  t.mock.timers.tick(100);
+  answer("status");
+  assert.deepEqual([await keys, await status], [{ op: "action" }, { op: "status" }]);
+  // A request the bridge never answers still times out, 12 s after the bridge gets to it.
+  const lost = rpc("ping").catch((e: Error) => e.message);
+  t.mock.timers.tick(11_900);
+  assert.deepEqual(closed, []);
+  t.mock.timers.tick(200);
+  assert.equal(await lost, "Game request timed out; reconnect before retrying.");
+  assert.deepEqual(closed, ["Game bridge timed out."]);
+});
+
 /** A device whose bridge answers every request; `sent` lists the requests in order. */
 function bridged() {
   const device = new GameDevice(() => {}, () => {});

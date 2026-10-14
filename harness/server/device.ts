@@ -102,12 +102,14 @@ export class GameDevice {
   lastGuardSample: GuardRecord | undefined;
   private guardListeners = new Set<(record: GuardRecord) => void>();
   private inputListeners = new Set<(input: GameInput) => void>();
+  /** Requests sent to the bridge and not yet answered, oldest first; only the oldest's time runs (startNext). */
   private pending = new Map<
     string,
     {
       resolve: (x: any) => void;
       reject: (e: Error) => void;
-      timer: NodeJS.Timeout;
+      timeoutMs: number;
+      timer?: NodeJS.Timeout;
     }
   >();
   private frames = new Map<string, Frame>();
@@ -147,23 +149,7 @@ export class GameDevice {
     this.disconnect();
     const child = this.command("game-window.py");
     this.child = child;
-    createInterface({ input: child.stdout }).on("line", (line) => {
-      try {
-        const msg = JSON.parse(line);
-        if (msg.event === "local_stop") {
-          this.cancelQueued();
-          this.onLocalStop();
-          return;
-        }
-        const p = this.pending.get(msg.id);
-        if (!p) return;
-        clearTimeout(p.timer);
-        this.pending.delete(msg.id);
-        msg.error ? p.reject(new Error(msg.error)) : p.resolve(msg.result);
-      } catch {
-        /* Ignore non-protocol diagnostics. */
-      }
-    });
+    createInterface({ input: child.stdout }).on("line", (line) => this.bridgeLine(line));
     let diagnostics = "";
     child.stderr.on("data", (b) => {
       diagnostics = (diagnostics + b.toString()).slice(-1600);
@@ -317,6 +303,25 @@ export class GameDevice {
       });
     });
   }
+  /** Interpret one line from the bridge (game-window.py): an answer to a request, or a local stop. */
+  bridgeLine(line: string) {
+    try {
+      const msg = JSON.parse(line);
+      if (msg.event === "local_stop") {
+        this.cancelQueued();
+        this.onLocalStop();
+        return;
+      }
+      const p = this.pending.get(msg.id);
+      if (!p) return;
+      clearTimeout(p.timer);
+      this.pending.delete(msg.id);
+      this.startNext();
+      msg.error ? p.reject(new Error(msg.error)) : p.resolve(msg.result);
+    } catch {
+      /* Ignore non-protocol diagnostics. */
+    }
+  }
   /** Interpret one monitor-memory.py JSONL record. */
   guardLine(line: string) {
     let record: GuardRecord;
@@ -401,14 +406,26 @@ export class GameDevice {
       if (!this.child?.stdin.writable)
         return reject(new Error("Connect the game first."));
       const id = randomUUID();
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error("Game request timed out; reconnect before retrying."));
-        this.fail("Game bridge timed out.");
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timeoutMs });
+      this.startNext();
       this.child.stdin.write(JSON.stringify({ id, op, ...extra }) + "\n");
     });
+  }
+  /**
+   * Starts the time of the request the bridge is on: the oldest unanswered one. The bridge answers
+   * one request at a time, in order, so a request's time starts when the one ahead of it is
+   * answered. Counted from sending, the status line sent every second timed out behind a save's
+   * 13 s run of keys, and the timeout disconnected the game in the middle of the save (live, 2026-10-14).
+   */
+  private startNext() {
+    const head = this.pending.entries().next();
+    if (head.done || head.value[1].timer) return;
+    const [id, p] = head.value;
+    p.timer = setTimeout(() => {
+      this.pending.delete(id);
+      p.reject(new Error("Game request timed out; reconnect before retrying."));
+      this.fail("Game bridge timed out.");
+    }, p.timeoutMs);
   }
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const epoch = this.epoch;
@@ -564,7 +581,7 @@ export type GameHotkey =
 export type HostKey = "P" | "+" | "-";
 
 export type AllowedKey = (typeof allowedKeys)[number];
-/** Real time the bridge may take for one request before the host gives up on the connection. */
+/** Real time the bridge may take for one request, from when it gets to it, before the host gives up on the connection. */
 const BRIDGE_TIMEOUT_MS = 12_000;
 /** Most keys in one run (tools/ubuntu/game-window.py checks the same). */
 export const KEY_RUN_LIMIT = 200;
