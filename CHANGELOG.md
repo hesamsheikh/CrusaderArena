@@ -80,6 +80,14 @@ around stockpiles change what models can build where.
   the key too, from a preload their host starts with.
 - The run overlay shows on rounds played on versions made before it (1.5.6 and earlier):
   the runner copies its overlay to the game machine and feeds it from the round's host.
+- The runner rebuilds the game machine's reader unless its programs were built from the
+  reader sources of the version a run plays, which the game machine now records beside
+  them, and touches every source first. It used to rebuild only when it copied a source,
+  and Ninja then went by file times, which a copied file keeps from its checkout: after a
+  round on 1.5.0 rebuilt the probe on 2026-10-13, the 1.6.3 games that followed ran 1.5.0's
+  probe. Its map summary drew cacti as trees, so `map_overview` listed cactus groves on
+  Large Barren Desert and Oasis by the Sea; the desert has no trees, and woodcutters built
+  by its groves cut nothing.
 
 ## [1.6.3] - 2026-10-13
 

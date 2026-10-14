@@ -43,7 +43,8 @@ reader), CMake and Python with `apt` (asks for `sudo`), runs the native tests an
 builds the reader and its test programs. Later builds can drop `--install`. It does
 not touch Steam, the game or its Proton prefix. After this first setup, `npm run
 episodes` keeps the copy's helpers and reader sources in step with the version each run
-plays and rebuilds the reader when they change (see [Rounds](benchmark.md#rounds)).
+plays and rebuilds the reader unless it was built from those sources (see
+[Versions](benchmark.md#versions)).
 
 ```bash
 sudo apt install python3-pil xterm

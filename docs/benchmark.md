@@ -119,9 +119,13 @@ retried) keeps the version and is recorded as a relock.
   change the fingerprint.
 - **The game machine** runs its own copy of `tools/ubuntu/`, `src/` and the CMake files.
   Before every run `npm run episodes` compares them, file by file, with the checkout that
-  plays the run, copies over the ones that differ and, when the reader's sources are
-  among them, rebuilds the Windows programs the game runs (`build/ubuntu-windows`). A
-  series still refuses to start if they differ afterwards.
+  plays the run and copies over the ones that differ. It then rebuilds the Windows
+  programs the game runs (`build/ubuntu-windows`) unless they were built from the
+  checkout's reader sources, which the game machine records beside them
+  (`reader-sources.sha256`, a digest of every source's path and contents). Before a
+  rebuild it touches every source, since Ninja goes by file times and a copied file keeps
+  the time it had in its checkout. A series still refuses to start if the files differ
+  afterwards.
 - `npm run episodes` refuses code without a version unless `--unversioned`, for trials.
   `npm run report` shows each run's version.
 

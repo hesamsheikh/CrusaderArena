@@ -2,7 +2,8 @@
  * Playing a round's version (rounds.ts) from its commit, and keeping the game machine's copy in
  * step with whichever checkout plays: a git worktree under `.versions/` with this checkout's
  * private and runtime files linked in, that version's host on a spare port, and the game
- * machine's reader and helper files copied over and the reader rebuilt when they differ.
+ * machine's reader and helper files copied over when they differ and the reader rebuilt unless
+ * it was built from those sources.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -152,6 +153,9 @@ export function gameMachineFiles(dir: string) {
   return new Map(files.map((file) => [file, createHash("sha256").update(readFileSync(path.join(dir, file))).digest("hex")]));
 }
 
+/** A command on the game machine, with its exit code and output: ssh, or a fake game machine in tests. */
+export type GameShell = (command: string, input?: Buffer) => Promise<{ code: number; out: string }>;
+
 function ssh(command: string, input?: Buffer) {
   const { host } = gameHost();
   return new Promise<{ code: number; out: string }>((resolve, reject) => {
@@ -167,43 +171,80 @@ function ssh(command: string, input?: Buffer) {
 }
 
 /** The checkout's game-machine files (or those of `only`) whose copy on the game machine is missing or different. */
-export async function gameMachineDifferences(dir: string, only?: string[]) {
+export async function gameMachineDifferences(dir: string, only?: string[], shell: GameShell = ssh) {
   const local = gameMachineFiles(dir);
   const { root: remoteRoot } = gameHost();
   const files = [...local.keys()].filter((file) => !only || only.includes(file));
-  const { out } = await ssh(`cd ${quote(remoteRoot)} && sha256sum -- ${files.map(quote).join(" ")} 2>/dev/null; true`);
+  const { out } = await shell(`cd ${quote(remoteRoot)} && sha256sum -- ${files.map(quote).join(" ")} 2>/dev/null; true`);
   const remote = new Map(out.split("\n").filter((line) => /^[0-9a-f]{64}  /.test(line)).map((line) => [line.slice(66), line.slice(0, 64)] as const));
   return files.filter((file) => remote.get(file) !== local.get(file));
 }
 
 /**
- * Copies the checkout's game-machine files that differ to the game machine and, when the reader's
- * sources are among them, rebuilds the Windows programs the game runs (build/ubuntu-windows).
- * Returns the files copied.
+ * Where the game machine records which reader sources its Windows programs were built from
+ * (readerDigest). Ninja rebuilds by file times alone, and tar gives a copied file the time it had in
+ * the checkout it came from, so a version's sources older than programs built from another version's
+ * left those programs in place: on 2026-10-13 a round on 1.5.0 rebuilt crusader_probe from 1.5.0's
+ * sources, and the 1.6.3 games after it ran that probe ("ninja: no work to do"), whose map summary
+ * drew cacti as trees.
  */
-export async function syncGameMachine(dir: string, log: (line: string) => void) {
-  const differ = await gameMachineDifferences(dir);
-  if (!differ.length) return differ;
-  log(`Game machine: copying ${differ.length} file(s) from ${path.relative(root, dir) || "this checkout"}: ${differ.slice(0, 6).join(", ")}${differ.length > 6 ? ", …" : ""}`);
-  await copyToGameMachine(dir, differ);
+export const READER_STAMP = "build/ubuntu-windows/reader-sources.sha256";
+
+/** The reader's sources among a checkout's game-machine files (gameMachineFiles): all but the helpers. */
+export const readerSources = (files: Map<string, string>) => [...files.keys()].filter((file) => !file.startsWith("tools/ubuntu/"));
+
+/** One digest of the reader's sources: each one's path and SHA-256. */
+export function readerDigest(files: Map<string, string>) {
+  return createHash("sha256").update(readerSources(files).map((file) => `${files.get(file)}  ${file}\n`).join("")).digest("hex");
+}
+
+/**
+ * The game machine's command that rebuilds its Windows programs (build/ubuntu-windows) from `sources`
+ * and records `digest` as what they were built from. Every source is touched first, so Ninja rebuilds
+ * whatever times the copies kept; the record is removed first and written only after a whole build.
+ */
+export function rebuildCommand(remoteRoot: string, sources: string[], digest: string) {
+  return `cd ${quote(remoteRoot)} && rm -f ${READER_STAMP} && touch -c -- ${sources.map(quote).join(" ")} && mkdir -p build`
+    + " && cmake -S . -B build/ubuntu-windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/windows-mingw.cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON > build/sync-build.log 2>&1"
+    + " && cmake --build build/ubuntu-windows --parallel 2 >> build/sync-build.log 2>&1"
+    + `; s=$?; tail -5 build/sync-build.log; [ $s -eq 0 ] && echo ${digest} > ${READER_STAMP}; exit $s`;
+}
+
+/**
+ * Copies the checkout's game-machine files that differ to the game machine, and rebuilds the Windows
+ * programs the game runs (build/ubuntu-windows) unless they were built from the checkout's reader
+ * sources (READER_STAMP). Returns the files copied.
+ */
+export async function syncGameMachine(dir: string, log: (line: string) => void, shell: GameShell = ssh) {
+  const differ = await gameMachineDifferences(dir, undefined, shell);
+  if (differ.length) {
+    log(`Game machine: copying ${differ.length} file(s) from ${path.relative(root, dir) || "this checkout"}: ${differ.slice(0, 6).join(", ")}${differ.length > 6 ? ", …" : ""}`);
+    await copyToGameMachine(dir, differ, shell);
+  }
   const { root: remoteRoot } = gameHost();
-  if (differ.some((file) => !file.startsWith("tools/ubuntu/"))) {
-    log("Game machine: rebuilding the reader (build/ubuntu-windows)");
-    const r = quote(remoteRoot);
-    const built = await ssh(`cd ${r} && mkdir -p build && cmake -S . -B build/ubuntu-windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/windows-mingw.cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON > build/sync-build.log 2>&1 && cmake --build build/ubuntu-windows --parallel 2 >> build/sync-build.log 2>&1; s=$?; tail -5 build/sync-build.log; exit $s`);
+  const files = gameMachineFiles(dir);
+  const digest = readerDigest(files);
+  const { out } = await shell(`cat ${quote(`${remoteRoot}/${READER_STAMP}`)} 2>/dev/null; true`);
+  const stamp = /^[0-9a-f]{64}$/m.exec(out)?.[0];
+  if (stamp !== digest) {
+    const why = differ.some((file) => readerSources(files).includes(file)) ? ""
+      : stamp ? ": its programs were built from other sources" : ": no record of the sources its programs were built from";
+    log(`Game machine: rebuilding the reader (build/ubuntu-windows)${why}`);
+    const built = await shell(rebuildCommand(remoteRoot, readerSources(files), digest));
     if (built.code !== 0) throw new Error(`Rebuilding the reader failed: ${built.out.trim().slice(-500)}`);
   }
-  const left = await gameMachineDifferences(dir);
+  if (!differ.length) return differ;
+  const left = await gameMachineDifferences(dir, undefined, shell);
   if (left.length) throw new Error(`The game machine still differs after copying: ${left.join(", ")}`);
   return differ;
 }
 
 /** Copies `files` from the checkout at `dir` to the same paths on the game machine. */
-async function copyToGameMachine(dir: string, files: string[]) {
+async function copyToGameMachine(dir: string, files: string[], shell: GameShell = ssh) {
   const tar = spawnSync("tar", ["-C", dir, "-cf", "-", ...files], { maxBuffer: 256 * 1024 * 1024 });
   if (tar.status !== 0) throw new Error(`tar failed: ${tar.stderr.toString().trim()}`);
   const { root: remoteRoot } = gameHost();
-  const copied = await ssh(`mkdir -p ${quote(remoteRoot)} && tar -C ${quote(remoteRoot)} -xf -`, tar.stdout);
+  const copied = await shell(`mkdir -p ${quote(remoteRoot)} && tar -C ${quote(remoteRoot)} -xf -`, tar.stdout);
   if (copied.code !== 0) throw new Error(`Copying to the game machine failed: ${copied.out.trim().slice(-300)}`);
 }
 

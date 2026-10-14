@@ -381,6 +381,13 @@ between September and October 2026.
     (reproduced with a reader sample that lags the right-click).
   - The episode runner: the video rendered in the background, one at a time behind a lock;
     the last interview left to the host; the save name typed on one capture.
+  - The runner rebuilding the game machine's reader unless its programs were built from
+    the reader sources of the version a run plays (`version-checkout.test.ts`, with a fake
+    game machine; the build command also run in a shell with a stand-in `cmake`). The
+    1.6.3 games from 2026-10-13 21:39 UTC ran a probe built from 1.5.0's sources, read on
+    the game machine on 2026-10-14: its sources were 1.6.3's, its `crusader_probe.exe`
+    dated from a 1.5.0 round 11 minutes before, and the sync's build said "ninja: no work
+    to do". The reader DLL was 1.6.2's build, whose sources 1.6.3 shares.
 
 - The shims that bring two harness changes to rounds played on earlier versions
   (`cache-key.test.ts`, `overlay-feed.test.ts`, `test_overlay.py`; both also used in a
