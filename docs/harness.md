@@ -163,7 +163,14 @@ use. Treat the runs folder as private anyway: it holds full screenshots and mode
 
 With **Record video** on (or `--record` for episodes), the game machine records the
 game window while the agent acts, and the host renders an edited MP4 when the run
-ends. A wait played fast shows in the video as faster idle play.
+ends. The episode runner renders after the scorecard instead, in the background:
+`tools/video/render-queue.py` takes a lock on `harness/runtime/render.lock`, so renders
+on this machine run one at a time across runners, then renders and compacts at low
+priority (`nice 15`), writing its output to `<run>/render.log` and its outcome to the
+series' `runner.log`. `<run>/render.pending` exists until it is done, and
+`npm run package` refuses the run meanwhile. The runner does not wait for it, so a queue
+of runners starts the next game while the last one renders. A wait played fast shows in
+the video as faster idle play.
 
 - **Recording.** A separate SSH session captures the game window only, scaled to
   1600 × 900: 10 frames per second for 2.5 seconds after each input, 4 otherwise.

@@ -19,7 +19,10 @@
  *
  * After each episode that counts, once it is scored and the game saved and closed, the host
  * interviews the agent about its game in the conversation it played in (interview.ts); the
- * transcript goes to interview.md in the run's folder. --no-interview leaves it out.
+ * transcript goes to interview.md in the run's folder. --no-interview leaves it out. The next
+ * episode's game loads meanwhile; the last episode's interview is left to the host, so the runner
+ * exits without waiting for it, and a runner that finds one still running waits for it before its
+ * agent run (the host runs one at a time).
  *
  * --idle measures the do-nothing baseline: no agent, the game runs untouched at the benchmark's
  * speed for the same game time, then the scorecard is read.
@@ -31,9 +34,10 @@
  *
  * --dry-run does everything except the agent run (no model cost); --keep-game leaves
  * the game running (paused) afterwards for manual inspection; --record records the game
- * while the agent acts and renders video.mp4 into the run folder after the scorecard.
- * --no-fast-waits plays every wait at the benchmark speed instead of the game's top speed (fast
- * waits: game-speed.ts).
+ * while the agent acts and, after the scorecard, renders video.mp4 into the run folder in the
+ * background (tools/video/render-queue.py: one render at a time on this machine, at low priority;
+ * the runner does not wait for it, so the next runner can start). --no-fast-waits plays every wait
+ * at the benchmark speed instead of the game's top speed (fast waits: game-speed.ts).
  */
 import "dotenv/config";
 import { spawn } from "node:child_process";
@@ -45,7 +49,7 @@ import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
 import { idleBaseline } from "./baselines.js";
 import { resultsMarkdown, runResults, type RunKind } from "./results.js";
-import { renderVideo, type VideoResult } from "./video.js";
+import { renderInBackground } from "./video.js";
 import { saveGame, type GameSave } from "./game-save.js";
 import { setGameSpeed } from "./game-speed.js";
 import { MENU_PROBES, menuScreen, type MenuScreen } from "./menu-screen.js";
@@ -99,7 +103,8 @@ const SETTING_FLAGS = ["save", "map", "benchmark", "model", "prompt", "prompt-fi
 type Plan = { save: string; map?: string; benchmark: string; prompt: string; profileId?: string; config: RunConfig };
 
 const base = `http://127.0.0.1:${opts.port}/api/`;
-const renders: Promise<VideoResult | null>[] = [];
+/** Video renders this runner started in the background (renderInBackground). */
+let backgroundRenders = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The series' runner.log, once there is one: Ctrl-C also ends a `| tee`. */
 let logFile: string | undefined;
@@ -544,6 +549,7 @@ async function playEpisode(
       lastGood = humanGame.lastGood;
     } else if (!opts["dry-run"]) {
       checkStop();
+      await waitForHostInterview();
       const { runId } = await api<{ runId: string }>("agent/run", {
         benchmarkType: plan.benchmark,
         modelId: plan.profileId,
@@ -591,7 +597,11 @@ async function playEpisode(
     let gameSave: GameSave | undefined;
     if ((run || humanGame) && !stopRequested && final.stats?.status === "ok" && final.stats.observation?.paused) {
       gameSave = await saveGame({
-        key: (key) => act({ type: "key", key: key as never }),
+        // One capture for each run of keys, as loadSave types the save name.
+        keys: async (keys) => {
+          const shared: { frame?: Frame } = {};
+          for (const key of keys) await send(() => ({ type: "key", key: key as never }), shared);
+        },
         click: clickScaled,
         settle: (seconds) => waitForStillScreen(seconds).then(() => {}),
         sleep,
@@ -627,9 +637,13 @@ async function playEpisode(
       writeFileSync(path.join(dir, "results.md"), resultsMarkdown(results));
       log(`Results: ${path.join(dir, "results.md")}`);
     } else log("No results: the game was never read.");
-    // Renders run one at a time on this Mac, in the background of the next episode.
-    if (run?.config?.recordVideo && run.progress?.recording?.frames)
-      renders.push(renderVideo(dir, (text) => log(`Episode ${n}: ${text}`)));
+    // Rendered in the background, one render at a time on this Mac and at low priority, while
+    // the next episode (or the next runner's) plays; its lines join this runner.log when done.
+    if (run?.config?.recordVideo && run.progress?.recording?.frames) {
+      renderInBackground(dir, logFile, `Episode ${n}: `);
+      backgroundRenders++;
+      log(`Episode ${n}: video render queued in the background (${path.join(dir, "render.log")})`);
+    }
     return { card, run, gameSave };
   } finally {
     await api("disconnect", {}).catch(() => {});
@@ -763,9 +777,9 @@ const INTERVIEW_MINUTES = 30;
  * game in the conversation it played in, now that the episode is scored and the game saved and
  * closed. Its outcome is logged and never changes the episode's result; this never throws, so
  * runSeries can run it alongside the next episode's prepareEpisode without a failed interview
- * failing the series.
+ * failing the series. Setting `follow.detached` stops following it and leaves it to the host.
  */
-async function interview(runId: string, series: RunSeries) {
+async function interview(runId: string, series: RunSeries, follow: { detached: boolean } = { detached: false }) {
   try {
     await api("agent/interview", { runId, series });
   } catch (error) {
@@ -777,6 +791,7 @@ async function interview(runId: string, series: RunSeries) {
   let answered = 0;
   for (;;) {
     await sleep(2000);
+    if (follow.detached) return;
     const current = (await api<State>("state").catch(() => undefined))?.interview;
     if (current?.runId === runId) {
       if (current.status !== "running") {
@@ -800,6 +815,34 @@ async function interview(runId: string, series: RunSeries) {
       stopSent = true;
       deadline = Date.now() + 60_000;
     }
+  }
+}
+
+/**
+ * Waits while the host at `url` is still interviewing an earlier run (a runner leaves its last
+ * interview to the host: runSeries), since the host refuses an agent run until it ends; one still
+ * running after INTERVIEW_MINUTES is stopped.
+ */
+async function waitForHostInterview(url = base, stoppable = true) {
+  const deadline = Date.now() + INTERVIEW_MINUTES * 60_000;
+  let logged = false;
+  for (;;) {
+    if (stoppable) checkStop();
+    const state = await fetch(url + "state").then((res) => res.json() as Promise<State>).catch(() => undefined);
+    const current = state?.interview;
+    if (current?.status !== "running") return;
+    if (!logged) {
+      log(`Waiting for the host to finish the interview of run ${current.runId.slice(0, 8)}`);
+      logged = true;
+    }
+    if (Date.now() > deadline) {
+      log(`That interview is still running after ${INTERVIEW_MINUTES} minutes; stopping it.`);
+      await fetch(url + "agent/stop", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Crusader-Client": "dashboard" }, body: "{}",
+      }).catch(() => {});
+      return;
+    }
+    await sleep(2000);
   }
 }
 
@@ -879,9 +922,11 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
   // An infrastructure failure is run again once at once; a second one pauses the series.
   let retried = false;
   // The previous counted episode's interview (interview.ts), left running (never awaited) below
-  // so the next episode's game can load alongside it; joined before the next agent run, a pause
-  // or the series' end. interview() never throws, so a failed interview cannot fail the series.
+  // so the next episode's game can load alongside it; joined before the next agent run or a
+  // pause, and at the series' end left to the host (below). interview() never throws, so a failed
+  // interview cannot fail the series.
   let pendingInterview: Promise<void> | undefined;
+  let following: { detached: boolean } | undefined;
   const waitInterview = async () => {
     if (!pendingInterview) return;
     await pendingInterview;
@@ -939,7 +984,8 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     log(`Episode ${n}, attempt ${attempt}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`);
     // Left running: see pendingInterview above.
     if (counts(result) && result.run && !opts["no-interview"]) {
-      pendingInterview = interview(result.run, { id: record.id, episode: n, episodes: record.episodes, ...(attempt > 1 ? { attempt } : {}) });
+      following = { detached: false };
+      pendingInterview = interview(result.run, { id: record.id, episode: n, episodes: record.episodes, ...(attempt > 1 ? { attempt } : {}) }, following);
       pendingInterview.catch(() => {});
     }
     if (gameSave?.benchmarkSaveChanged) {
@@ -968,7 +1014,14 @@ async function runSeries(state: State, record: SeriesRecord, resuming: boolean) 
     pause(result.outcome === "stopped" ? `episode ${n}: ${result.reason}` : `episode ${n} failed twice (${result.reason ?? result.outcome})`);
     break;
   }
-  await waitInterview();
+  // The last episode's interview needs only the host and the model API: it is left to the host,
+  // so this runner can exit and a queued one start its game; that one waits for it before its
+  // agent run (waitForHostInterview).
+  if (pendingInterview && following) {
+    following.detached = true;
+    pendingInterview = undefined;
+    log("The interview continues on the host; its answers go to interview.md in the run folder.");
+  }
   if (prepared) await abandonPrepared(prepared.ready);
   if (nextEpisode(record) === null) {
     record.status = "completed";
@@ -1023,6 +1076,8 @@ async function playElsewhere(round: Round) {
     return await new Promise<number>((resolve) => child.on("close", (code) => resolve(code ?? 1)));
   } finally {
     stopFeed?.();
+    // A round's runner may leave its last interview to its host, which stopping it would end.
+    await waitForHostInterview(`http://127.0.0.1:${port}/api/`, false);
     await stopHost(host);
     log(`${round.version} host stopped`);
   }
@@ -1098,10 +1153,8 @@ async function main() {
       if (decision.startsRound) recordRound(state, plan.benchmark, record);
     }
   }
-  if (renders.length) {
-    log(`Waiting for ${renders.length} video render(s)`);
-    await Promise.all(renders);
-  }
+  if (backgroundRenders)
+    log(`${backgroundRenders} video render(s) go on in the background; each run folder's render.log follows it, and its lines join this log.`);
 }
 
 main().catch((error) => {

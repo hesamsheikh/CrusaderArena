@@ -73,7 +73,8 @@ machine listens on the network.
    way out and saves that view too, as a picture of what the agent built.
 6. **Afterwards.** Every message, tool call, screenshot and reading is on disk. A
    recorded run can be rendered into a video. Unattended episodes
-   (`npm run episodes`) also write a scorecard.
+   (`npm run episodes`) also write a scorecard, then render the video in the background
+   while the next run starts.
 
 ## Time is game time
 

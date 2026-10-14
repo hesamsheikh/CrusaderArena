@@ -3,7 +3,12 @@ export type GameSave = { name: string; file?: string; bytes?: number; sha256?: s
 
 /** The runner's game input and the game machine's save helper (tools/ubuntu/game-session.py). */
 export type SaveIo = {
-  key: (key: string) => Promise<unknown>;
+  /**
+   * Keys pressed in order. They carry no coordinates, so the runner sends a whole run on one
+   * capture of the window (a fresh screenshot before each of the ~100 save-name keys made saving
+   * take 1.5 to 3.5 minutes, 2026-10-13).
+   */
+  keys: (keys: string[]) => Promise<unknown>;
   /** A click in the 1920 × 1080 menu layout, scaled to the window. */
   click: (x: number, y: number) => Promise<unknown>;
   /** Wait until the screen stops changing, up to `seconds`. */
@@ -32,7 +37,7 @@ export async function saveGame(io: SaveIo, name: string, benchmarkSave: string, 
     let attempts = 0;
     while (true) {
       attempts++;
-      await io.key("Escape"); // Game Options
+      await io.keys(["Escape"]); // Game Options
       await io.sleep(1500);
       await io.click(958, 298); // Save
       await io.settle(15);
@@ -42,9 +47,7 @@ export async function saveGame(io: SaveIo, name: string, benchmarkSave: string, 
       // Barren Desert benchmark start" kept its last two letters, "rt", after the new name, live
       // 2026-10-11). Move to the end first, then clear the whole name.
       const clear = benchmarkSave.length + 5;
-      for (let i = 0; i < clear; i++) await io.key("ArrowRight");
-      for (let i = 0; i < clear; i++) await io.key("Backspace");
-      for (const key of keys) await io.key(key);
+      await io.keys([...Array<string>(clear).fill("ArrowRight"), ...Array<string>(clear).fill("Backspace"), ...keys]);
       await io.sleep(400);
       await io.click(474, 742); // Save button; the dialog and the menu close
       await io.sleep(3000);

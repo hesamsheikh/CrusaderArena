@@ -340,6 +340,12 @@ class PackageTest(Fixture):
         self.assertEqual((row['valid'], row['invalid']), (False, ['ended by wall_limit', 'final pause not confirmed']))
         self.assertEqual((row['cost_usd'], row['cost_source']), (0.002, 'prices'))
 
+    def test_a_run_whose_video_is_still_rendering_is_a_problem(self):
+        folders = self.make_series()
+        (self.runs / folders[0] / 'render.pending').write_text('')
+        self.assertIn('episode 1: the video is still rendering (render.pending; render.log follows it)',
+                      self.package().manifest['problems'])
+
     def test_patches_of_one_minor_version_compare_and_share_a_folder(self):
         folders = self.make_series()
         path = self.runs / folders[1] / 'run.json'

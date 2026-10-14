@@ -289,6 +289,10 @@ def check_run(run_dir: Path, run: dict, row: dict | None, outcome: str | None = 
             problems.append(f'the run ended with "{row.get("ended")}", not its game-time budget')
         if episode.get('source') != 'final':
             problems.append(f'the score is from "{episode.get("source")}", not a final reading')
+    # The episode runner renders in the background (tools/video/render-queue.py): until it is done
+    # video.mp4 may be missing or half written, and the recording not yet compacted.
+    if (run_dir / 'render.pending').exists():
+        problems.append('the video is still rendering (render.pending; render.log follows it)')
     for name in REQUIRED:
         if name != 'episode.json' and not (run_dir / name).is_file():
             problems.append(f'no {name}' + (' (record the run: npm run episodes -- --record)' if name == 'video.mp4' else ''))

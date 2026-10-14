@@ -283,7 +283,11 @@ episodes are independent games of the same save; `--playbook` makes them a
    after every save, puts the copy back if it changed, and then pauses the series. A
    failed save does not affect the score; `game_save` in `episode.json` records the
    name and file, or the error. The `.sav` files are not published.
-6. Disconnects and closes the game. With `--record`, renders the run video.
+6. Disconnects and closes the game. With `--record`, starts the run video's render in the
+   background (`tools/video/render-queue.py`): one render at a time on this machine, at low
+   priority, with its output in the run folder's `render.log` and its outcome added to
+   `runner.log`. The runner does not wait for it, and `render.pending` marks the run folder
+   until it is done (packaging refuses the run meanwhile).
 7. If the episode counts (see below), [interviews](#the-interview) the agent about it.
 
 When an episode counts and there is a next one, step 7's interview and the next episode's
@@ -293,6 +297,11 @@ ends. The next episode's agent run (step 3) still waits for the interview, since
 refuses a second run while one is in progress. A stop, a stale dashboard or a changed benchmark
 save (step 5) between episodes still waits for the interview and closes a game the series ends
 up not playing after all.
+
+The last episode's interview is left to the host: the runner exits without waiting for it, so a
+queue of runners starts the next game meanwhile, and a runner that finds an interview still
+running waits for it before its agent run. A runner for a round on an earlier version waits for
+its host's interview before stopping that host.
 
 Each episode ends in one of four ways ([series.ts](../harness/server/series.ts)):
 
@@ -345,7 +354,7 @@ npm run episodes -- --save "Oasis by the Sea-1" --map "Oasis by the Sea" \
 | `--context-budget` | 120000 | Working context budget in tokens |
 | `--episodes` | 3 (1 with `--human`) | Episodes in the series, one after another, each with a fresh game launch |
 | `--playbook` | off | Run the episodes as a [learning series](#learning-series): the playbook carries over |
-| `--record` | off | Record the run and render a video |
+| `--record` | off | Record the run and render a video (in the background, after the scorecard) |
 | `--no-fast-waits` | off | Play every wait at the benchmark speed instead of the game's top speed ([fast waits](how-it-works.md#fast-waits)) |
 | `--resume` | | Continue a paused series by its ID, with its own settings |
 | `--unversioned` | off | Run although the code has no [benchmark version](#versions) or the game machine's copy differs, and ignore [rounds](#rounds); for trials only |

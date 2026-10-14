@@ -14,15 +14,20 @@ function machine(options: { typing?: boolean; existing?: string[]; backupMatches
   const calls: string[] = [];
   const written: Record<string, Buffer> = {};
   let dialogs = 0;
+  // Calls to io.keys: the runner sends each run of keys on one capture of the window.
+  let runs = 0;
   const io: SaveIo = {
-    key: async (key) => {
-      calls.push(key);
-      if (options.typing === false) return;
-      const insert = (c: string) => { field = field.slice(0, cursor) + c + field.slice(cursor); cursor++; };
-      if (key === "Backspace") { if (cursor > 0) { field = field.slice(0, cursor - 1) + field.slice(cursor); cursor--; } }
-      else if (key === "ArrowRight") cursor = Math.min(field.length, cursor + 1);
-      else if (key === "Space") insert(" ");
-      else if (key.length === 1 && !(dialogs <= (options.lettersLostIn ?? 0))) insert(key.toLowerCase());
+    keys: async (keys) => {
+      runs++;
+      for (const key of keys) {
+        calls.push(key);
+        if (options.typing === false) continue;
+        const insert = (c: string) => { field = field.slice(0, cursor) + c + field.slice(cursor); cursor++; };
+        if (key === "Backspace") { if (cursor > 0) { field = field.slice(0, cursor - 1) + field.slice(cursor); cursor--; } }
+        else if (key === "ArrowRight") cursor = Math.min(field.length, cursor + 1);
+        else if (key === "Space") insert(" ");
+        else if (key.length === 1 && !(dialogs <= (options.lettersLostIn ?? 0))) insert(key.toLowerCase());
+      }
     },
     click: async (x, y) => {
       calls.push(`click ${x},${y}`);
@@ -42,7 +47,7 @@ function machine(options: { typing?: boolean; existing?: string[]; backupMatches
     },
     write: (file, data) => { written[file] = data; },
   };
-  return { io, files, calls, written };
+  return { io, files, calls, written, runs: () => runs };
 }
 
 test("the finished game is saved under its own name and copied into the run folder", async () => {
@@ -51,6 +56,8 @@ test("the finished game is saved under its own name and copied into the run fold
   assert.equal(result.error, undefined, JSON.stringify(result));
   assert.equal(result.file, "arena glm 5-3 flash v1-1-1 3aae6fc4 e3.sav");
   assert.equal(m.written[result.file!].toString(), "game at arena glm 5-3 flash v1-1-1 3aae6fc4 e3");
+  // Escape, then clearing the old name and typing the new one as one run of keys.
+  assert.equal(m.runs(), 2);
   assert.equal(m.files.get("Oasis by the Sea-1"), "original");
   assert.ok(m.calls.indexOf("backup-save Oasis by the Sea-1") < m.calls.indexOf("Escape"), "the copy is kept before the menu opens");
 });

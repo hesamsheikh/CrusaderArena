@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcess } from "node:child_process";
-import { renderVideo } from "./video.js";
+import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { renderInBackground, renderVideo } from "./video.js";
 
 function fakeProcess() {
   return Object.assign(new EventEmitter(), {
@@ -119,4 +122,22 @@ test("the next render waits for the previous one's compaction to finish first", 
   await flush();
   finish(c2, { stdout: JSON.stringify({ run2: "no frames to compact" }) });
   await p2;
+});
+
+test("a background render starts the queue detached, marks the run pending and returns at once", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "arena-video-"));
+  const calls: { command: string; args: string[]; options: Record<string, unknown> }[] = [];
+  let unref = 0;
+  const child = renderInBackground(dir, "series/runner.log", "Episode 2: ", (command, args, options) => {
+    calls.push({ command, args, options: options as Record<string, unknown> });
+    return Object.assign(new EventEmitter(), { unref: () => { unref++; } }) as unknown as ChildProcess;
+  });
+  assert.ok(child);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].args[0], /tools\/video\/render-queue\.py$/);
+  assert.deepEqual(calls[0].args.slice(1), [dir, "--log", "series/runner.log", "--prefix", "Episode 2: "]);
+  assert.equal(calls[0].options.detached, true);
+  assert.equal(unref, 1, "the runner does not wait for it");
+  assert.ok(existsSync(path.join(dir, "render.pending")));
+  assert.equal(readFileSync(path.join(dir, "render.log"), "utf8"), "", "its output goes to the run's render.log");
 });

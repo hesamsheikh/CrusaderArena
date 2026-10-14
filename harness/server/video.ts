@@ -1,8 +1,11 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { closeSync, openSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("../../tools/video/render-video.py", import.meta.url));
 const compactScript = fileURLToPath(new URL("../../tools/video/compact-recording.py", import.meta.url));
+const queueScript = fileURLToPath(new URL("../../tools/video/render-queue.py", import.meta.url));
 let queue: Promise<unknown> = Promise.resolve();
 
 export type VideoResult = { output: string; seconds: number; turns: number; frames: number; recorded: boolean };
@@ -95,4 +98,33 @@ function compactRecording(
       resolve();
     });
   });
+}
+
+/**
+ * Start tools/video/render-queue.py for `runDirectory`, detached, and return at once: it renders
+ * video.mp4 and compacts the recording once no other render on this machine is running (a lock),
+ * at low priority, with its output in <run>/render.log and its outcome lines appended to `logFile`
+ * after `prefix`. <run>/render.pending exists until it is done. The episode runner can then exit,
+ * so a queue of runners starts the next game while this one renders.
+ */
+export function renderInBackground(
+  runDirectory: string,
+  logFile?: string,
+  prefix = "",
+  spawnQueue: (command: string, args: string[], options: SpawnOptions) => ChildProcess = spawn,
+) {
+  // Written before the job starts, so packaging sees the render coming even before it begins.
+  writeFileSync(path.join(runDirectory, "render.pending"), "");
+  const out = openSync(path.join(runDirectory, "render.log"), "a");
+  try {
+    const child = spawnQueue(
+      process.env.PYTHON || "python3",
+      [queueScript, runDirectory, ...(logFile ? ["--log", logFile] : []), ...(prefix ? ["--prefix", prefix] : [])],
+      { detached: true, stdio: ["ignore", out, out] },
+    );
+    child.unref();
+    return child;
+  } finally {
+    closeSync(out);
+  }
 }
