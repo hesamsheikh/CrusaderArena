@@ -27,7 +27,11 @@ export type Observation = Record<string, unknown>;
 export const AIM_MOVES = 3;
 /** Time after a pointer move for the game to show the tile under it (it reads its input every frame). */
 const AIM_SETTLE_MS = 50;
-/** Furthest, in tiles along each axis, a view's offset is followed. */
+/**
+ * Furthest, in tiles along each axis, a view's offset is kept for its next targets, and is followed
+ * sideways (across the screen); up or down it is followed as far as the screen goes, since raised
+ * ground drawn higher than the height read for it puts the game's tile further down the map.
+ */
 const MAX_AIM_OFFSET = 3;
 /**
  * How far the game's tile under the pointer lay from the projected tile in one view (the camera's
@@ -63,7 +67,7 @@ type Tile = { x: number; y: number };
  * meant for the hovel, live 2026-10-14), so the moves stop when the tile does not follow them.
  * `matched` says the game's tile was accepted at `point`; otherwise `point` is where its tile came
  * closest to `tile`, and `shown` that tile (null without any reading). An exact match keeps the
- * view's offset (io.offsets), so the next target there starts from it.
+ * view's offset (io.offsets) when it is small, so the next target there starts from it.
  */
 export async function aimAtTile(io: AimIo, point: Tile, tile: Tile, accept: (shown: Tile) => boolean = (t) => t.x === tile.x && t.y === tile.y) {
   const unaimed = { point, shown: null as Tile | null, matched: false, moves: 0 };
@@ -103,7 +107,9 @@ export async function aimAtTile(io: AimIo, point: Tile, tile: Tile, accept: (sho
     const shown = seen ? mouseTileOf(seen) : null;
     if (!shown) break;
     if (accept(shown)) {
-      if (shown.x === tile.x && shown.y === tile.y && io.offsets) io.offsets.view = { camera, ...offset };
+      // A view's offset is the camera's part tile, kept for its next targets; a larger one is this tile's height.
+      const small = Math.abs(offset.x) <= MAX_AIM_OFFSET && Math.abs(offset.y) <= MAX_AIM_OFFSET;
+      if (shown.x === tile.x && shown.y === tile.y && small && io.offsets) io.offsets.view = { camera, ...offset };
       return { point: p, shown, matched: true, moves };
     }
     if (!best || distance(shown) < distance(best.shown)) best = { point: p, shown };
@@ -111,7 +117,8 @@ export async function aimAtTile(io: AimIo, point: Tile, tile: Tile, accept: (sho
     if (last && last.x === shown.x && last.y === shown.y) break;
     last = shown;
     const next = { x: offset.x + shown.x - tile.x, y: offset.y + shown.y - tile.y };
-    if (Math.abs(next.x) > MAX_AIM_OFFSET || Math.abs(next.y) > MAX_AIM_OFFSET) break;
+    // Sideways is x - y (half tiles across the screen); x + y runs down it (rows).
+    if (Math.abs(next.x - next.y) > 2 * MAX_AIM_OFFSET) break;
     offset = next;
   }
   return best ? { ...best, matched: false, moves } : { ...unaimed, point: first, moves };

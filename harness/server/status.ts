@@ -1,4 +1,4 @@
-import type { ProductionLedger } from "./production.js";
+import { productionEntry, type ProductionLedger } from "./production.js";
 import type { Stats } from "../shared/protocol.js";
 import { FACTOR_UNITS_PER_POINT, foodPopularity, popularityFactors } from "../shared/popularity.js";
 import { buildingTypeNames } from "./anchors.js";
@@ -53,14 +53,6 @@ const GRANARY_CAPACITY = 250;
 /** Weapons and armour of any mix one armory holds (live on The Sinkhole, 2026-10-12). */
 export const ARMORY_CAPACITY = 50;
 
-/**
- * Stockpile and granary room. Each stockpile has four piles and each pile holds one good, so a
- * good can be delivered only while one of its piles has room or a pile is empty; otherwise its
- * producers stop (live 2026-10-09). A good's room counts the empty piles too, at what one of its
- * piles holds: a lone figure for its own piles read as full while empty piles stood ready (a GLM
- * run on 2026-10-11 sold its wood at "room 1" with 13 empty piles). Empty piles are shared, so
- * the goods' rooms overlap. Absent when the reader has no storage reading.
- */
 /** Armories hold all weapons and armour together; like a granary, an empty one reads capacity 0 until something arrives. */
 function armoryOf(armories: { amount: number; capacity: number }[]) {
   const stocked = armories.filter((a) => a.amount > 0);
@@ -74,6 +66,14 @@ function armoryOf(armories: { amount: number; capacity: number }[]) {
   };
 }
 
+/**
+ * Stockpile and granary room. Each stockpile has four piles and each pile holds one good, so a
+ * good can be delivered only while one of its piles has room or a pile is empty; otherwise its
+ * producers stop (live 2026-10-09). A good's room counts the empty piles too, at what one of its
+ * piles holds: a lone figure for its own piles read as full while empty piles stood ready (a GLM
+ * run on 2026-10-11 sold its wood at "room 1" with 13 empty piles). Empty piles are shared, so
+ * the goods' rooms overlap. Absent when the reader has no storage reading.
+ */
 export function storageOf(o: Observation) {
   const st = o.storage;
   if (!st) return undefined;
@@ -118,7 +118,10 @@ export function storageOf(o: Observation) {
  * plumbing (session, generation, timestamps, coherence and heap diagnostics) stays in the tool
  * result's details, which are not sent to the model; troops only when the benchmark has military play.
  */
-export function observationStats(stats: Stats, { military = true } = {}) {
+export function observationStats(
+  stats: Stats,
+  { military = true, production }: { military?: boolean; production?: Pick<ProductionLedger, "report"> } = {},
+) {
   const o = stats.observation;
   if (stats.status !== "ok" || !o) return { status: "unavailable" as const, reader_status: stats.status };
   const s = o.settlement;
@@ -146,6 +149,9 @@ export function observationStats(stats: Stats, { military = true } = {}) {
     // conversation (the prompt says an unlisted good has none; status lists every good).
     goods: o.resources_by_name ? Object.fromEntries(Object.entries(o.resources_by_name).filter(([, n]) => n)) : null,
     ...(storageOf(o) ? { storage: storageOf(o) } : {}),
+    // In every observation: GLM 5.3 Flash and Claude Haiku 5.5 called status at most once a game,
+    // wondered whether their quarries, mines and fletchers delivered, and asked for it again (2026-10-14).
+    ...productionEntry(production, o.buildings),
     ...(military && troops
       ? {
           troops: {
@@ -163,11 +169,6 @@ export function observationStats(stats: Stats, { military = true } = {}) {
 }
 
 /** Compact settlement status from one fresh reader sample; missing values stay absent, never zero. */
-/** The `production` entry of a status, when the ledger has anything to say. */
-function withProduction(report: ReturnType<ProductionLedger["report"]>) {
-  return report ? { production: report } : {};
-}
-
 export function statusReport(
   stats: Stats,
   extra: { budget?: Record<string, number | string>; views?: string[]; production?: Pick<ProductionLedger, "report"> } = {},
@@ -201,7 +202,7 @@ export function statusReport(
     // build_structure's own_buildings evidence relies on.
     ...(o.buildings ? { buildings: namedBuildings(o.buildings) } : {}),
     // What the producing buildings delivered lately, which the game shows nowhere (production.ts).
-    ...(o.buildings && extra.production ? withProduction(extra.production.report(namedBuildings(o.buildings))) : {}),
+    ...productionEntry(extra.production, o.buildings),
     troops: o.own_troops?.total,
     structures_map_wide: o.structures?.count,
     placement_mode: placementOf(o),

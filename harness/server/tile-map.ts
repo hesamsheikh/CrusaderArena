@@ -174,6 +174,14 @@ export function tilePixel(camera: Camera, frame: Size, t: Tile, height = DEFAULT
   const dx = t.x - camera.centre_tile_x, dy = t.y - camera.centre_tile_y;
   return { x: Math.round(frame.width / 2 + (dx - dy) * half), y: Math.round(frame.height / 2 + (dx + dy - height * ROWS_PER_HEIGHT) * row) };
 }
+/**
+ * The camera centre that shows tile t, at terrain height `height`, mid-screen: raised ground is drawn
+ * higher, so the centre lies up the map from t by the rows its height raises it, half along each axis.
+ */
+export function centreFor(t: Tile, height = DEFAULT_HEIGHT) {
+  const rise = Math.round((height * ROWS_PER_HEIGHT) / 2);
+  return { x: t.x - rise, y: t.y - rise };
+}
 /** On visible terrain above the HUD, away from the edges. */
 export function onScreen(frame: Size, p: { x: number; y: number }) {
   return p.x >= 20 && p.y >= 20 && p.x < frame.width - 20 && p.y < frame.height * 0.8;

@@ -1517,6 +1517,68 @@ test("build_structure moves the camera to an off-screen tile target, then places
   assert.ok(minimap >= 0 && minimap < menu, "the camera moves before the building is chosen");
 });
 
+/**
+ * A plateau of height 130 over tiles 70..100 on both axes, and the tile the game picks under a window
+ * pixel of the simulated view: of the tiles drawn in the pixel's column, the frontmost drawn within a
+ * row of it (raised ground is drawn higher), as TileMap.tileAt finds it.
+ */
+const plateau = {
+  heightAt: (t: { x: number; y: number }) => (t.x >= 70 && t.x <= 100 && t.y >= 70 && t.y <= 100 ? 130 : 8),
+  tiles: (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+    for (let x = 70; x <= 100; x++) for (let y = 70; y <= 100; y++) set("height", x, y, 130);
+  },
+  picked(px: number, py: number, camera: number) {
+    const row = 1080 / 68, cx = 99 + camera;
+    const u = (px - 960) / 32, v = (py - 540) / row + 8 / 8.7;
+    const flat = { x: Math.round(cx + (u + v) / 2), y: Math.round(100 + (v - u) / 2) };
+    for (let j = 32; j >= -4; j--) {
+      const t = { x: flat.x + j, y: flat.y + j };
+      if (Math.abs(540 + (t.x - cx + t.y - 100 - this.heightAt(t) / 8.7) * row - py) < row) return t;
+    }
+    return flat;
+  },
+};
+
+test("build_structure moves the camera to a raised tile drawn off screen while its flat position is on it, and builds on it", async () => {
+  // Near the top edge a hovel on The Sinkhole's slope, clicked at its flat position, went 4 tiles off
+  // (GLM 5.3 Flash, live 2026-10-14). Tile (86, 86) is drawn above the screen in the first view.
+  const built: { x: number; y: number }[] = [];
+  const game = simulatedGame({
+    tiles: plateau.tiles,
+    cursor: (px, py, state) => plateau.picked(px, py, state.camera),
+    blocked: (px, py) => {
+      built.push(plateau.picked(px, py, game.state.camera));
+      return false;
+    },
+  });
+  assert.ok(tileView().pixel({ x: 86, y: 86 }).y > 20, "on screen when flat");
+  const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 86, tile_y: 86 }] });
+  const p = json.placements[0];
+  assert.equal(p.status, "placed", JSON.stringify(p));
+  assert.equal(p.view, "moved_to_tile");
+  assert.deepEqual(built, [{ x: 86, y: 86 }]);
+  assert.equal(p.cursorTile, undefined, "the game showed the tile under the pointer");
+});
+
+test("demolish_building and the panel tools move the camera to a raised tile drawn off screen while its flat position is on it", async () => {
+  // A building on the plateau's tiles 86..87, drawn above the screen in the first view.
+  const inside = (t: { x: number; y: number }) => t.x >= 86 && t.x <= 87 && t.y >= 86 && t.y <= 87;
+  const options = {
+    tiles: (set: (layer: keyof TileRegion["layers"], x: number, y: number, v: number) => void) => {
+      plateau.tiles(set);
+      for (let x = 86; x <= 87; x++) for (let y = 86; y <= 87; y++) set("structure", x, y, 15);
+    },
+    cursor: (px: number, py: number, state: { camera: number }) => plateau.picked(px, py, state.camera),
+  };
+  const game = simulatedGame({ ...options, demolishable: (x, y) => inside(plateau.picked(x, y, game.state.camera)) });
+  const { json } = await game.run("demolish_building", { tile_x: 86, tile_y: 86 });
+  assert.equal(json.status, "demolished", JSON.stringify(json));
+  assert.equal(game.state.camera, -20, "centred where the raised tile is drawn mid-screen (x only here)");
+  const inspect = simulatedGame({ ...options, buildingAt: (x, y) => (inside(plateau.picked(x, y, inspect.state.camera)) ? 3 : undefined) });
+  const { json: panel } = await inspect.run("inspect_building", { tile_x: 86, tile_y: 86 });
+  assert.equal(panel.building?.name, "Woodcutter's Hut", JSON.stringify(panel));
+});
+
 test("build_structure reports a tile target the camera cannot bring into view as not_on_screen, clicking no terrain", async () => {
   // The simulated camera moves along x only, so tile (1, 1) never comes into view.
   const game = simulatedGame({ tiles: () => {} });

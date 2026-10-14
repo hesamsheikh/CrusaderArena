@@ -113,7 +113,7 @@ nearby spots if it was silently blocked.
   live camera themselves right before acting (see [Tools](tools.md#build)).
 - **Camera guards.** Placement and inspection tools targeted by pixel stop if the
   camera moved since the screenshot they target. A tile-targeted placement has no such
-  screenshot to drift from: the host moves the camera to the tile when it is off screen,
+  screenshot to drift from: the host moves the camera to the tile when it is drawn off screen,
   and reports `not_on_screen` (no terrain click) only if it cannot bring it into view.
 - **Single-player only.** See [the harness](harness.md#safety-boundaries).
 

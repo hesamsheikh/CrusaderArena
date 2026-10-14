@@ -67,7 +67,10 @@ warnings can end the model's waits.
   +x side was refused as not adjacent (earlier runs had 240 refused probes in 180
   `expand_storage` calls for stockpiles). Where another building is drawn over every spot of
   the target, the game picks that one, so `demolish_building` clicks nothing and reports
-  `covered` (a fletcher in front of a hovel took a demolish meant for the hovel, live).
+  `covered` (a fletcher in front of a hovel took a demolish meant for the hovel, live). A tile
+  whose drawn position is off screen, as raised ground near the top edge can be while its
+  flat position is on screen, first brings the camera to where it is drawn mid-screen: a
+  hovel on The Sinkhole's slope, clicked at its flat position, went 4 tiles off.
 - They also leave one spot beside the stockpile where another stockpile fits
   (`access: blocks_stockpile`). A boxed-in stockpile was one of the runs' commonest dead ends:
   `expand_storage` found no room and goods stopped coming in (Claude Sonnet and Opus 5.5,
@@ -107,12 +110,15 @@ warnings can end the model's waits.
     built that round never showed a religion factor, and three models could not tell a
     chapel giving nothing from a factor the reader does not read.
   - `status` counts the player's buildings by type, from the reader's counts.
-  - `status` reports production: for each type of producing building standing, the goods it
-    delivered to storage in the last 3 game minutes, per game minute in all and per
-    building, from every reader sample's rises in stock (purchases and demolition refunds
-    held out). The game shows no production figures, and three of the 1.7.0 trial
-    interviews asked for them: GLM 5.3 Flash's quarries and iron mines delivered little for
-    minutes before it could tell.
+  - Every observation's stats, and `status`, report production: for each type of producing
+    building standing, the goods it delivered to storage in the last 3 game minutes, per game
+    minute in all and per building over the time each stood, and how many were built in that
+    time, from every reader sample's rises in stock (a rise counts for its maker once one
+    stands; purchases and demolition refunds held out). The game shows no production figures,
+    and three of the 1.7.0 trial interviews asked for them: GLM 5.3 Flash's quarries and iron
+    mines delivered little for minutes before it could tell. In `status` alone it reached only
+    GPT-6 Luna: GLM 5.3 Flash and Claude Haiku 5.5 called `status` at most once a game and
+    asked for it again.
   - `inspect_building` takes a map tile, like `set_workshop` and `demolish_building`: three
     calls that round failed for want of a fresh screenshot. By tile it clicks the building's
     middle, then the back corner of its footprint and its roof, and says when only a

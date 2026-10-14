@@ -191,7 +191,7 @@ function withAdjacentRemedy<T extends { status: string; note?: string; stopped?:
 }
 import { shortfall } from "./building-info.js";
 import { alreadyBuilt, buildingTypes, VIEW_JUMPERS, viewJumps } from "./building-types.js";
-import { TileMap, WOODCUTTER_REACH, farmNames, footprintRect, isStorageKind, needsOpenSide, onScreen, resourceGroundNames, tilePixel, type Site, type StorageKind, type TileCamera } from "./tile-map.js";
+import { TileMap, WOODCUTTER_REACH, centreFor, farmNames, footprintRect, isStorageKind, needsOpenSide, onScreen, resourceGroundNames, tilePixel, type Site, type StorageKind, type TileCamera } from "./tile-map.js";
 import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
@@ -628,11 +628,12 @@ export function makeAgent(
   };
   /**
    * Move the camera onto map tile `tile` with go_to_tile's minimap clicks, for a build_structure
-   * tile target that is off screen. The minimap does nothing in placement mode (live 2026-10-12),
-   * which an earlier placement of the same call leaves on, so that is left first. Returns the live
-   * camera once the tile is clickable in it, else null.
+   * tile target that is off screen: to where the tile is drawn mid-screen at terrain height
+   * `height` (centreFor), when its height is known. The minimap does nothing in placement mode
+   * (live 2026-10-12), which an earlier placement of the same call leaves on, so that is left
+   * first. Returns the live camera once the tile is clickable in it, else null.
    */
-  const bringTileIntoView = async (tile: { x: number; y: number }, frame: Pick<Frame, "width" | "height">, signal?: AbortSignal) => {
+  const bringTileIntoView = async (tile: { x: number; y: number }, frame: Pick<Frame, "width" | "height">, signal?: AbortSignal, height?: number) => {
     try {
       mapExtent ??= new MapView(await device.mapSummary()).extent();
     } catch {
@@ -645,37 +646,44 @@ export function makeAgent(
       await ctx.send(f, { type: "click", x: Math.round(f.width / 2), y: Math.round(f.height * 0.12), button: 3 });
       await sampleAfter(ctx, Date.now(), (o) => placementOf(o)?.action !== 5, 1);
     }
-    const moved = await goToTile(ctx, tile, mapExtent);
+    const moved = await goToTile(ctx, centreFor(tile, height), mapExtent);
     if (moved.status === "no_camera") return null;
     const camera = await readLiveCamera();
-    return camera && onScreen(frame, tilePixel(camera, frame, tile)) ? camera : null;
+    return camera && onScreen(frame, tilePixel(camera, frame, tile, height)) ? camera : null;
   };
   /**
    * Where to click map tile `tile` now, for demolish_building's and set_workshop's tile targets: its
    * drawn position in the live view, from the view's tile map (raised ground is drawn higher), with
-   * the camera moved there first when it is off screen. A reason instead when it cannot be.
+   * the camera moved first when that is off screen, as for build_structure's. A reason instead when
+   * it cannot be.
    */
   const tileTarget = async (tile: { x: number; y: number }, frame: Pick<Frame, "width" | "height">, signal?: AbortSignal):
     Promise<{ pixel: { x: number; y: number }; moved: boolean; map: TileMap | null } | { reason: string; camera?: TileCamera }> => {
     let camera = await readLiveCamera();
     if (!camera) return { reason: "No live camera available." };
+    // The observation's map only while nothing has been sent to the game since: these tools look for
+    // a building, and one placed or demolished since would be missing (a demolish read a map from
+    // before a hovel and the fletcher beside it were built, live 2026-10-14).
+    const mapIn = async (view: TileCamera) => {
+      const key = keyOf(view);
+      return observed && viewTiles?.frame === observed && key === observedCamera && viewTiles.serial === device.inputSerial ? await viewTiles.map
+        : siteTiles?.key === key && siteTiles.serial === device.inputSerial ? siteTiles.map
+        : await readTileMap(frame as Frame, view);
+    };
     let moved = false;
-    if (!onScreen(frame, tilePixel(camera, frame, tile))) {
-      const back = await bringTileIntoView(tile, frame, signal);
+    let map = onScreen(frame, tilePixel(camera, frame, tile)) ? await mapIn(camera) : null;
+    const drawn = () => (map ? map.pixel(tile) : tilePixel(camera!, frame, tile));
+    // A second move when only the map read after the first shows how high the tile is drawn.
+    for (let tries = 0; tries < 2 && !onScreen(frame, drawn()); tries++) {
+      const back = await bringTileIntoView(tile, frame, signal, map?.heightAt(tile));
       observed = null;
       if (!back) return { reason: "The camera could not bring the tile into view.", camera: (await readLiveCamera()) ?? camera };
       camera = back;
       moved = true;
+      map = await mapIn(camera);
     }
-    const key = keyOf(camera);
-    // The observation's map only while nothing has been sent to the game since: these tools look for
-    // a building, and one placed or demolished since would be missing (a demolish read a map from
-    // before a hovel and the fletcher beside it were built, live 2026-10-14).
-    const map = observed && viewTiles?.frame === observed && key === observedCamera && viewTiles.serial === device.inputSerial ? await viewTiles.map
-      : siteTiles?.key === key && siteTiles.serial === device.inputSerial ? siteTiles.map
-      : await readTileMap(frame as Frame, camera);
-    const drawn = map ? map.pixel(tile) : tilePixel(camera, frame, tile);
-    return { pixel: onScreen(frame, drawn) ? drawn : tilePixel(camera, frame, tile), moved, map };
+    if (!onScreen(frame, drawn())) return { reason: "The camera could not bring the tile into view.", camera };
+    return { pixel: drawn(), moved, map };
   };
   /**
    * The point to click for map tile `tile` from its projection `point`, aimed by the tile the game
@@ -833,7 +841,7 @@ export function makeAgent(
             ...(runtime ? { run_clock: runClock(runtime.session) } : {}),
             width: observed.width,
             height: observed.height,
-            stats: observationStats(readerStats, { military: runtime?.military ?? true }),
+            stats: observationStats(readerStats, { military: runtime?.military ?? true, production: runtime?.production }),
             game_events: messages.messages,
             ...(messages.dropped ? { game_events_dropped: messages.dropped } : {}),
             ...(messages.unavailableSeconds ? { reader_unavailable_seconds: messages.unavailableSeconds } : {}),
@@ -865,7 +873,7 @@ export function makeAgent(
           text: JSON.stringify({
             ...(warnings.length ? { warnings } : {}),
             ...(runtime ? { run_clock: runClock(runtime.session) } : {}),
-            stats: observationStats(readerStats, { military: runtime?.military ?? true }),
+            stats: observationStats(readerStats, { military: runtime?.military ?? true, production: runtime?.production }),
             game_events: messages.messages,
             ...(messages.dropped ? { game_events_dropped: messages.dropped } : {}),
             ...(messages.unavailableSeconds ? { reader_unavailable_seconds: messages.unavailableSeconds } : {}),
@@ -1121,33 +1129,50 @@ export function makeAgent(
             // the screenshot's camera, observedCameraSample, throughout).
             let liveCamera: TileCamera | undefined;
             if (kind.status === "tile") {
-              tileOrigin = { x: kind.x, y: kind.y };
-              liveCamera = await readLiveCamera();
-              if (!liveCamera) {
-                results.push({ building: plan.name, tile_x: tileOrigin.x, tile_y: tileOrigin.y, status: "not_on_screen", reason: "No live camera available." });
+              const origin = (tileOrigin = { x: kind.x, y: kind.y });
+              let camera = await readLiveCamera();
+              if (!camera) {
+                results.push({ building: plan.name, tile_x: origin.x, tile_y: origin.y, status: "not_on_screen", reason: "No live camera available." });
                 continue;
               }
-              target = tilePixel(liveCamera, frame, tileOrigin);
-              if (!onScreen(frame, target)) {
-                // Off screen: move the camera there first, as go_to_tile would. Later pixel targets
-                // in the batch then find their view changed and report camera_moved.
-                const moved = await bringTileIntoView(tileOrigin, frame, signal);
+              // Where the tile is drawn decides whether it is on screen. Raised ground is drawn higher,
+              // so near the top edge a tile can be off screen while its flat position is on it, and a
+              // click there picks another tile: a hovel on The Sinkhole's slope went 4 tiles off (GLM
+              // 5.3 Flash, live 2026-10-14). The tile's height comes from the view's map (read now,
+              // as the click would anyway), so a tile on screen only when flat needs one.
+              const viewMap = async (view: TileCamera) => {
+                const known = await mapFor(view);
+                if (known !== undefined) return known;
+                const key = keyOf(view);
+                const read = await readTileMap(frame, view);
+                return key ? keep(key, read) : read;
+              };
+              let map = onScreen(frame, tilePixel(camera, frame, origin)) ? await viewMap(camera) : null;
+              const drawn = () => (map ? map.pixel(origin) : tilePixel(camera!, frame, origin));
+              // Off screen: move the camera there first, as go_to_tile would, a second time when only
+              // the map read after the first move shows how high the tile is. Later pixel targets in
+              // the batch then find their view changed and report camera_moved.
+              for (let tries = 0; tries < 2 && !onScreen(frame, drawn()); tries++) {
+                const moved = await bringTileIntoView(origin, frame, signal, map?.heightAt(origin));
                 runtime?.session.check();
                 observed = null;
                 observedClearedBy = "build_structure";
-                if (!moved) {
-                  const now = await readLiveCamera();
-                  results.push({
-                    building: plan.name, tile_x: tileOrigin.x, tile_y: tileOrigin.y, status: "not_on_screen",
-                    reason: "The camera could not bring the tile into view.",
-                    ...(now ? { camera: { centre_tile_x: now.centre_tile_x, centre_tile_y: now.centre_tile_y } } : {}),
-                  });
-                  continue;
-                }
-                liveCamera = moved;
-                target = tilePixel(moved, frame, tileOrigin);
+                if (!moved) break;
+                camera = moved;
+                map = await viewMap(moved);
                 viewMoved = "moved_to_tile";
               }
+              if (!onScreen(frame, drawn())) {
+                const now = await readLiveCamera();
+                results.push({
+                  building: plan.name, tile_x: origin.x, tile_y: origin.y, status: "not_on_screen",
+                  reason: "The camera could not bring the tile into view.",
+                  ...(now ? { camera: { centre_tile_x: now.centre_tile_x, centre_tile_y: now.centre_tile_y } } : {}),
+                });
+                continue;
+              }
+              liveCamera = camera;
+              target = drawn();
             } else {
               target = { x: kind.x, y: kind.y };
               // Checked per placement so one bad target does not abort the rest of the batch: nothing
@@ -1938,7 +1963,7 @@ export function makeAgent(
       name: "status",
       label: "Settlement status",
       description:
-        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, your buildings counted by type (from the click that places each), production (the goods each type of your producing buildings delivered to storage in the last 3 game minutes, per game minute in all and per building, from the reader's stock: purchases are not counted), placement mode, open building panel, camera and saved views. No screenshot and no game input.",
+        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, your buildings counted by type (from the click that places each), production (as in each observation's stats), placement mode, open building panel, camera and saved views. No screenshot and no game input.",
       parameters: Type.Object({}),
       execute: async () => {
         const budget = runtime ? runClock(runtime.session) : undefined;

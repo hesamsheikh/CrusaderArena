@@ -299,6 +299,22 @@ between September and October 2026.
   - Fast waits saved 89 and 92 seconds in GLM's and Haiku's runs; Luna never waited. During
     Haiku's run the overlay showed "thinking · paused" while it thought, "acting · speed 40"
     and its waits rising to speed 60 or 75 and back to 40.
+- 1.7.0 with three models a third time, on 2026-10-14, with `status`'s production readout
+  (58a4cd3): 10 game minutes each, GLM 5.3 Flash on The Sinkhole, GPT-6 Luna on Oasis by the
+  Sea and Claude Haiku 5.5 on Large Barren Desert, so that each model has played each map once;
+  each interviewed after. All three valid, about $0.08 together, every save through.
+  - The production readout reached only Luna, which called `status` 7 times and reasoned from
+    it ("zero production from the iron mine and dairy"). GLM and Haiku called `status` 0 or 1
+    times a game in all three rounds; both wondered mid-game whether their quarries, mines and
+    fletchers delivered, and asked for production figures again in their interviews. Luna took
+    its orchards for poor ones when three had just been built beside the first: the rate per
+    building had divided the first one's apples by four. Both changed since (Tested in code
+    only, below).
+  - 36 of 37 placements went through; GLM's iron mine lacked wood. One aim missed: a GLM hovel
+    aimed at (356, 461) on The Sinkhole's slope near the top edge, where the game showed (360,
+    465) under the pointer. The tile was drawn off screen, so the click had gone to its flat
+    position, and the 4-tile offset there was past the 3 the aim followed. Changed since
+    (Tested in code only, below).
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
@@ -541,6 +557,19 @@ between September and October 2026.
     machine on 2026-10-14: its sources were 1.6.3's, its `crusader_probe.exe`
     dated from a 1.5.0 round 11 minutes before, and the sync's build said "ninja: no work
     to do". The reader DLL was 1.6.2's build, whose sources 1.6.3 shares.
+  - Production in every observation's stats, with the rate per building over the time each
+    building stood in the window, `built_in_window`, and a rise credited to its good's maker
+    only once one stands (`production.test.ts`). The readout in `status` was seen live
+    (Runs above); these changes were made after the third round of models, while the game
+    machine could not be reached (2026-10-15), and have not been seen live.
+  - A tile target drawn off screen while its flat position is on screen, as raised ground near
+    the top edge can be: `build_structure`, `demolish_building` and `inspect_building` move the
+    camera to where the tile is drawn mid-screen, a second time when only the map read after
+    the first move shows its height, and click where it is drawn; the aim follows raised
+    ground's offset up the screen as far as it goes and keeps only an offset of up to 3 tiles
+    for the view (`model-observation.test.ts`, `placement.test.ts`, on a simulated plateau;
+    the test of `build_structure` fails on the code before). Not seen live, for the same
+    reason.
 
 - The shims that bring two harness changes to rounds played on earlier versions
   (`cache-key.test.ts`, `overlay-feed.test.ts`, `test_overlay.py`; both also used in a

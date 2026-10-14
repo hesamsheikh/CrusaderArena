@@ -62,7 +62,12 @@ passed, so act first and look last.
   not listed there has none), `storage` (stockpile piles, empty piles and, for each
   stored good, how much more of it can be delivered, counting the empty piles that any
   good can take; granary food and room; armory weapons and room, once one stands; with a
-  `full` note when something can no longer be delivered), the placement mode and the camera's centre tile. `status:
+  `full` note when something can no longer be delivered), `production` (for each type of
+  your producing buildings standing, the goods it delivered to storage in the last 3 game
+  minutes, per game minute in all and per building over the time each stood, and
+  `built_in_window` when some were built in that time; goods that rose while none of their
+  makers stood are `other_rises`; purchases and demolition refunds do not count), the
+  placement mode and the camera's centre tile. `status:
   "unavailable"` or any other missing value means unknown, not zero.
 - **`game_events`:** game messages that appeared since your previous screenshot, each
   once with `seconds_ago`, such as placement warnings ("Too close to signpost to
