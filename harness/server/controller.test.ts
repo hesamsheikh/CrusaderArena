@@ -96,6 +96,10 @@ function fixture(
     statsExpiry = Date.now() + 5000;
   let latest: Frame | null = null;
   let unavailableSamples = 0;
+  // The game's flattened-landscape view (FlattenLandscape hotkey), and what the device did in order:
+  // each capture with its image and whether the game was paused, each hotkey and each P.
+  let flat = false;
+  const trace: string[] = [];
   // Reader game clock (ticks) and stream generation; tests advance them explicitly.
   let gameTick = 1000,
     generation = 1,
@@ -130,9 +134,10 @@ function fixture(
     },
     capture: async () => {
       captures++;
+      trace.push(`capture ${flat ? "flat" : "test"} ${paused ? "paused" : "running"}`);
       latest = {
         id: "frame",
-        image: "test",
+        image: flat ? "flat" : "test",
         mimeType: "image/jpeg",
         width: camera ? 1920 : 100,
         height: camera ? 1080 : 100,
@@ -172,9 +177,16 @@ function fixture(
     pressKey: async (key: string, guard?: () => void) => {
       guard?.();
       actions.push({ type: "key", key });
+      trace.push(key);
       const fault = key === "P" ? pauseFaults.shift() : undefined;
       paused = key === "P" && fault !== "drop" ? !paused : paused;
       if (fault !== "late") statsExpiry += 2000;
+      return { at: clock };
+    },
+    hotkey: async (name: string, guard?: () => void) => {
+      guard?.();
+      trace.push(`hotkey ${name}`);
+      if (name === "FlattenLandscape") flat = !flat;
       return { at: clock };
     },
     // A 100×100 map with the keep's 3×3 tiles around (50, 60).
@@ -269,6 +281,7 @@ function fixture(
     actions,
     ageCredits,
     isPaused: () => paused,
+    trace,
     guard: (record: Record<string, unknown>) => guardListeners.forEach((l) => l(record)),
     setUnavailableSamples: (n: number) => { unavailableSamples = n; },
     faultPauseKeys: (...faults: ("drop" | "late" | null)[]) => { pauseFaults.push(...faults); },
@@ -377,6 +390,33 @@ test("go_to_tile at the start of a reply clicks the minimap paused and unpauses 
   const result = f.requests[1].messages.find((m) => m.role === "toolResult" && m.toolName === "go_to_tile");
   assert.ok(result && result.role === "toolResult" && !result.isError, JSON.stringify(result));
   assert.equal(result.content.filter((c) => c.type === "image").length, 1, "a screenshot of the new view");
+});
+test("flat_view toggles the view with the game paused and takes both images it returns with it running", async () => {
+  // A paused frame has "Game Paused" across the middle of the view (seen in 1.6.3 runs' frames).
+  const f = fixture(2);
+  f.provider((n) => n === 1 ? [call("flat_view", {})] : [{ type: "text", text: "Done." }], true);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const start = f.trace.indexOf("hotkey FlattenLandscape") - 1;
+  assert.deepEqual(f.trace.slice(start, start + 12), [
+    "capture test paused", // before the toggle: the reference for whether it took
+    "hotkey FlattenLandscape",
+    "capture flat paused", // it took
+    "P",
+    "capture flat running", // the flat image returned
+    "P",
+    "capture flat paused", // the reference for toggling back
+    "hotkey FlattenLandscape",
+    "capture test paused", // it took
+    "P",
+    "capture test running", // the targeting screenshot returned
+    "P", // the pause for the next request: the game ran on until then
+  ]);
+  const result = f.requests[1].messages.find((m) => m.role === "toolResult" && m.toolName === "flat_view");
+  assert.ok(result && result.role === "toolResult" && !result.isError, JSON.stringify(result));
+  const images = result.content.filter((c) => c.type === "image");
+  assert.deepEqual(images.map((c) => c.type === "image" && c.data), ["flat", "test"]);
+  const status = result.content[0];
+  assert.equal(status.type === "text" && JSON.parse(status.text).status, "ok");
 });
 test("go_to_tile after an action in the same reply runs with the game running, with no extra pause toggles", async () => {
   const f = fixture(2);

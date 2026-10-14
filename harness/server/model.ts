@@ -44,7 +44,7 @@ const RETRIES_PER_CALL = 12;
  * `observe` still unpauses: a paused game shows a "Game Paused" overlay in the screenshot.
  */
 const READING_TOOLS = new Set([
-  "status", "get_inventory", "find_sites", "map_overview", "flat_view",
+  "status", "get_inventory", "find_sites", "map_overview",
   "building_info",
   "update_plan", "notebook_read", "notebook_write", "notification_history",
   "playbook_read", "playbook_write", "playbook_edit",
@@ -56,6 +56,12 @@ const READING_TOOLS = new Set([
  * they return.
  */
 const MINIMAP_TOOLS = new Set(["go_to_tile", "navigate_minimap"]);
+/**
+ * Tools that do their own pausing, so beforeToolCall leaves the game as it is for them: the
+ * minimap tools and flat_view, which toggles the flattened view with the game paused. Each
+ * unpauses the game for the screenshots it returns (resumeGame) and leaves it running.
+ */
+const SELF_PAUSING_TOOLS = new Set([...MINIMAP_TOOLS, "flat_view"]);
 /** Tools that change the settlement or the economy. Waiting, reading, camera moves and inspecting are not actions here. */
 const ECONOMY_ACTIONS = new Set(["game_action", "build_structure", "place_near", "expand_storage", "demolish_building", "set_workshop",
   "market_trade", "set_tax", "set_rations"]);
@@ -534,9 +540,9 @@ export function makeAgent(
     text: `Minimum turn (${runtime?.config.minTurnSeconds} game seconds): the host let ${seconds} more game seconds pass before this ${screenshot ? "screenshot" : "observation"}.`,
   });
   /**
-   * For a minimap tool (MINIMAP_TOOLS), before its screenshot: what beforeToolCall does for every
-   * other tool that is not reading, unpausing the game if it is still paused. A pause the reader
-   * does not confirm ends the run, as it does there.
+   * For a tool that pauses itself (SELF_PAUSING_TOOLS), before a screenshot it returns: what
+   * beforeToolCall does for every other tool that is not reading, unpausing the game if it is
+   * paused. A pause the reader does not confirm ends the run, as it does there.
    */
   const resumeGame = async () => {
     if (!runtime) return;
@@ -1346,32 +1352,40 @@ export function makeAgent(
       name: "flat_view",
       label: "Flattened landscape view",
       description:
-        "Show the current view with the game's flattened landscape (its FlattenLandscape key): buildings and rock outcrops are drawn as flat footprints on the ground (trees stay upright), so free ground, building footprints and raised terrain are easy to tell apart. The harness pauses the game, toggles the view on, captures it, toggles it back and returns two images: the flat one for reading only, then a normal screenshot that is the targeting frame for your next clicks (flattening moves raised ground on screen). Use it before placing farms or several buildings in one area, or after a silently blocked placement. Costs no game time.",
+        "Show the current view with the game's flattened landscape (its FlattenLandscape key): buildings and rock outcrops are drawn as flat footprints on the ground (trees stay upright), so free ground, building footprints and raised terrain are easy to tell apart. The harness toggles the view on and back with the game paused, and returns two images taken with the game running: the flat one for reading only, then a normal screenshot that is the targeting frame for your next clicks (flattening moves raised ground on screen). Use it before placing farms or several buildings in one area, or after a silently blocked placement. The game runs for about a game second while the flat image is taken, and runs on from the normal screenshot, as after an action.",
       parameters: Type.Object({}),
       execute: async (_id, _args, signal) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
         const ctx = anchorContext(signal);
         const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-        // Paused, an unchanged view gives an identical capture, which shows whether a toggle took.
-        // Called before any action in a reply, the game is still paused and stays so afterwards.
+        // Whether a toggle took shows in captures of the paused game, where an unchanged view gives
+        // an identical image. A paused frame has "Game Paused" written across the middle of the
+        // view (every flat_view image to 1.6.3 did), so the two images returned are taken with the
+        // game running (resumeGame, as the minimap tools do), and it runs on afterwards.
         const wasPaused = runtime?.isPaused?.() ?? false;
         await runtime?.setPaused?.(true);
         try {
           const before = await ctx.capture();
           await ctx.hotkey("FlattenLandscape");
           await wait(FLAT_VIEW_SETTLE_MS);
-          const flat = await device.capture();
-          if (flat.image === before.image) {
+          if ((await device.capture()).image === before.image) {
+            await resumeGame();
             const view = await observe();
             return { ...view, content: [{ type: "text" as const, text: JSON.stringify({ status: "unchanged", note: "The view did not change; the flattened landscape is unavailable here. The screenshot is the normal view.", remedy: "find_sites reads free ground from the game's tile data instead." }) }, ...view.content] };
           }
+          await resumeGame();
+          const flat = await device.capture();
+          await runtime?.setPaused?.(true);
+          // The flat view paused once more, which the view after toggling back must differ from.
+          const held = await device.capture();
           let restored = false;
           for (let attempt = 0; attempt < 2 && !restored; attempt++) {
             await ctx.hotkey("FlattenLandscape");
             await wait(FLAT_VIEW_SETTLE_MS);
-            restored = (await device.capture()).image !== flat.image;
+            restored = (await device.capture()).image !== held.image;
           }
+          await resumeGame();
           const view = await observe();
           return {
             ...view,
@@ -1382,8 +1396,9 @@ export function makeAgent(
             ],
           };
         } finally {
-          // After a stop or deadline the controller's final pause owns the game state.
-          if (runtime && !runtime.session.reason && !wasPaused) await runtime.setPaused?.(false);
+          // After a stop or deadline the controller's final pause owns the game state; after a
+          // failure the game runs again if it was running before.
+          if (runtime && !runtime.session.reason && !wasPaused && runtime.isPaused?.()) await runtime.setPaused?.(false);
         }
       },
     }),
@@ -2184,7 +2199,7 @@ export function makeAgent(
         runtime.session.check();
         // build_structure checks its targets against the view's tile map: finish reading it while paused.
         if (toolCall.name === "build_structure" && observed && viewTiles?.frame === observed) await viewTiles.map;
-        if (!READING_TOOLS.has(toolCall.name) && !MINIMAP_TOOLS.has(toolCall.name)) await runtime.beforeToolCall?.();
+        if (!READING_TOOLS.has(toolCall.name) && !SELF_PAUSING_TOOLS.has(toolCall.name)) await runtime.beforeToolCall?.();
         runtime.cycle.tools++;
         return;
       } catch {

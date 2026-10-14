@@ -7,12 +7,13 @@ series's episodes, with the three playbook tools below). During preparation it
 has none. All are defined in `harness/server/model.ts`. Tool calls run one at a time.
 
 **Reading tools keep the game paused.** `status`, `get_inventory`, `find_sites`,
-`map_overview`, `flat_view`, `building_info` and the memory tools run with the game
+`map_overview`, `building_info` and the memory tools run with the game
 still paused from the model's thinking, so they cost no game time. Any other tool
 unpauses the game, which then runs for the rest of that reply. `observe` unpauses
 too, because a paused game shows a "Game Paused" overlay. `go_to_tile` and
 `navigate_minimap` called while the game is still paused make their minimap clicks
-with it paused, which the game allows, and unpause it only for their screenshot.
+with it paused, which the game allows, and unpause it only for their screenshot;
+`flat_view` likewise toggles the view paused and unpauses it for its two images.
 
 **Action** marks tools that count toward the limit of 8 actions per reply. **Obs**
 means the result includes an observation: a fresh screenshot plus the JSON reading
@@ -39,7 +40,7 @@ observe …"). The remedies are in `harness/server/remedies.ts`.
 | --- | --- | --- | --- | --- |
 | `observe` | none | Takes a screenshot once the turn has run the minimum turn length; the host lets the rest pass first and says so | Obs | No |
 | `wait_and_observe` | `seconds` 0–300 (game seconds); optional `until: {amount, at_least}`; optional `screenshot` (default true) | Lets game time pass, at least until the turn has run the minimum turn length, then looks. `until` ends the wait early once a good, `gold`, `population`, `food` or `idle_peasants` reaches a value, but not before the minimum. `screenshot: false` waits the same way but returns stats, game events and `run_clock` as text only, with no image, and does not update the targeting frame. Once 3 game minutes have passed with no economy action (`build_structure`, `place_near`, `expand_storage`, `demolish_building`, `set_workshop`, `market_trade`, `set_tax`, `set_rations` or a `game_action`; camera moves and inspecting do not count), the result reminds the model how long it has only waited and read, and that it may be time to do something else | Wait result, then Obs (or the text-only observation) | No |
-| `flat_view` | none | With the game paused, toggles the flattened landscape view, captures it, toggles back and restores the pause state it found. Buildings and rock become flat footprints, which shows free ground | Flat image (for reading only), then Obs (the targeting image) | No |
+| `flat_view` | none | With the game paused, toggles the flattened landscape view on and back, telling from paused captures whether each toggle took; the flat image and the targeting image are taken with the game running, since a paused frame has "Game Paused" across the middle, and the game runs on afterwards (about a game second passes for the flat image). Buildings and rock become flat footprints, which shows free ground | Flat image (for reading only), then Obs (the targeting image) | No |
 
 ## Build
 

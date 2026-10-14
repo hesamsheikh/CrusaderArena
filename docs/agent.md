@@ -18,14 +18,16 @@ A turn is one model reply plus the tool calls in it.
    game time.
 2. **The model replies** with text and tool calls.
 3. **Tools run one at a time, in order.** Reading tools (`status`, `get_inventory`,
-   `find_sites`, `map_overview`, `flat_view`, the lookup tools and the memory tools)
+   `find_sites`, `map_overview`, the lookup tools and the memory tools)
    run with the game still paused. At the first tool that acts, waits or takes a
    screenshot, the host unpauses the game and waits for the reader to confirm it; the
    game then keeps running for the rest of the reply. So a reply should read first and
    act after. The two minimap tools, `go_to_tile` and `navigate_minimap`, are the
    exception among tools that act: called while the game is still paused, they move
    the camera with it paused (minimap clicks work on a paused game) and unpause it only
-   for the screenshot they return.
+   for the screenshot they return. `flat_view` does the same: it toggles the flattened
+   view with the game paused and unpauses it for the two images it returns, since a
+   paused game shows "Game Paused" across the middle of the view.
 4. **The host makes sure the model sees the result.** If the turn acted without
    observing afterwards, or called no tools at all, the host lets the default wait
    pass (5 game seconds) and sends an observation. A reply that called no tools always
