@@ -2,6 +2,7 @@ import type { GameAction } from "../shared/protocol.js";
 import type { GameDevice } from "./device.js";
 import {
   buildingCost,
+  cameraKey,
   confirmPlacement,
   menuClicks,
   placementFeedback,
@@ -22,6 +23,24 @@ export const SAMPLE_POLL_SECONDS = 0.025;
 export type Ack = { at?: number } | undefined;
 export type Observation = Record<string, unknown>;
 
+/** Pointer moves a click aimed at a tile makes to put the cursor on it before clicking. */
+export const AIM_MOVES = 3;
+/** Time after a pointer move for the game to show the tile under it (it reads its input every frame). */
+const AIM_SETTLE_MS = 50;
+/** Furthest, in tiles along each axis, a view's offset is followed. */
+const MAX_AIM_OFFSET = 3;
+/**
+ * How far the game's tile under the pointer lay from the projected tile in one view (the camera's
+ * key), kept across calls so the next target in that view starts from it.
+ */
+export type ViewOffset = { camera: string; x: number; y: number };
+
+/** The map tile the game shows under the mouse pointer (observation.mouse_tile), or null. */
+export function mouseTileOf(observation: Observation | null | undefined) {
+  const t = observation?.mouse_tile as { x?: unknown; y?: unknown } | null | undefined;
+  return t && typeof t.x === "number" && typeof t.y === "number" ? { x: t.x, y: t.y } : null;
+}
+
 /**
  * Construction-menu selection and terrain clicks for one targeting image,
  * confirmed from reader samples. Shared by build_structure and the anchor tools.
@@ -37,6 +56,10 @@ export class Placer {
       send: (action: GameAction) => Promise<Ack>;
       pause: (seconds: number) => Promise<unknown>;
       frame: { width: number; height: number };
+      /** Moves the pointer without a click (GameDevice.move); without it, clicks are not aimed. */
+      move?: (point: { x: number; y: number }) => Promise<Ack>;
+      /** Where each view's offset is kept between calls (aim). */
+      offsets?: { view?: ViewOffset };
     },
     /** A category already known open in the game (e.g. left open by an earlier call); see select(). */
     openCategory?: string,
@@ -127,15 +150,62 @@ export class Placer {
     this.selected = undefined;
     return "failed";
   }
-  /** One terrain click in the active placement mode, classified from feedback events since `eventStart`. */
-  async click(name: string, point: { x: number; y: number }, carried: string[], eventStart: number) {
+  /**
+   * The point to click for map tile `tile`, from `point`, its projection: the pointer goes there
+   * first, the reader shows the tile the game picks under it (mouse_tile), and while that is
+   * another tile the pointer moves by the difference, up to AIM_MOVES times. The reader's camera is
+   * a whole tile, and the view can lie part of a tile from it, so a projected click could pick a
+   * neighbour: every building placed by tile on Large Barren Desert's start went one tile off
+   * (live 2026-10-14). The view's offset is kept (io.offsets), so the next target there starts from
+   * it. `shown` is the tile the game showed at `point` (null without a reading), `matched` whether
+   * it is `tile`.
+   */
+  async aim(point: { x: number; y: number }, tile: { x: number; y: number }) {
+    const unaimed = { point, shown: null as { x: number; y: number } | null, matched: false, moves: 0 };
+    if (!this.io.move || !this.readerReady) return unaimed;
+    const latest = await this.current();
+    // A reader without the field (before 1.7.0) gives nothing to aim by.
+    if (!latest || !("mouse_tile" in latest)) return unaimed;
+    const camera = cameraKey(latest);
+    const span = latest?.camera as { tiles_wide?: number; tiles_high?: number } | null | undefined;
+    if (!camera || !span?.tiles_wide || !span?.tiles_high) return unaimed;
+    const { width, height } = this.io.frame;
+    // One tile along x moves the drawing half a tile right and a row down; along y, left and down.
+    const half = width / span.tiles_wide / 2, row = height / span.tiles_high;
+    const at = (d: { x: number; y: number }) =>
+      ({ x: Math.round(point.x - (d.x - d.y) * half), y: Math.round(point.y - (d.x + d.y) * row) });
+    const kept = this.io.offsets?.view;
+    let offset = kept && kept.camera === camera ? { x: kept.x, y: kept.y } : { x: 0, y: 0 };
+    let result = { ...unaimed, point: at(offset) };
+    for (let i = 0; i < AIM_MOVES; i++) {
+      const p = at(offset);
+      if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height * 0.8) break;
+      const ack = await this.io.move(p);
+      const seen = await this.sampleAfter(this.ackTime(ack) + AIM_SETTLE_MS, (o) => cameraKey(o) === camera && !!mouseTileOf(o), 1);
+      const shown = seen ? mouseTileOf(seen) : null;
+      result = { point: p, shown, matched: !!shown && shown.x === tile.x && shown.y === tile.y, moves: i + 1 };
+      if (!shown || result.matched) break;
+      const next = { x: offset.x + shown.x - tile.x, y: offset.y + shown.y - tile.y };
+      if (Math.abs(next.x) > MAX_AIM_OFFSET || Math.abs(next.y) > MAX_AIM_OFFSET) break;
+      offset = next;
+    }
+    if (result.matched && this.io.offsets) this.io.offsets.view = { camera, ...offset };
+    return result;
+  }
+  /**
+   * One terrain click in the active placement mode, classified from feedback events since
+   * `eventStart`. With `tile`, the map tile `point` was projected from, the click is aimed first.
+   */
+  async click(name: string, point: { x: number; y: number }, carried: string[], eventStart: number, tile?: { x: number; y: number }) {
     const cost = buildingCost(name);
+    const aimed = tile ? await this.aim(point, tile) : null;
+    if (aimed) point = aimed.point;
     const before = this.readerReady ? snapshotOf(await this.current()) : null;
     const ack = await this.io.send({ type: "click", x: point.x, y: point.y, button: 1 });
     const after = this.readerReady ? await this.settle(ack, cost, before, name) : await this.io.pause(0.3).then(() => null);
     const feedback = placementFeedback(this.device.events.since(eventStart));
     const visible = visiblePlacementFeedback(this.device.currentStats().observation);
     const outcome = confirmPlacement(placementStatus(feedback, visible, carried), cost, before, snapshotOf(after), name);
-    return { outcome, feedback, visible, after };
+    return { outcome, feedback, visible, after, point, ...(aimed ? { aimed } : {}) };
   }
 }

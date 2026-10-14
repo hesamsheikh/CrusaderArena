@@ -99,6 +99,7 @@ in the run's `events.jsonl`.
 | `structures` | Count and limit | **Map-wide**, including other players; use it only as a change signal |
 | `placement` | What is being placed, and in which mode | |
 | `camera` | Centre tile, visible tiles across and down, zoom | |
+| `mouse_tile` | The map tile under the mouse pointer, as the game picks it for a click (terrain height included); a pointer move without a click updates it | From the engine's own pointer tile, in a grid that runs the other way on both axes, turned into map tiles through the camera's centre tile, kept in both; null when the two disagree |
 | `visible_messages` | On-screen message text, by channel | See below |
 | `managed_heap` | The game's managed heap: size, used bytes, collection count, whether collection is disabled, and the watchdog's forced collections | Memory diagnostics; not shown to the model. See [Collector watchdog](#collector-watchdog) |
 

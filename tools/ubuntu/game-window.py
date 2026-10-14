@@ -223,6 +223,15 @@ def action(a):
             for mod_code, mask in reversed(pressed):
                 emit(w, protocol.event.KeyRelease(detail=mod_code, **common), event_mask=X.KeyReleaseMask)
                 common['state'] &= ~mask
+    elif kind == 'move':
+        # The pointer over a spot without a click, so the game shows what is under it (the host
+        # checks the tile a placement click would pick before clicking).
+        x, y = a.get('x'), a.get('y')
+        if not isinstance(x, int) or not isinstance(y, int) or not (0 <= x < g.width and 0 <= y < g.height):
+            raise ValueError('Coordinates must be inside the game window.')
+        origin = root.translate_coords(w, 0, 0)
+        common.update(event_x=x, event_y=y, root_x=origin.x+x, root_y=origin.y+y)
+        emit(w, protocol.event.MotionNotify(detail=0, **common), event_mask=X.PointerMotionMask)
     elif kind in ('click', 'drag', 'scroll'):
         x, y = a.get('x'), a.get('y')
         if not isinstance(x, int) or not isinstance(y, int) or not (0 <= x < g.width and 0 <= y < g.height):

@@ -516,6 +516,24 @@ export class GameDevice {
     });
   }
   /**
+   * Move the pointer to `point` of `frameId`'s image without clicking, so the game shows what is
+   * under it (observation.mouse_tile): placement checks the tile a click there would pick.
+   * Harness-internal, like hotkey: the model's actions have no move. Not counted as input.
+   */
+  async move(point: { x: number; y: number }, frameId: string, ageCreditMs = 0) {
+    return this.serial(async () => {
+      this.speedGuard?.();
+      const frame = this.frames.get(frameId);
+      if (!frame) throw new Error("Unknown or expired game image: call observe for a fresh screenshot.");
+      const at = { type: "click" as const, x: point.x, y: point.y, button: 1 as const };
+      validateFrameAction(at, frame, this.frameAge(frame, ageCreditMs));
+      const { x, y } = windowAction(at, frame);
+      return this.rpc("action", {
+        action: { type: "move", x, y, windowId: frame.windowId, width: frame.windowWidth ?? frame.width, height: frame.windowHeight ?? frame.height },
+      }) as Promise<{ at?: number } | undefined>;
+    });
+  }
+  /**
    * Trigger one whitelisted game hotkey by action name (the bridge resolves the
    * game's own binding). Harness-internal: not reachable through game_action.
    * No coordinates, so only the latest image's window identity is needed.

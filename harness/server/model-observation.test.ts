@@ -444,7 +444,7 @@ test("build_structure sends nothing and leaves placement mode untouched when eve
 });
 
 /** Simulated game and reader: placement mode, camera, wood and the map-wide structure count. */
-type SimState = { action: number; sub: number; wood: number; structures: number; camera: number; worldClicks: number; sel: number | null; messages: { channel: string; text: string }[]; flat: boolean };
+type SimState = { action: number; sub: number; wood: number; structures: number; camera: number; worldClicks: number; sel: number | null; messages: { channel: string; text: string }[]; flat: boolean; pointer: { x: number; y: number } | null; moves: number };
 function simulatedGame(options: {
   blocked?: (x: number, y: number) => boolean;
   ignoreButtons?: boolean;
@@ -495,10 +495,12 @@ function simulatedGame(options: {
   structureTypes?: Record<string, number>;
   /** The reader's storage positions and contents (observation.storage). */
   storage?: Record<string, unknown>;
+  /** The map tile the game picks under the pointer at a window pixel (observation.mouse_tile); without it the reader has no such field. */
+  cursor?: (x: number, y: number, state: SimState) => { x: number; y: number };
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
-  const state: SimState = { action: 0, sub: 52, wood: 100, structures: 18, camera: 1, worldClicks: 0, sel: null, messages: [], flat: false };
+  const state: SimState = { action: 0, sub: 52, wood: 100, structures: 18, camera: 1, worldClicks: 0, sel: null, messages: [], flat: false, pointer: null, moves: 0 };
   const buttonIds: Record<string, number> = { "866,978": 54, "872,934": 52, "880,992": 57 };
   for (const [name, id] of [["Stockpile", 52], ["Granary", 80], ["Woodcutter", 57], ["Dairy Farm", 73], ["Dancing Bear", 324], ["Iron Mine", 68], ["Armory", 1011]] as const) {
     const button = (trayClicks({ width: 1920, height: 1080 }, name) as { x: number; y: number }[]).at(-1)!;
@@ -522,6 +524,7 @@ function simulatedGame(options: {
       popularity: options.economy?.popularity ?? 90,
       ...(options.buildings ? { buildings: options.buildings } : {}),
       ...(options.storage ? { storage: options.storage } : {}),
+      ...(options.cursor ? { mouse_tile: state.pointer ? options.cursor(state.pointer.x, state.pointer.y, state) : null } : {}),
       resources_by_name: { wood_planks: state.wood },
       structures: { count: state.structures, limit: 3999 },
       placement: { action: state.action, sub_action: state.sub },
@@ -562,6 +565,7 @@ function simulatedGame(options: {
         staleUntil = Date.now() + options.staleAfterExitMs;
       }
       const id = buttonIds[`${action.x},${action.y}`];
+      if (action.type === "click") state.pointer = { x: action.x, y: action.y };
       if (action.button === 1 && action.x >= 1605 && action.x <= 1770 && action.y >= 892 && action.y <= 1056) {
         // The minimap: invert minimapFraction for the simulated 200 × 200 map (anchors.ts).
         if (options.minimap !== "ignored" && state.action !== 5) {
@@ -603,6 +607,13 @@ function simulatedGame(options: {
         return { x0, y0, w, h, stable: true, layers, ...(options.structureTypes ? { structure_types: options.structureTypes } : {}) };
       },
     } : {}),
+    move: async (point: { x: number; y: number }) => {
+      state.pointer = { ...point };
+      state.moves++;
+      // The tile under the pointer shows at once here, so the reply's time lies before the
+      // margin Placer.aim waits out after it (no real time passes on a timed runtime's clock).
+      return { at: Date.now() - 1000 };
+    },
     mapSummary: async () => ({ size: 200, rows: options.mapRows ?? Array.from({ length: 200 }, () => ".200"), bounds: { x0: 0, y0: 0, x1: 199, y1: 199 } }),
     hotkey: async (name: string) => {
       inputSerial++;
@@ -1380,33 +1391,41 @@ test("find_sites offers another granary only flush with the one standing, wherev
   assert.ok(!plain.searchedAround && allSites(plain).length === 1, JSON.stringify(plain));
 });
 
-test("expand_storage makes up for a view whose clicks land a tile off: one retry, then every spot flush, and the next call at once", async () => {
-  // On Large Barren Desert's start every stockpile went one tile further along +x than aimed, and
-  // each flush spot on that side was refused as not adjacent (live 2026-10-14).
-  for (const error of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 0 }]) {
+test("build_structure and expand_storage aim each click by the tile the game picks under the pointer, so clicks a tile off still build on their tiles", async () => {
+  // On Large Barren Desert's start every building placed by tile went one tile off, and each flush
+  // stockpile spot on the +x side was refused as not adjacent (live 2026-10-14).
+  for (const error of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 0 }]) {
     const granaries: Rect[] = [{ x1: 100, y1: 98, x2: 103, y2: 101 }];
     const storage = { piles: [], granaries: [{ tile: [100, 98], amount: 40, capacity: 250 }], truncated: false };
     const structureTypes: Record<string, number> = { "7": 19 };
-    // The tile a click picks (tilePixel turned back, at the simulated camera), and the footprint it builds.
-    const landed = (px: number, py: number, camera: number) => {
+    const woodcutters: { x: number; y: number }[] = [];
+    // The tile the game picks under a window pixel: tilePixel turned back at the simulated camera, `error` off.
+    const picked = (px: number, py: number, camera: number) => {
       const u = (px - 960) / 32, v = (py - 540) / (1080 / 68) + 8 / 8.7;
-      const t = { x: 99 + camera + Math.round((u + v) / 2) + error.x, y: 100 + Math.round((v - u) / 2) + error.y };
-      return footprintRect(t, 4);
+      return { x: 99 + camera + Math.round((u + v) / 2) + error.x, y: 100 + Math.round((v - u) / 2) + error.y };
     };
     const overlaps = (a: Rect, b: Rect) => a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2;
     const flush = (a: Rect, b: Rect) => !overlaps(a, b) &&
       ((a.x1 === b.x2 + 1 || b.x1 === a.x2 + 1) && a.y1 <= b.y2 && b.y1 <= a.y2 || (a.y1 === b.y2 + 1 || b.y1 === a.y2 + 1) && a.x1 <= b.x2 && b.x1 <= a.x2);
+    const granary = 80;
     const game = simulatedGame({
       anchors: { Granary: { camera: 1, type: 19 } },
       tiles: (set) => granaries.forEach((g, i) => { for (let x = g.x1; x <= g.x2; x++) for (let y = g.y1; y <= g.y2; y++) set("structure", x, y, 7 + i); }),
       structureTypes, buildings: { "19": 1 }, storage, runtime: timedRuntime().runtime,
+      cursor: (px, py, state) => picked(px, py, state.camera),
       reject: (px, py, state) => {
-        const f = landed(px, py, state.camera);
+        if (state.sub !== granary) return undefined;
+        const f = footprintRect(picked(px, py, state.camera), 4);
         return granaries.some((g) => overlaps(f, g)) || granaries.some((g) => flush(f, g)) ? undefined : "Needs to be placed adjacent to the granary.";
       },
       // Over a granary: refused without a message. Otherwise it stands, and the reader shows it.
       blocked: (px, py) => {
-        const f = landed(px, py, game.state.camera);
+        const t = picked(px, py, game.state.camera);
+        if (game.state.sub !== granary) {
+          woodcutters.push(t);
+          return false;
+        }
+        const f = footprintRect(t, 4);
         if (granaries.some((g) => overlaps(f, g))) return true;
         structureTypes[String(7 + granaries.length)] = 19;
         granaries.push(f);
@@ -1414,17 +1433,19 @@ test("expand_storage makes up for a view whose clicks land a tile off: one retry
         return false;
       },
     });
+    const label = JSON.stringify(error);
     const first = await game.run("expand_storage", { kind: "granary", count: 2 });
-    assert.equal(first.json.status, "placed", `${JSON.stringify(error)} ${JSON.stringify(first.json)}`);
-    // The first spot lies on the +x side: a drift along x makes it refused once, and the retry
-    // places it; one along y only slides it along the granary, and the placement measures it.
-    assert.equal(first.json.probes, error.x ? 3 : 2, `${JSON.stringify(error)} ${JSON.stringify(first.json)}`);
+    assert.equal(first.json.status, "placed", `${label} ${JSON.stringify(first.json)}`);
+    assert.equal(first.json.probes, 2, `no click refused: ${label} ${JSON.stringify(first.json)}`);
     const second = await game.run("expand_storage", { kind: "granary", count: 1 });
-    assert.equal(second.json.status, "placed", `${JSON.stringify(error)} ${JSON.stringify(second.json)}`);
-    assert.equal(second.json.probes, 1, `the view's drift kept: ${JSON.stringify(error)} ${JSON.stringify(second.json)}`);
-    // Every granary touches one placed before it, and none overlaps another.
-    assert.equal(granaries.length, 4);
-    granaries.forEach((g, i) => i && assert.ok(granaries.slice(0, i).some((h) => flush(g, h)), JSON.stringify(granaries)));
+    assert.equal(second.json.probes, 1, `${label} ${JSON.stringify(second.json)}`);
+    granaries.forEach((g, i) => i && assert.ok(granaries.slice(0, i).some((h) => flush(g, h)), `${label} ${JSON.stringify(granaries)}`));
+    // A build_structure tile target in the same view lands on its tile.
+    const built = await game.run("build_structure", { placements: [{ name: "Woodcutter", tile_x: 95, tile_y: 108 }] });
+    assert.equal(built.json.placements[0].status, "placed", `${label} ${JSON.stringify(built.json)}`);
+    assert.deepEqual(woodcutters, [{ x: 95, y: 108 }], label);
+    // The first target in the view took a second pointer move to find its offset; the others one each.
+    assert.equal(game.state.moves, error.x || error.y ? 5 : 4, label);
   }
 });
 

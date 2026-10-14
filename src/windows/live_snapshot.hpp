@@ -129,6 +129,23 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
          <<",\"pixels_per_unit_scale\":"<<scale<<'}';
         return c.str();
     });
+    // The tile under the mouse pointer, as the game picks it for a click (terrain height included),
+    // which a pointer move updates without a click. The engine keeps it in its own tile grid, which
+    // runs the other way on both axes; the camera's centre tile, kept in both, turns it into map tiles.
+    const auto mouse_tile=optional([&]()->std::string {
+        const auto u=m::field<float>(a.api,editor.get(),"mouseTileX");
+        const auto v=m::field<float>(a.api,editor.get(),"mouseTileY");
+        if(!std::isfinite(u) || !std::isfinite(v))throw std::runtime_error("non-finite mouse tile");
+        auto f=a.api.field_named(a.api.object_class(map.get()),"cachecCentreTileMapVector");
+        if(!f || a.api.type_kind(a.api.field_type(f))!=0x11)throw std::runtime_error("centre tile vector missing");
+        std::int32_t centre[16]={};a.api.field_get(map.get(),f,centre);
+        const auto x0=m::field<std::int32_t>(a.api,map.get(),"screenCentreTileX");
+        const auto y0=m::field<std::int32_t>(a.api,map.get(),"screenCentreTileY");
+        // The engine grid's last index, the same from both axes, or the reading is not trusted.
+        const auto last=x0+centre[1];
+        if(y0+centre[0]!=last)throw std::runtime_error("tile grids disagree");
+        return "{\"x\":"+std::to_string(last-std::lround(v))+",\"y\":"+std::to_string(last-std::lround(u))+"}";
+    });
     // Settlement context from the same PlayState (calendar, housing, food, popularity
     // factors, the church and cathedral bonus, the keep's tax figure). Optional; field meanings
     // beyond the names need UI validation. The church bonus is optional on its own (null when
@@ -263,7 +280,7 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
        <<",\"resources\":[";
     for(std::size_t i=0;i<economy.resources.size();++i){if(i)out<<',';out<<economy.resources[i];}
     out<<"],\"own_troops\":{\"total\":"<<total<<",\"by_type_1_to_34\":["<<counts.str()<<"]}"
-       <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"managed_heap\":"<<managed_heap
+       <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"mouse_tile\":"<<mouse_tile<<",\"managed_heap\":"<<managed_heap
        <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building<<",\"storage\":"<<storage
        <<",\"buildings\":"<<buildings<<",\"selected_workshop\":"<<selected_workshop
        <<",\"visible_messages\":[";

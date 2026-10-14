@@ -266,6 +266,15 @@ between September and October 2026.
   corrected retry, and one spot later lower on the screen, where the error was not the one
   measured near the centre; the calls after the first placed at their first click, and all 7
   stockpiles stood flush with one before them.
+  - The tile under the pointer: the engine keeps it, and a pointer move without a click
+    updates it, paused or running, with terrain height counted (over a dune of height 38 it
+    named a tile further down than flat ground would). After clicks it named the tile each
+    hovel had landed on, one off from the tile aimed. With every placement click aimed by it
+    (the stand-in on the same start, 5 game minutes): three hovels and two woodcutters by tile,
+    in the start view and in another, two stockpiles by `expand_storage` (one on the +x side)
+    in 2 probes, two stockpiles at `find_sites` spots, a granary by `expand_storage` and two
+    hovels in the stockpile's view were all placed at their first click, and a tile read showed
+    each footprint exactly where asked, the stockpiles flush in a row.
 - The run overlay's speed, on 2026-10-14 (stand-in on Oasis by the Sea, 3 game minutes): the
   phase line went from "waiting · speed 40" through 45 to "speed 90" and back down to 40 in
   each fast wait, as the + and - presses went; panels rendered from the live status showed it.
@@ -777,13 +786,11 @@ between September and October 2026.
 
 ## Known issues
 
-- **Clicks a tile off.** The reader's camera centre is a whole tile, and the view can lie
-  part of a tile from it, so a click aimed at a tile can pick its neighbour (one tile along
-  +x for every placement on Large Barren Desert's start, none on The Sinkhole; see Runs).
-  `expand_storage` and `place_near` make up for it from where the reader shows the storage
-  they placed; `build_structure` and the other tile targets do not yet, so a building can
-  stand a tile from its spot. The game's screen-space position of the centre tile may make
-  the projection exact; it changes with the zoom and is not mapped yet.
+- **Tile targets that are not aimed.** The reader's camera centre is a whole tile, and the
+  view can lie part of a tile from it, so a click projected at a tile can pick its neighbour
+  (see Runs). Placement clicks are aimed by the tile the game picks under the pointer;
+  `demolish_building`, `set_workshop` and `inspect_building` by tile still click the projected
+  pixel, which a tile off usually still lands on the building.
 - **Garbage-collector stalls.** Under Proton, the game's garbage collector can stop
   starting collections, paused or running, with or without the reader: about once per
   1,300–1,500 collections, or 0.75 times an hour of play, in recorded runs up to

@@ -1,7 +1,7 @@
 import type { Frame, GameAction } from "../shared/protocol.js";
 import type { GameDevice, GameHotkey } from "./device.js";
 import { cameraKey, cameraSpanOf, minimapClick, placementOf, visiblePlacementFeedback } from "./construction-ui.js";
-import { Placer, SAMPLE_POLL_SECONDS, type Ack, type Observation } from "./placement.js";
+import { Placer, SAMPLE_POLL_SECONDS, type Ack, type Observation, type ViewOffset } from "./placement.js";
 import { anchorFootprintTiles, footprintOf } from "./footprints.js";
 import { footprintRect, isStorageKind, onScreen, STRUCTURE_TYPES, tilePixel as projectTile, type Rect, type StorageKind, type TileMap } from "./tile-map.js";
 import { shortfall } from "./building-info.js";
@@ -108,8 +108,13 @@ async function placedStorage(ctx: AnchorContext, kind: StorageKind, before: stri
   return { x1: x, y1: y, x2: x + size - 1, y2: y + size - 1 };
 }
 
-/** Furthest a click is moved to make up for a view's drift, in tiles along each axis. */
-const MAX_DRIFT = 2;
+/** A Placer's pointer moves for aimed clicks (Placer.aim), and the view offsets kept for the run. */
+function aiming(ctx: AnchorContext) {
+  return {
+    move: async (point: { x: number; y: number }) => (await ctx.device.move(point, (await ctx.frame()).id, Number.POSITIVE_INFINITY)) as Ack,
+    offsets: ctx.state,
+  };
+}
 
 /**
  * Place up to `count` buildings at computed flush spots beside the anchor (storage may also
@@ -143,19 +148,13 @@ async function placeFromMap(
   if (!anchorRect) return null;
   const size = footprintOf(building);
   const touching: Rect[] = storage ? map.cluster(anchorRect, map.storageRects(building)) : [anchorRect];
-  // The game can put a building a tile from the spot a click aims at: the reader's camera is a
-  // whole tile, and the view can lie part of a tile from it. On Large Barren Desert's start every
-  // stockpile went one tile further along +x than aimed, so each flush spot on that side was
-  // refused as not adjacent (live 2026-10-14; 240 refused probes in 180 earlier expand_storage
-  // calls). Where the reader shows a placed storage building sets the drift the clicks after it
-  // make up for, kept for the view; a flush storage spot refused as not adjacent (the building fell
-  // a tile beyond the side) or, before any drift is measured, without a message (a tile into the
-  // storage) is tried once more a tile the other way.
+  // Each click is aimed at its spot's tile by the tile the game picks under the pointer
+  // (Placer.aim): the reader's camera is a whole tile, and the view can lie part of a tile from it.
+  // On Large Barren Desert's start every stockpile a projected click placed went one tile further
+  // along +x, and each flush spot on that side was refused as not adjacent (live 2026-10-14; 240
+  // refused probes in 180 earlier expand_storage calls). The later spots go against where the reader
+  // shows each storage building placed.
   const kind = storage && isStorageKind(building) ? building : null;
-  const kept = ctx.state.drift;
-  let drift = kept && kept.camera === anchorCamera ? { x: kept.x, y: kept.y } : { x: 0, y: 0 };
-  let measured = false;
-  let retried: { site: string; drift: { x: number; y: number } } | undefined;
   let attempts = 0;
   // Refusals with no message and nothing spent: the spot was blocked where the click landed.
   let silent = 0;
@@ -181,50 +180,18 @@ async function placeFromMap(
     // the view the click lands in, and a tile pushes a flush spot into the anchor (both of a
     // stockpile's flush spots refused after a bookmark return, Kimi K3, 2026-10-12).
     const live = sample?.camera as Parameters<typeof projectTile>[0] | undefined;
-    const aim = { x: site.tile.x - drift.x, y: site.tile.y - drift.y };
-    const at = live ? projectTile(live, map.frame, aim, map.heightAt(aim)) : map.pixel(aim);
+    const at = live ? projectTile(live, map.frame, site.tile, map.heightAt(site.tile)) : map.pixel(site.tile);
     if (!onScreen(map.frame, at)) { stopped = "camera_moved"; break; }
     attempts++;
     const carried = visiblePlacementFeedback(ctx.device.currentStats().observation);
     const before = kind ? storageTiles(kind, ctx.device.currentStats().observation) : [];
-    const result = await placer.click(building, at, carried, ctx.device.events.cursor());
-    const spot = `${site.tile.x},${site.tile.y}`;
+    const result = await placer.click(building, at, carried, ctx.device.events.cursor(), site.tile);
     if (result.outcome.status === "placed") {
-      const landed = kind ? await placedStorage(ctx, kind, before) : null;
-      if (landed) {
-        const aimed = footprintRect(aim, size);
-        const seen = { x: landed.x1 - aimed.x1, y: landed.y1 - aimed.y1 };
-        if (Math.abs(seen.x) <= MAX_DRIFT && Math.abs(seen.y) <= MAX_DRIFT) {
-          drift = seen;
-          measured = true;
-          ctx.state.drift = { camera: anchorCamera, ...drift };
-        }
-      }
-      const rect = landed ?? footprintRect(site.tile, size);
+      const rect = (kind ? await placedStorage(ctx, kind, before) : null) ?? footprintRect(site.tile, size);
       map.claim(building, { x: rect.x1 + Math.floor(size / 2), y: rect.y1 + Math.floor(size / 2) }, 0, true);
-      placed.push({ x: at.x, y: at.y, side: site.side as Side, tilesOut: site.gap });
+      placed.push({ x: result.point.x, y: result.point.y, side: site.side as Side, tilesOut: site.gap });
       if (storage) touching.push(rect);
-      retried = undefined;
       continue;
-    }
-    const outward = site.side ? sideAxes[site.side as Side]?.along : undefined;
-    const notAdjacent = result.feedback.some((f) => /adjacent/i.test(f));
-    if (kind && site.gap === 0 && outward && retried?.site !== spot && (notAdjacent || (!result.feedback.length && !measured))) {
-      const next = notAdjacent
-        ? { x: drift.x + outward[0], y: drift.y + outward[1] }
-        : { x: drift.x - outward[0], y: drift.y - outward[1] };
-      if (Math.abs(next.x) <= MAX_DRIFT && Math.abs(next.y) <= MAX_DRIFT) {
-        retried = { site: spot, drift };
-        drift = next;
-        if (!result.feedback.length) silent++;
-        else feedback = result.feedback;
-        continue;
-      }
-    }
-    // Refused again after a correction: the drift was not why, so the correction goes.
-    if (retried?.site === spot) {
-      drift = retried.drift;
-      retried = undefined;
     }
     // The spot is used up for this call; a "Too close to …" refusal also rules out its surroundings.
     map.claim(building, site.tile, result.feedback.some((f) => /too close/i.test(f)) ? TOO_CLOSE_MARGIN : 0, false);
@@ -314,8 +281,8 @@ export type AnchorContext = {
   /** Per-run memory: the located stockpile's camera tile (bookmarked). */
   state: {
     stockpile?: string;
-    /** The tiles the game put storage beyond where clicks aimed, in the view of `camera` (placeFromMap). */
-    drift?: { camera: string; x: number; y: number };
+    /** How far the tile the game picks under the pointer lay from the projected one, in the last view aimed in (Placer.aim). */
+    view?: ViewOffset;
   };
 };
 
@@ -426,7 +393,7 @@ async function centerOnStockpile(ctx: AnchorContext): Promise<CentreResult> {
   // Input goes through the call's reusable frame, captured afresh when it grows old: one frame
   // reused for a whole probe outlived the input age limit (three place_near Armory calls threw
   // "Game image expired" and left the game in placement mode, 2026-10-13).
-  const placer = await new Placer(ctx.device, { send: async (a) => ctx.send(await ctx.frame(), a), pause: ctx.pause, frame }).init();
+  const placer = await new Placer(ctx.device, { send: async (a) => ctx.send(await ctx.frame(), a), pause: ctx.pause, frame, ...aiming(ctx) }).init();
   if (!placer.readerReady) return { status: "failed", anchor, note: "Reader unavailable; the stockpile cannot be located." };
   if ((await placer.select("Stockpile")) === "failed")
     return { status: "failed", anchor, note: "The Stockpile button did not select; is the construction bar visible?" };
@@ -495,7 +462,7 @@ export async function placeAdjacent(
   // Input goes through the call's reusable frame, captured afresh when it grows old: one frame
   // reused for a whole probe outlived the input age limit (three place_near Armory calls threw
   // "Game image expired" and left the game in placement mode, 2026-10-13).
-  const placer = await new Placer(ctx.device, { send: async (a) => ctx.send(await ctx.frame(), a), pause: ctx.pause, frame }).init();
+  const placer = await new Placer(ctx.device, { send: async (a) => ctx.send(await ctx.frame(), a), pause: ctx.pause, frame, ...aiming(ctx) }).init();
   // With the native tile layers the flush spots are computed, not probed: the anchor is the
   // building nearest the camera centre, and each candidate's whole footprint is free. The read
   // (about 3 s on the game machine in a 2026-10-11 run's records) runs while the building is

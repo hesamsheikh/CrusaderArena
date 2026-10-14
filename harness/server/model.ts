@@ -1009,7 +1009,11 @@ export function makeAgent(
         // still verifies the selection through the reader and falls back to the full category click
         // and wait when it is wrong, so a stale guess costs at most one retry.
         const openCategory = menuMemory !== undefined && menuMemory.serial === device.inputSerial ? menuMemory.category : undefined;
-        const placer = await new Placer(device, { send, pause, frame }, openCategory).init();
+        // A click aimed at a map tile first moves the pointer there and checks the tile the game
+        // picks under it (Placer.aim); its moves go with the latest capture, like the tile clicks.
+        const move = async (point: { x: number; y: number }) =>
+          (await device.move(point, (device.latest ?? frame).id, Number.POSITIVE_INFINITY)) as { at?: number } | undefined;
+        const placer = await new Placer(device, { send, pause, frame, move, offsets: anchorState }, openCategory).init();
         const readerReadyAtStart = placer.readerReady;
         // Retries of silently blocked targets are harness clicks like the menu clicks, bounded per call.
         let retryBudget = RETRIES_PER_CALL;
@@ -1220,8 +1224,8 @@ export function makeAgent(
             // ahead as before.
             const upfrontMissing = !moveForAccess ? shortfall(plan.name, device.currentStats().observation) : null;
             let result: Awaited<ReturnType<Placer["click"]>> = moveForAccess || upfrontMissing
-              ? { outcome: { status: "not_placed" }, feedback: [], visible: [], after: null }
-              : await placer.click(plan.name, target, carried, eventStart);
+              ? { outcome: { status: "not_placed" }, feedback: [], visible: [], after: null, point: target }
+              : await placer.click(plan.name, target, carried, eventStart, tileOrigin);
             let at: { x: number; y: number; offsetTiles: [number, number]; tile?: { x: number; y: number } } | undefined;
             let retries = 0;
             let retryStopped: string | undefined;
@@ -1316,7 +1320,7 @@ export function makeAgent(
                 retryBudget--;
                 retries++;
                 const carriedNow = [...carried, ...visiblePlacementFeedback(device.currentStats().observation)];
-                result = await placer.click(plan.name, candidate, carriedNow, device.events.cursor());
+                result = await placer.click(plan.name, candidate, carriedNow, device.events.cursor(), candidate.tile);
                 at = candidate;
                 if (!retryable(result)) break;
                 if (candidate.tile) tileMap?.claim(plan.name, candidate.tile, tooClose(result) ? TOO_CLOSE_MARGIN : 0);
@@ -1354,6 +1358,8 @@ export function makeAgent(
               ...(missing ? { missing } : tileDebug ? { tileDebug } : {}),
               ...(retryMethod === "offsets" && tileMapError ? { tileMapError } : {}),
               ...(retryStopped ? { retryStopped } : {}),
+              // The tile the game picked under the pointer when the aim could not reach the one asked.
+              ...(result.aimed?.shown && !result.aimed.matched ? { cursorTile: result.aimed.shown } : {}),
               feedback,
               // The building's cost from the game reference. The stock change around the click is
               // not one: the starting goods arriving, production and food show in it too, and the

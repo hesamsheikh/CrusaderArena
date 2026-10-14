@@ -113,6 +113,11 @@ export type Stats = {
       tiles_high: number;
       pixels_per_unit_scale: number;
     } | null;
+    /**
+     * The map tile under the mouse pointer as the game picks it for a click, terrain height
+     * included; a pointer move updates it without a click. Null when unavailable.
+     */
+    mouse_tile?: { x: number; y: number } | null;
     /** Mono GC heap totals and the reader's collector watchdog (memory diagnostics); null when unavailable. */
     managed_heap?: {
       heap_bytes: number;

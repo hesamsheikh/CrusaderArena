@@ -225,9 +225,9 @@
     },
     {
       "version": "1.7.0",
-      "fingerprint": "92ded874fbd979c1cea47cec40f402f96dace199b037d4388acb4b8951a2858a",
+      "fingerprint": "49a9321db423522e9e95c6073b1622845ac13a7f3a5081b82c40c07eb697ea02",
       "date": "2026-10-14",
-      "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; religion and the inn show at 0 once one stands, status counts buildings, inspect_building takes a map tile, find_sites says when no woodcutter spot has trees, and expand_storage and place_near go back to the anchor's view after choosing storage moved it and make up for clicks that land a tile off; the game machine's reader is rebuilt unless it was built from the version's sources"
+      "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; religion and the inn show at 0 once one stands, status counts buildings, inspect_building takes a map tile, find_sites says when no woodcutter spot has trees, and expand_storage and place_near go back to the anchor's view after choosing storage moved it; clicks at a map tile are aimed by the tile the game picks under the pointer; the game machine's reader is rebuilt unless it was built from the version's sources"
     }
   ]
 }

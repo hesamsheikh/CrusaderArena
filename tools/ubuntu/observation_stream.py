@@ -64,9 +64,9 @@ class ObservationStream:
                 'armories': [{'tile': [x, y], 'amount': amount, 'capacity': capacity}
                              for x, y, amount, capacity in storage.get('armories', [])],
                 'truncated': storage['truncated']}
-        # 'structures', 'placement', 'camera', 'managed_heap' and 'buildings' (the local player's
-        # building records counted by engine type) pass through unchanged; all but the first are
-        # null when unavailable.
+        # 'structures', 'placement', 'camera', 'mouse_tile' (the tile under the pointer),
+        # 'managed_heap' and 'buildings' (the local player's building records counted by engine
+        # type) pass through unchanged; all but the first are null when unavailable.
         if 'own_troops' in observation:
             troops = dict(observation['own_troops'])
             troops['by_type'] = dict(zip(TROOP_TYPES, troops.pop('by_type_1_to_34'), strict=True))

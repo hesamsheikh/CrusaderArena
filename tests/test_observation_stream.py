@@ -62,15 +62,17 @@ class StreamTests(unittest.TestCase):
                    'placement': {'action': 5, 'sub_action': 32},
                    'camera': {'centre_tile_x': 200, 'centre_tile_y': 180, 'tiles_wide': 30,
                               'tiles_high': 60, 'pixels_per_unit_scale': 1.0},
+                   'mouse_tile': {'x': 204, 'y': 183},
                    'buildings': {'1': 24, '10': 16, '17': 57}}
         self.record['observation'].update(copy.deepcopy(context))
         observation = self.stream.consume(self.record, 1020)['observation']
         for key, value in context.items():
             self.assertEqual(observation[key], value)
-        self.record['observation'].update(placement=None, camera=None, buildings=None)
+        self.record['observation'].update(placement=None, camera=None, mouse_tile=None, buildings=None)
         observation = self.stream.consume(self.record, 1030)['observation']
         self.assertIsNone(observation['placement'])
         self.assertIsNone(observation['camera'])
+        self.assertIsNone(observation['mouse_tile'])
         self.assertIsNone(observation['buildings'])
 
     def test_storage_names_goods_and_leaves_empty_piles_without_one(self):
