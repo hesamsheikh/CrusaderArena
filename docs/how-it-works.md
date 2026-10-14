@@ -104,17 +104,25 @@ While the speed is not confirmed at 40, the host refuses any input to the game.
 
 A wait with a condition (`wait_and_observe` with `until`) can end at any moment once the
 turn's minimum length has passed, so that part of it keeps the speed of 40 (the part the
-minimum turn still owes is a plain wait). So do waits too short to gain: about 0.12 real seconds per key
-press and a 1.3-second measurement make the host's waits of 5 to 8 game seconds a loss.
-A [warning](context.md#warnings) can end the model's other waits too: a fast wait checks
-for one at speed and comes back down when one comes up, a few game seconds later, all of
-them within the wait.
-A wait that ends below 40 shows the game tops out lower than 90, so later waits press `+`
-fewer times; after three wrong end speeds, or if `+` does not speed the game up, the run
-plays the rest of its waits at 40. Each wait played fast is in the run's events
-(`fast_wait`), and the totals, with the real seconds saved, in `progress.fastWaits`. The
-run setting `fastWaits` (on by default; `--no-fast-waits` for `npm run episodes`) turns
-them off.
+minimum turn still owes is a plain wait). So do waits too short to gain: about 0.12 real
+seconds per key press and a 1.3-second measurement make the host's waits of 5 to 8 game
+seconds a loss. A [warning](context.md#warnings) can end the model's other waits too: a
+fast wait checks for one at speed and comes back down when one comes up, a few game
+seconds later, all of them within the wait.
+
+The way down is planned for the slowest recent key press and 0.6 real seconds of reader
+lag; simulated with presses of 60 to 300 ms and samples arriving 200 ms late, a wait ended
+past its last tick about once in a hundred, by under a game second. A wait that ends
+below 40 shows the game tops out lower than 90, so later waits press `+` fewer times;
+after three wrong end speeds, or if `+` does not speed the game up, the run plays the
+rest of its waits at 40. A fast wait that fails partway (the reader gone for seconds, a
+key the window bridge refused) has its `+` presses taken back and the speed measured at
+40 again, and the run plays the rest of its waits at 40; if 40 cannot be confirmed, the
+run ends. A run stopped during a fast wait has the speed pressed back down after its
+final pause, or without one after an operator stop. Each wait played fast is in the
+run's events (`fast_wait`; a failed one as `fast_wait_failed`), and the totals, with the
+real seconds saved, in `progress.fastWaits`. The run setting `fastWaits` (on by default;
+`--no-fast-waits` for `npm run episodes`) turns them off.
 
 Every request shows the model the game time left in minutes and seconds: `run_clock`
 in each screenshot, and a "Game time left" line after the last tool result of each

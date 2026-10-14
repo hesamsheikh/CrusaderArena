@@ -435,6 +435,7 @@ test("fast waits get the host's waits and the model's, and the run records what 
       f.advanceTicks(target - 1000 + 1); // The fake game runs past the wait's end.
       return { ticks: 300, presses: 10, fastRate: 90.9, endRate: 40.4, realMs: 4000, savedMs: 3400 };
     },
+    recover: async () => 0,
     restore: async () => 0,
   };
   f = fixture(3, 10, 10, {}, undefined, 0, undefined, "always", () => stub);
@@ -459,6 +460,7 @@ test("a run that ends during a fast wait presses the speed back down once the ga
       f.controller.interrupt(); // A host shutdown: the run still ends with its final pause.
       throw new Error("Session stopped while waiting");
     },
+    recover: async () => 0,
     restore: async (press) => {
       for (; raised > 0; raised--) await press("-");
       stub.normal = true;
@@ -473,6 +475,97 @@ test("a run that ends during a fast wait presses the speed back down once the ga
   assert.deepEqual(keys.slice(finalPause + 1).filter((k) => k === "-").length, 7, JSON.stringify(keys));
   assert.equal(f.isPaused(), true);
   assert.ok(runEvents(f).some((e) => e.type === "fast_wait_restored" && e.presses === 7));
+});
+/**
+ * A fast wait that fails with the run going on, as after a reader gap at the top speed: 4 + presses
+ * not taken back. The fake game's clock runs only when a test moves it, so each wait plays its
+ * ticks here, the failed one too, from the run's first tick (1000).
+ */
+function failingFastWaits(getFixture: () => ReturnType<typeof fixture>) {
+  let raised = 0;
+  let tick = 1000;
+  const stub: FastWaitsLike = {
+    normal: true, corrections: 0,
+    run: async (target) => {
+      getFixture().advanceTicks(target - tick + 1);
+      tick = target + 1;
+      if (stub.off) return null;
+      stub.normal = false;
+      raised = 4;
+      throw new Error("No game-clock reading from the reader; cannot measure the game speed.");
+    },
+    recover: async (reason, setSpeed) => {
+      const presses = raised;
+      for (; raised > 0; raised--) await getFixture().controller["pressSpeedKey"]("-");
+      await setSpeed();
+      stub.normal = true;
+      stub.off ??= `a fast wait failed (${reason})`;
+      return presses;
+    },
+    restore: async (press) => {
+      const presses = raised;
+      for (; raised > 0; raised--) await press("-");
+      stub.normal = true;
+      return presses;
+    },
+  };
+  return stub;
+}
+test("a fast wait that fails in the model's own wait sets the speed back to 40, and the run goes on with its waits at 40", async () => {
+  let f!: ReturnType<typeof fixture>;
+  const stub = failingFastWaits(() => f);
+  let speedSettings = 0;
+  f = fixture(3, 10, 10, {}, undefined, 0, async () => { speedSettings++; return { target: 40, before: 40, after: 40.4, presses: 0 }; }, "always", () => stub);
+  f.provider((n) => n === 1 ? [call("wait_and_observe", { seconds: 20 })] : [call("game_action", { type: "key", key: "Z" })]);
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  const keys = f.actions.map((a) => (a as { key?: string }).key);
+  assert.equal(keys.filter((k) => k === "-").length, 4, JSON.stringify(keys));
+  assert.equal(speedSettings, 2, "set at the start, and measured again after the failure");
+  // The model's input goes through afterwards: the speed is confirmed again.
+  assert.ok(keys.includes("Z"), JSON.stringify(keys));
+  const events = runEvents(f);
+  assert.ok(events.some((e) => e.type === "fast_wait_failed" && /No game-clock reading/.test(e.reason) && e.presses === 4));
+  assert.ok(events.some((e) => e.type === "fast_waits_off"));
+  assert.match(f.controller.progress.fastWaits?.off ?? "", /a fast wait failed/);
+});
+test("a fast wait whose speed cannot be confirmed again ends the run", async () => {
+  let f!: ReturnType<typeof fixture>;
+  const stub = failingFastWaits(() => f);
+  let speedSettings = 0;
+  f = fixture(3, 10, 10, {}, undefined, 0, async () => {
+    if (++speedSettings > 1) throw new Error("The game clock did not advance; the game must run to measure its speed.");
+    return { target: 40, before: 40, after: 40.4, presses: 0 };
+  }, "always", () => stub);
+  f.provider((n) => n === 1 ? [call("wait_and_observe", { seconds: 20 })] : [call("game_action", { type: "key", key: "Z" })]);
+  assert.equal(await f.controller.runSession(), "error");
+  assert.match(f.controller.progress.endError ?? "", /could not be confirmed at 40 again/);
+  assert.ok(!f.actions.some((a) => (a as { key?: string }).key === "Z"), "no input after the failure");
+});
+test("an operator stop during a fast wait still takes the speed back down, without the final pause", async () => {
+  let f!: ReturnType<typeof fixture>;
+  let raised = 0;
+  const stub: FastWaitsLike = {
+    normal: true, corrections: 0,
+    run: async () => {
+      stub.normal = false;
+      raised = 6;
+      f.controller.stop(); // The dashboard's Stop: no final pause.
+      throw new Error("Session stopped while waiting");
+    },
+    recover: async () => 0,
+    restore: async (press) => {
+      const presses = raised;
+      for (; raised > 0; raised--) await press("-");
+      stub.normal = true;
+      return presses;
+    },
+  };
+  f = fixture(2, 0, 10, {}, undefined, 0, undefined, "always", () => stub);
+  f.provider(() => [call("wait_and_observe", { seconds: 60 })]);
+  await f.controller.runSession();
+  const keys = f.actions.map((a) => (a as { key?: string }).key);
+  assert.equal(keys.filter((k) => k === "-").length, 6, JSON.stringify(keys));
+  assert.ok(runEvents(f).some((e) => e.type === "fast_wait_restored" && e.presses === 6));
 });
 test("go_to_tile after an action in the same reply runs with the game running, with no extra pause toggles", async () => {
   const f = fixture(2);

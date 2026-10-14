@@ -366,11 +366,14 @@ between September and October 2026.
     game seconds end at speed 40 before their last tick, short ones press nothing, a lost
     `-` press and a lower top speed are set right by the end measurement, dead speed keys
     turn fast waits off, and a run stopped in a fast wait presses the speed back down after
-    its final pause; the device refusing game input while the speed is unconfirmed. Not
-    known from the live game: the top speed and whether a late-game map holds it, a
-    message on screen or in the reader when the speed changes, whether the speed keys
-    work while paused, the shortest key press the game takes, and that a tick is the same
-    game at 90 as at 40.
+    its final pause, or without one after an operator stop; a fast wait that fails partway
+    (the reader gone) recovers to a measured 40 or ends the run; with key presses of 60 to
+    300 ms and reader samples 200 ms late, about one wait in a hundred ends past its last
+    tick, by under a game second; the device refusing game input while the speed is
+    unconfirmed. Not known from the live game: the top speed and whether a late-game map
+    holds it, a message on screen or in the reader when the speed changes, whether the
+    speed keys work while paused, the shortest key press the game takes, how late reader
+    samples reach the host, and that a tick is the same game at 90 as at 40.
   - A screenshot's age counted in game seconds on the game clock (40 of them), with real
     time only when there is no clock reading; input aimed by map tile exempt, as before.
   - `flat_view` toggling the view paused and taking its two images with the game running.

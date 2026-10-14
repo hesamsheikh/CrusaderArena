@@ -83,7 +83,7 @@ export function isTransientProviderError(message?: string) {
 }
 
 /** What the controller uses of FastWaits (game-speed.ts). */
-export type FastWaitsLike = Pick<FastWaits, "run" | "restore" | "normal" | "off" | "corrections">;
+export type FastWaitsLike = Pick<FastWaits, "run" | "recover" | "restore" | "normal" | "off" | "corrections">;
 
 export class RunController {
   readonly session: Session;
@@ -607,7 +607,15 @@ export class RunController {
     };
     this.session.setFastWait(async (target, stop) => {
       const off = fast.off;
-      const record = await fast.run(target, stop);
+      let record: FastWait | null;
+      try {
+        record = await fast.run(target, stop);
+      } catch (error) {
+        // A stop or the deadline ends the run, and its final pause takes the speed back down.
+        if (this.session.reason) throw error;
+        await this.recoverSpeed(fast, error);
+        record = null;
+      }
       if (record) this.recordFastWait(record, fast);
       if (fast.off && fast.off !== off) {
         this.store.event(this.run.id, { type: "fast_waits_off", reason: fast.off });
@@ -632,6 +640,30 @@ export class RunController {
     if (record.corrected !== undefined)
       this.log("system", `A fast wait came back at ${record.endRate} ticks a second after ${record.corrected} correcting key presses.`);
     this.publish();
+  }
+  /**
+   * A fast wait that failed with the run going on (a reader gap, a key press the bridge refused)
+   * can leave the game fast, in the model's own wait as in the host's: take the speed back down
+   * and measure it at GAME_SPEED again, and play the rest of the run's waits at that speed. When
+   * the speed cannot be confirmed, the run ends, since no input may go out at another speed.
+   */
+  private async recoverSpeed(fast: FastWaitsLike, error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    try {
+      const presses = await fast.recover(reason, () => (this.dependencies.gameSpeed ?? setGameSpeed)({
+        clock: () => this.clockReading(),
+        press: (key) => this.pressSpeedKey(key),
+        sleep: (ms) => this.session.wait(ms / 1000),
+      }));
+      this.store.event(this.run.id, { type: "fast_wait_failed", reason, presses });
+      this.log("error", `A fast wait failed (${reason}); the speed keys set the game back to ${GAME_SPEED}, and the rest of the run's waits keep that speed.`);
+    } catch (failure) {
+      if (!this.session.reason) {
+        this.session.errorDetail = `A fast wait failed (${reason}) and the game speed could not be confirmed at ${GAME_SPEED} again: ${failure instanceof Error ? failure.message : failure}`;
+        this.session.stop("error");
+      }
+      throw failure;
+    }
   }
   /**
    * After a run that stopped during a fast wait, with the game now paused: the - presses that take
@@ -1115,9 +1147,18 @@ export class RunController {
         unsubscribe();
         unsubscribeGuard?.();
         unsubscribeInput?.();
-        // The device outlives the run: no guard or fast waits carry over to whatever comes next.
-        if (this.fastWaits && !this.fastWaits.normal)
-          this.log("error", "The run was stopped during a fast wait: the game may still run faster than the benchmark speed.");
+        // The device outlives the run: no guard or fast waits carry over to whatever comes next. A
+        // run that ended during a fast wait without its final pause's restore (an operator stop, a
+        // final pause that failed) takes the speed back down here, unconfirmed.
+        if (this.fastWaits && !this.fastWaits.normal) {
+          const presses = await this.fastWaits.restore((key) => this.device.pressKey(key)).catch(() => null);
+          if (presses === null)
+            this.log("error", "The run was stopped during a fast wait and the speed keys failed: the game may still run faster than the benchmark speed.");
+          else {
+            this.store.event(this.run.id, { type: "fast_wait_restored", presses });
+            this.log("system", `The run was stopped during a fast wait; ${presses} presses of - took the speed back down (unconfirmed).`);
+          }
+        }
         this.device.speedGuard = undefined;
         this.session.setFastWait(undefined);
       }

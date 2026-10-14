@@ -32,7 +32,8 @@ warnings can end the model's waits.
   part an `until` condition can end, and the host's own waits) is played at the game's top
   speed, 90, when that saves at least 2 real seconds. The host presses `+` up, waits, and
   presses `-` back down early enough to measure speed 40 again before the wait's last tick,
-  setting it right with the speed keys or ending the run if it cannot; while the speed is
+  setting it right with the speed keys or ending the run if it cannot; a fast wait that fails
+  partway does the same and leaves the run's other waits at 40; while the speed is
   unconfirmed the host sends no input to the game. Every action, screenshot and gap before the next model request stays at 40, so the
   model's game time is spent as before. On the 36 full runs of 2026-10-11 to 13 this would
   have saved 15–16% of their real time (30–42% for Claude Haiku and Sonnet 5.5, 1–8% for

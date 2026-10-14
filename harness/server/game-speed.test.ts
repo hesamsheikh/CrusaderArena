@@ -68,29 +68,41 @@ test("fails when the key steps skip over the target", async () => {
  * A running game on a virtual clock for fast waits: ticks run at `speed` × 1.01 a real second
  * (the reader runs about 1% fast) while time passes, in sleeps and in each key press's own
  * duration; a press lands at its end and moves the speed by 5 within 10 to `top`, unless `lost`
- * drops it. The reader samples every 100 ms. `stopAfter` makes the run stop at that check.
+ * drops it. The reader samples every 100 ms, each reaching the host `lagMs` late, and has none
+ * between the virtual times in `gap`. A press takes `pressMs` (whole tens of milliseconds, or a
+ * function for each its own). `stopAfter` makes the run stop at that check.
  */
-function running(options: { top?: number; pressMs?: number; lost?: (key: string, n: number) => boolean; paused?: boolean; stopAfter?: number } = {}) {
+function running(options: {
+  top?: number; pressMs?: number | (() => number); lost?: (key: string, n: number) => boolean; paused?: boolean; stopAfter?: number;
+  lagMs?: number; gap?: [number, number];
+} = {}) {
   let speed = 40,
     now = 0,
     ticks = 3000,
     checks = 0;
   const top = options.top ?? 90;
   const pressed: string[] = [];
-  let sample = { tick: ticks, at: 0 };
+  const samples = [{ tick: ticks, at: 0 }];
   const advance = (ms: number) => {
     for (let left = ms; left > 0; left -= 10) {
       const step = Math.min(10, left);
       now += step;
       ticks += (speed * 1.01 * step) / 1000;
-      if (now % 100 === 0) sample = { tick: Math.floor(ticks), at: now };
+      if (now % 100 === 0) {
+        samples.push({ tick: Math.floor(ticks), at: now });
+        if (samples.length > 100) samples.shift();
+      }
     }
   };
   const control: FastWaitControl = {
-    clock: () => sample,
+    clock: () => {
+      if (options.gap && now >= options.gap[0] && now < options.gap[1]) return null;
+      for (let i = samples.length - 1; i > 0; i--) if (samples[i].at <= now - (options.lagMs ?? 0)) return samples[i];
+      return samples[0];
+    },
     press: async (key) => {
       pressed.push(key);
-      advance(options.pressMs ?? 120);
+      advance(typeof options.pressMs === "function" ? options.pressMs() : options.pressMs ?? 120);
       if (!options.lost?.(key, pressed.filter((k) => k === key).length))
         speed = Math.min(top, Math.max(10, speed + (key === "+" ? 5 : -5)));
     },
@@ -156,6 +168,47 @@ test("a wait's stop brings it back to 40 early, and its record counts only the t
   const h = running();
   assert.equal(await new FastWaits(h.control, 40.4).run(h.ticks() + 60 * 30, () => true), null);
   assert.deepEqual(h.pressed, []);
+});
+
+test("uneven key presses and late reader samples still bring waits back to 40 before their last tick", async () => {
+  // Presses of 60 to 300 ms and samples reaching the host 200 ms late; with a margin for 0.3 s of
+  // lag and the average press, about half of these waits ended past their last tick. Now a few in
+  // a hundred at most, by under a game second (the input guard holds until the measurement anyway).
+  let seed = 3;
+  const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  let waits = 0, late = 0, worst = 0;
+  for (let game = 0; game < 60; game++) {
+    const g = running({ pressMs: () => 60 + Math.round(random() * 24) * 10, lagMs: 200 });
+    const fast = new FastWaits(g.control, 40.4);
+    for (let k = 0; k < 4; k++) {
+      const target = g.ticks() + (15 + Math.floor(random() * 120)) * 30;
+      await fast.run(target);
+      waits++;
+      if (g.ticks() > target) {
+        late++;
+        worst = Math.max(worst, g.ticks() - target);
+      }
+      assert.equal(g.speed(), 40);
+      while (g.ticks() < target) await g.control.sleep(50);
+    }
+  }
+  assert.ok(late <= waits / 50 && worst < 30, `${late} of ${waits} waits ended late, the worst by ${worst} ticks`);
+});
+
+test("after a fast wait fails with the reader gone, recover takes the speed back down and measures 40", async () => {
+  // The reader stops 3 real seconds into the wait for 4 seconds: the wait gives up at the top speed.
+  const g = running({ gap: [3000, 7000] });
+  const fast = new FastWaits(g.control, 40.4);
+  await assert.rejects(fast.run(g.ticks() + 120 * 30), /No game-clock reading/);
+  assert.equal(fast.normal, false);
+  assert.ok(g.speed() > 40);
+  while (g.now() < 7000) await g.control.sleep(100);
+  const presses = await fast.recover("the reader was gone", () => setGameSpeed(g.control));
+  assert.equal(g.speed(), 40);
+  assert.ok(presses > 0 && g.pressed.filter((k) => k === "-").length >= presses);
+  assert.equal(fast.normal, true);
+  assert.match(fast.off ?? "", /a fast wait failed \(the reader was gone\)/);
+  assert.equal(await fast.run(g.ticks() + 60 * 30), null, "the rest of the run's waits keep 40");
 });
 
 test("a game that tops out lower comes back to 40 with a correction, then presses fewer", async () => {

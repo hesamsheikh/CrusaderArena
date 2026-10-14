@@ -79,10 +79,12 @@ export const FAST_WAIT_MIN_SAVING_SECONDS = 2;
 const CHECK_SETTLE_MS = 300;
 const CHECK_MS = 1000;
 /**
- * Real seconds of lag a fast wait's plan keeps in hand: a reader sample is up to 100 ms old and is
- * polled every 50 ms, so the ticks seen trail the game's, by about 30 at the top speed.
+ * Real seconds of lag a fast wait's plan keeps in hand: a reader sample is up to 100 ms old when
+ * taken, can reach the host a few hundred milliseconds later, and is polled every 50 ms, so the
+ * ticks seen trail the game's. Simulated with samples arriving 200-400 ms late and key presses of
+ * 60-500 ms, 0.3 s let a fifth to three fifths of waits end past their last tick.
  */
-const LAG_SECONDS = 0.3;
+const LAG_SECONDS = 0.6;
 const POLL_MS = 50;
 /** Real time without a new tick after which a fast wait stops waiting at speed. */
 const STALL_MS = 3000;
@@ -129,6 +131,11 @@ export type FastWait = {
 export class FastWaits {
   /** Real seconds one speed key press takes, as measured while they are sent. */
   private pressSeconds = 0.15;
+  /**
+   * The slowest recent key press, in real seconds (a decaying maximum): the way down is planned
+   * with it, since one slow press at the top speed costs the most ticks. Twice the usual at first.
+   */
+  private slowPressSeconds = 0.3;
   /** + presses to the top speed: (FAST_GAME_SPEED - GAME_SPEED) / 5, fewer once the game shows a lower top. */
   private steps: number;
   /** + presses not yet taken back: the game runs that many steps above the benchmark speed. */
@@ -154,7 +161,7 @@ export class FastWaits {
   /** Ticks that pass while presses take the speed from `k` steps up back to the benchmark speed. */
   private downTicks(k: number) {
     let ticks = 0;
-    for (let j = k; j > 0; j--) ticks += this.pressSeconds * this.rate(j);
+    for (let j = k; j > 0; j--) ticks += this.slowPressSeconds * this.rate(j);
     return ticks;
   }
   /** Ticks a wait at `k` steps up keeps for its end: coming down, measuring the speed, the reader's lag. */
@@ -262,7 +269,24 @@ export class FastWaits {
   private async press(key: "+" | "-") {
     const began = this.control.now();
     await this.control.press(key);
-    this.pressSeconds = 0.7 * this.pressSeconds + 0.3 * Math.min(1, (this.control.now() - began) / 1000);
+    const seconds = Math.min(1, (this.control.now() - began) / 1000);
+    this.pressSeconds = 0.7 * this.pressSeconds + 0.3 * seconds;
+    this.slowPressSeconds = Math.max(seconds, 0.8 * this.slowPressSeconds + 0.2 * seconds);
+  }
+  /**
+   * After run() threw with the run still going (a reader gap, a key press the bridge refused): the
+   * game may still run fast. Press - once for each + not taken back, then set the benchmark speed
+   * with `setSpeed` (measured with the speed keys), and play the run's other waits at the benchmark
+   * speed. `normal` stays false, and input refused, until the speed is confirmed; a failure to
+   * confirm it propagates. Returns the - presses.
+   */
+  async recover(reason: string, setSpeed: () => Promise<unknown>) {
+    const presses = this.raised;
+    for (; this.raised > 0; this.raised--) await this.press("-");
+    await setSpeed();
+    this.normal = true;
+    this.off ??= `a fast wait failed (${reason})`;
+    return presses;
   }
   /**
    * After a run stopped during a fast wait, with the game paused for the final reading: press -
