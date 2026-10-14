@@ -225,7 +225,7 @@
     },
     {
       "version": "1.7.0",
-      "fingerprint": "9d4ec04466ed8d5c78b633dd8545f88798ed46b45dcc859b19f9f6e137d8b825",
+      "fingerprint": "82813f8d91f46872855b15e3eb56be7197512758400a4a67328b6804998dcc59",
       "date": "2026-10-14",
       "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; religion and the inn show at 0 once one stands, status counts buildings, inspect_building takes a map tile, find_sites says when no woodcutter spot has trees, and expand_storage and place_near go back to the anchor's view after choosing storage moved it; the game machine's reader is rebuilt unless it was built from the version's sources"
     }

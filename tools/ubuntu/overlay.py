@@ -161,13 +161,15 @@ def panel(status, now):
     ]
     if isinstance(cost, (int, float)) and not isinstance(cost, bool):
         figures.append(f'${cost:.2f}')
-    # The game's speed setting beside the phase: 40 for play, up to 90 while a wait is played fast.
+    # The game's speed setting after the phase: 40 for play, up to 90 while a wait is played fast.
     speed = status.get('speed')
-    pace = 'paused' if stats.get('paused') is True else (
-        f'speed {speed}' if isinstance(speed, int) and not isinstance(speed, bool) else '')
+    known = isinstance(speed, int) and not isinstance(speed, bool)
+    paused = stats.get('paused') is True
     return {
         'title': f'{model} · {benchmark}' if benchmark else model,
-        'phase': '  ·  '.join(part for part in (str(status.get('phase') or '').lower(), pace) if part),
+        'phase': str(status.get('phase') or '').lower(),
+        'pace': 'paused' if paused else f'speed {speed}' if known else '',
+        'fast': known and not paused and speed > 40,
         'fraction': used / total,
         'used': f'{clock_text(used)} / {clock_text(total)} game time',
         'left': f'{clock_text(total - used)} left',
@@ -202,7 +204,15 @@ def render(p, width=WIDTH, height=HEIGHT):
     image = paint(image, (28, 18, 20), 214, lambda d: d.rounded_rectangle((0, 0, width - 1, height - 1), 10, fill=255))
     image = paint(image, (235, 222, 201), 89, lambda d: d.rounded_rectangle((0, 0, width - 1, height - 1), 10, outline=255))
     image = paint(image, INK, 255, lambda d: d.text((16, 25), p['title'], fill=255, font=font(15, True), anchor='ls'))
-    image = paint(image, INK, 179, lambda d: d.text((width - 16, 24), p['phase'], fill=255, font=font(11), anchor='rs'))
+    # The speed in bold at the right, in the bar's amber while a wait is played fast; the phase before it.
+    right = width - 16
+    if p.get('pace'):
+        bold_small = font(11, True)
+        image = paint(image, (204, 153, 71) if p.get('fast') else INK, 255,
+                      lambda d: d.text((right, 24), p['pace'], fill=255, font=bold_small, anchor='rs'))
+        right -= round(bold_small.getlength(p['pace']))
+    phase = f"{p['phase']}  ·  " if p.get('pace') and p['phase'] else p['phase']
+    image = paint(image, INK, 179, lambda d: d.text((right, 24), phase, fill=255, font=font(11), anchor='rs'))
     x, y, w, h = 16, 35, width - 32, 18
     image = paint(image, (255, 255, 255), 31, lambda d: d.rectangle((x, y, x + w - 1, y + h - 1), fill=255))
     done = round(w * p['fraction'])

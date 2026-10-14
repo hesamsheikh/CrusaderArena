@@ -32,12 +32,15 @@ class OverlayTests(unittest.TestCase):
         self.assertIsNone(overlay.panel(dict(LIVE, clock=dict(used=5, total=0)), 1001.0))
         self.assertIsNone(overlay.panel(dict(LIVE, connected=False), 1001.0))
 
-    def test_the_game_speed_shows_beside_the_phase_and_paused_while_the_game_is(self):
-        self.assertEqual(overlay.panel(dict(LIVE, phase='WAITING', speed=90), 1001.0)['phase'], 'waiting  ·  speed 90')
-        self.assertEqual(overlay.panel(dict(LIVE, phase='ACTING', speed=40), 1001.0)['phase'], 'acting  ·  speed 40')
-        paused = dict(LIVE, speed=40, stats=dict(LIVE['stats'], paused=True))
-        self.assertEqual(overlay.panel(paused, 1001.0)['phase'], 'thinking  ·  paused')
-        self.assertEqual(overlay.panel(dict(LIVE, speed=None), 1001.0)['phase'], 'thinking', 'an earlier host sends no speed')
+    def test_the_game_speed_shows_after_the_phase_and_paused_while_the_game_is(self):
+        fast = overlay.panel(dict(LIVE, phase='WAITING', speed=90), 1001.0)
+        self.assertEqual((fast['phase'], fast['pace'], fast['fast']), ('waiting', 'speed 90', True))
+        normal = overlay.panel(dict(LIVE, phase='ACTING', speed=40), 1001.0)
+        self.assertEqual((normal['pace'], normal['fast']), ('speed 40', False))
+        paused = overlay.panel(dict(LIVE, speed=40, stats=dict(LIVE['stats'], paused=True)), 1001.0)
+        self.assertEqual((paused['pace'], paused['fast']), ('paused', False))
+        earlier = overlay.panel(dict(LIVE, speed=None), 1001.0)
+        self.assertEqual((earlier['phase'], earlier['pace']), ('thinking', ''), 'an earlier host sends no speed')
 
     def test_missing_figures_and_overrun_clocks_are_shown_safely(self):
         p = overlay.panel(dict(LIVE, stats={}, tool_calls=None, cost=None, clock=dict(used=2100, total=2000)), 1001.0)
