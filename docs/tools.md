@@ -96,7 +96,11 @@ or `not_on_screen` placement is reported on its own, without a terrain click, so
 rest of the batch still runs; the final right-click that leaves placement
 mode is skipped only if no placement in the call was attempted. If selecting a building
 moved the view and left the last target off screen, the right-click goes near the top of
-the view instead.
+the view instead. The call then waits, up to a second, for a reader sample taken after the
+right-click that shows placement mode ended: a `build_structure` call straight after another
+one, placing the same building first, used to read the end of the previous call's placement
+mode as its own selection failing and reported `not_selected` (17 placements in 9 calls,
+benchmarks 1.5.1 to 1.6.3).
 
 **Tile targets.** `tile_x`/`tile_y` name a map tile instead of a screenshot pixel (flat
 optional fields rather than a schema union, for providers that reject one). Such a

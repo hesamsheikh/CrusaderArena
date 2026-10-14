@@ -481,6 +481,11 @@ function simulatedGame(options: {
   mapRows?: string[];
   /** The products of the two-product workshop whose panel buildingAt opens (goods numbers). */
   workshop?: { making: number; next: number };
+  /**
+   * Milliseconds after a right-click that leaves placement mode during which reads still return
+   * the sample from before it (captured before the click), as the live reader's can.
+   */
+  staleAfterExitMs?: number;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -541,6 +546,10 @@ function simulatedGame(options: {
       inputSerial++;
       actions.push(action);
       ageCredits.push(ageCreditMs);
+      if (options.staleAfterExitMs && action.button === 3 && state.action === 5) {
+        stale = { ...stats(), captured_unix_ms: Date.now() - 1 };
+        staleUntil = Date.now() + options.staleAfterExitMs;
+      }
       const id = buttonIds[`${action.x},${action.y}`];
       if (action.button === 1 && action.x >= 1605 && action.x <= 1770 && action.y >= 892 && action.y <= 1056) {
         // The minimap: invert minimapFraction for the simulated 200 × 200 map (anchors.ts).
@@ -597,11 +606,14 @@ function simulatedGame(options: {
       return { at: Date.now() };
     },
     // A live stream's unavailable sample still carries its capture time.
-    currentStats: () => (options.unavailableReads?.includes(++reads) ? { status: "unavailable", captured_unix_ms: Date.now(), observation: null } : stats()),
+    currentStats: () => (options.unavailableReads?.includes(++reads) ? { status: "unavailable", captured_unix_ms: Date.now(), observation: null }
+      : Date.now() < staleUntil ? stale : stats()),
     // Frames do not age in these tests (GameDevice.frameAge).
     frameAge: () => 0,
   } as unknown as GameDevice;
   let reads = 0;
+  let stale: unknown = null;
+  let staleUntil = 0;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test", baseUrl: "https://example.invalid", keyConfigured: false,
   }, "", options.runtime);
@@ -634,6 +646,22 @@ test("build_structure confirms placed and silently blocked buildings from reader
   assert.equal(report.placements[0].cost, "6 wood");
   assert.equal(report.placements[0].change, undefined);
   assert.equal(report.placements[1].cost, undefined);
+});
+
+test("a build_structure call straight after another one selects the same building again", async () => {
+  // The reader could still show the first call's placement mode after its exit right-click; the
+  // second call read its starting point from that sample and reported not_selected for a building
+  // the game had selected (17 placements in 9 back-to-back calls, 1.5.1 to 1.6.3).
+  const game = simulatedGame({ staleAfterExitMs: 150 });
+  await game.observe();
+  const statuses = async (id: string, x: number) => {
+    const result = await game.tool("build_structure").execute(id, { placements: [{ name: "Hovel", x, y: 400 }] });
+    const first = result.content[0];
+    assert.ok(first.type === "text");
+    return JSON.parse(first.text).placements.map((p: { status: string }) => p.status);
+  };
+  assert.deepEqual(await statuses("b1", 500), ["placed"]);
+  assert.deepEqual(await statuses("b2", 600), ["placed"]);
 });
 
 test("build_structure skips remaining targets when the camera moves", async () => {

@@ -1252,7 +1252,13 @@ export function makeAgent(
           // then goes near the top of the view.
           if (lastAttempted) {
             const exit = onScreen(frame, lastAttempted) ? lastAttempted : { x: Math.round(frame.width / 2), y: Math.round(frame.height * 0.12) };
-            await send({ type: "click", x: exit.x, y: exit.y, button: 3 });
+            const ack = await send({ type: "click", x: exit.x, y: exit.y, button: 3 });
+            // Until a reader sample shows placement mode ended, a build_structure call straight after
+            // this one reads its selection's starting point from a sample still in it: choosing the
+            // same building again then changed nothing it could see, and it reported not_selected
+            // for a building the game had selected (17 placements in 9 back-to-back calls, Gemini 4
+            // Argon and Muse Wonder, 1.5.1 to 1.6.3).
+            if (placer.readerReady) await placer.sampleAfter(placer.ackTime(ack), (o) => placementOf(o)?.action !== 5, 1);
           }
           // Remember the tray's open category (if any) for the next build_structure call, together
           // with the input count as of now so that call can tell whether anything else touched it.
