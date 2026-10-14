@@ -253,6 +253,22 @@ between September and October 2026.
     about 9. Since a request's time starts when the bridge gets to it (51651b0), a stand-in
     run on Large Barren Desert with a save name of the full 32 characters typed its 112
     keys in about 15 seconds and saved 42 seconds after the run's end.
+- Clicks a tile off, and `expand_storage` making up for them, on 2026-10-14 with the stand-in
+  on "Large Barren Desert benchmark start". One stockpile asked against each side and then
+  three: 8 of 15 probes were refused ("Needs to be placed adjacent to the stockpile.") and
+  none went on the +x side. The reader's pile positions showed every placed stockpile one tile
+  further along +x than aimed, and a tile read showed two hovels placed by tile one tile off as
+  well, one of them in x and y; all 20 buildings Claude Haiku 5.5 placed by tile on The
+  Sinkhole stood where aimed. The game's own screen-space position of the centre tile
+  (`GameMap.screenCentreTileScreenSpaceX/Y`, read once for this check) differed from the
+  reader's whole-tile camera centre in those views. After the fix (f9b213f), the same
+  scenario refused 2 of 9 probes: the first stockpile on the +x side once, placed by its
+  corrected retry, and one spot later lower on the screen, where the error was not the one
+  measured near the centre; the calls after the first placed at their first click, and all 7
+  stockpiles stood flush with one before them.
+- The run overlay's speed, on 2026-10-14 (stand-in on Oasis by the Sea, 3 game minutes): the
+  phase line went from "waiting · speed 40" through 45 to "speed 90" and back down to 40 in
+  each fast wait, as the + and - presses went; panels rendered from the live status showed it.
 - The prompt cache key for Meta's models, on 2026-10-13: Muse Wonder's run on Oasis by
   the Sea at 1.5.1, its host given the key by `round-preload.ts`, read the cache on all
   106 requests, 96.9% of its input tokens. Its run the same morning without the key
@@ -761,6 +777,13 @@ between September and October 2026.
 
 ## Known issues
 
+- **Clicks a tile off.** The reader's camera centre is a whole tile, and the view can lie
+  part of a tile from it, so a click aimed at a tile can pick its neighbour (one tile along
+  +x for every placement on Large Barren Desert's start, none on The Sinkhole; see Runs).
+  `expand_storage` and `place_near` make up for it from where the reader shows the storage
+  they placed; `build_structure` and the other tile targets do not yet, so a building can
+  stand a tile from its spot. The game's screen-space position of the centre tile may make
+  the projection exact; it changes with the zoom and is not mapped yet.
 - **Garbage-collector stalls.** Under Proton, the game's garbage collector can stop
   starting collections, paused or running, with or without the reader: about once per
   1,300–1,500 collections, or 0.75 times an hour of play, in recorded runs up to
