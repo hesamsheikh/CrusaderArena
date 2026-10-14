@@ -60,6 +60,41 @@ test("fast waits get a wait's last tick, by the budget's end at the latest, and 
   }
 });
 
+test("a warning ends a wait once its first seconds have passed; `until` still reports itself", async () => {
+  const run = running();
+  try {
+    const start = run.tick();
+    // Due from the start, it waits out the 3 s the turn still owes first.
+    const ended = await run.session.waitGame(60, undefined, { check: () => true, afterSeconds: 3 });
+    assert.equal(ended, "interrupted");
+    assert.ok(run.tick() - start >= 3 * 30 && run.tick() - start < 20 * 30, `${(run.tick() - start) / 30} game s`);
+    assert.equal(await run.session.waitGame(5, () => true, { check: () => true, afterSeconds: 0 }), true);
+    assert.equal(await run.session.waitGame(0.5, undefined, { check: () => false, afterSeconds: 0 }), false);
+  } finally {
+    run.done();
+  }
+});
+
+test("a fast wait gets the warning check as its stop, live only after the wait's first seconds", async () => {
+  let tick = 1000;
+  const session = new Session(60, () => {}, undefined, { budgetTicks: 100_000, clock: () => ({ tick, map: "m" }) });
+  session.start();
+  const stops: boolean[] = [];
+  session.setFastWait(async (_target, stop) => {
+    stops.push(stop!());
+    tick += 5 * 30;
+    // The session reads the clock every 100 ms.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    stops.push(stop!());
+  });
+  try {
+    assert.equal(await session.waitGame(60, undefined, { check: () => true, afterSeconds: 3 }), "interrupted");
+    assert.deepEqual(stops, [false, true]);
+  } finally {
+    session.close();
+  }
+});
+
 test("the host wait gives the default wait to unobserved actions and tops up short turns", () => {
   const turn = (tools: number, { ran = false, acted = false, observed = false } = {}) => {
     const cycle = new ObservationCycle();

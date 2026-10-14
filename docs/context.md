@@ -95,6 +95,7 @@ it, so every request shows the time left. An observation has:
 
 | Field | Contents |
 | --- | --- |
+| `warnings` | Only when one came up since the model's previous observation: popularity, food or gold ([Warnings](#warnings)) |
 | `run_clock` | Game time left, used and budgeted in minutes and seconds ("23 min 41 s"), and real minutes left |
 | `width`, `height` | The image size; clicks use these pixel coordinates |
 | `stats` | A compact settlement summary (below), or `{"status": "unavailable"}` when there is no reading less than 1.5 seconds old |
@@ -133,12 +134,40 @@ model acted without looking.
 ### Text-only observations
 
 `wait_and_observe`'s `screenshot: false` (default `true`) skips the screenshot: it waits
-the same way (seconds, `until`, the minimum turn) and returns the same `run_clock`,
-`stats`, `game_events`, `game_events_dropped` and `reader_unavailable_seconds` as above
-(no `width`/`height`, since there is no image), with a leading line saying no screenshot
-was taken and that `observe` or `wait_and_observe` gets one. It does not replace the
-targeting frame: a pixel-targeting tool still judges its thirty-second age limit against
-the last real screenshot.
+the same way (seconds, `until`, the minimum turn, warnings) and returns the same
+`warnings`, `run_clock`, `stats`, `game_events`, `game_events_dropped` and
+`reader_unavailable_seconds` as above (no `width`/`height`, since there is no image),
+with a leading line saying no screenshot was taken and that `observe` or
+`wait_and_observe` gets one. It does not replace the targeting frame: a pixel-targeting
+tool still judges its thirty-second age limit against the last real screenshot.
+
+### Warnings
+
+A model that waits sees nothing until the wait ends: Claude Opus 5.5 set Mean taxes on
+Large Barren Desert with little food left, waited 90 game seconds, and next saw its
+popularity at 14, down from 52, with food at 1 (2026-10-14). So the host checks three
+things during the model's waits and at every observation, and warns the model when one
+has turned bad since its previous observation:
+
+- **Popularity** 10 points or more below that observation's: "Popularity fell from 52
+  to 42 since your last observation."
+- **Food** below two game months of what the population eats at its rations: "Food is
+  low: 16 in the granaries for 95 people on half rations." The host rates what people
+  eat from recorded runs (per person and game month, 0.086 food at half rations, 0.174
+  full, 0.26 extra, 0.344 double, from about 1,300 stretches with no food arriving);
+  the model is not told these rates.
+- **Gold** below 500: "Gold fell below 500: 450."
+
+A warning ends `wait_and_observe` early, once the turn's minimum length has passed (as
+`until` does), with a line saying so and how long the wait ran; the observation lists it
+under `warnings`. Any other observation, such as the host's own after its waits, or a
+tool's screenshot, lists the warnings that hold when it is taken. Each comes up once:
+what an observation already shows brings no warning, and popularity counts from the last
+observation's value. Warnings are tool results, never part of the system prompt. Over
+97 recorded runs, the popularity warning would have come up about 1.2 times a run, the
+food warning 2.4 and the gold warning 1.2; in the game above, the food warning at 30:01
+(food 16) and the popularity warning at 30:27 (52 to 42), a minute or more before the
+model saw 14.
 
 The run setting `fallbackObservation` (`--fallback-observation`, default `when-needed`)
 picks what the host's own observation is after a turn that acted without looking or

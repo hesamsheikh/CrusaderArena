@@ -23,7 +23,7 @@ Runs take less real time. Waits are played at the game's top speed and every tic
 game at any speed, so a run's game should be the same as on 1.6; this, the top speed and the
 speed keys' behaviour are still to be checked in the live game (see
 [Status](docs/status.md#tested-in-code-only)). A minor version because the placement rules
-around stockpiles change what models can build where.
+around stockpiles change what models can build where, and warnings can end the model's waits.
 
 ### Benchmark
 
@@ -56,6 +56,17 @@ around stockpiles change what models can build where.
   end of the previous placement mode as its own selection failing and reported `not_selected`
   for a building the game had selected: 17 placements in 9 calls (Gemini 4 Argon and Muse
   Wonder, 1.5.1 to 1.6.3), found from a model's interview.
+- [Warnings](docs/context.md#warnings): the host checks popularity, food and gold during the
+  model's waits and at every observation. When popularity falls 10 points below the model's
+  last observation, food drops below two game months of what the people eat at their
+  rations, or gold falls below 500, `wait_and_observe` ends early (after the minimum turn)
+  and the observation lists it under `warnings` as a plain fact, such as "Popularity fell
+  from 52 to 42 since your last observation." On Large Barren Desert, Claude Opus 5.5 set Mean taxes with little food and
+  waited 90 game seconds; its next observation showed popularity 14, down from 52, and food 1,
+  and the game ended at popularity 0. Replayed, the food warning would have come at 30:01 and
+  the popularity warning at 30:27, a minute or more earlier. The rates at which people eat
+  were measured from recorded runs; only the host uses them. A fast wait comes back down to
+  40 when a warning comes up.
 
 ### Harness
 

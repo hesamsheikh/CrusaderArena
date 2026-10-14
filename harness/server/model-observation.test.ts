@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { GameEvents } from "./game-events.js";
 import { makeAgent, type AgentRuntime } from "./model.js";
 import { ObservationCycle } from "./session.js";
+import { Warnings } from "./warnings.js";
 import { menuClicks as trayClicks } from "./construction-ui.js";
 import { tilePixel } from "./anchors.js";
 import type { GameDevice, TileRegion } from "./device.js";
@@ -486,6 +487,8 @@ function simulatedGame(options: {
    * the sample from before it (captured before the click), as the live reader's can.
    */
   staleAfterExitMs?: number;
+  /** Gold and popularity the reader shows, read afresh on every sample (600 and 90 by default). */
+  economy?: { gold: number; popularity: number };
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -509,7 +512,8 @@ function simulatedGame(options: {
     status: "ok", session: "s", generation: 1,
     captured_unix_ms: Date.now(), valid_until_unix_ms: Date.now() + 1500,
     observation: {
-      map_name: "m", visible_messages: state.messages, gold: 600, population: 2, popularity: 90,
+      map_name: "m", visible_messages: state.messages, gold: options.economy?.gold ?? 600, population: 2,
+      popularity: options.economy?.popularity ?? 90,
       ...(options.buildings ? { buildings: options.buildings } : {}),
       resources_by_name: { wood_planks: state.wood },
       structures: { count: state.structures, limit: 3999 },
@@ -1511,6 +1515,39 @@ test("wait_and_observe reminds the model after 3 game minutes of only waiting, u
   // An action starts the count again; a camera move or an inspection would not.
   await game.tool("game_action").execute("key", { type: "key", key: "Z" });
   assert.ok(!(await texts(60)).some((t) => /only waited/.test(t)), "after an action: no reminder");
+});
+
+test("a warning ends wait_and_observe early and leads its observation, once", async () => {
+  const economy = { gold: 600, popularity: 52 };
+  const { runtime } = timedRuntime();
+  let ticks = 0;
+  const interrupts: (number | undefined)[] = [];
+  Object.assign(runtime, { warnings: new Warnings() });
+  Object.assign(runtime.session, {
+    gameUsedTicks: () => ticks,
+    waitGame: async (seconds: number, _until?: unknown, interrupt?: { check: () => boolean; afterSeconds: number }) => {
+      interrupts.push(interrupt?.afterSeconds);
+      // Twenty game seconds in, popularity is 12 points down and gold under 500.
+      ticks += 20 * 30;
+      Object.assign(economy, { popularity: 40, gold: 450 });
+      if (interrupt?.check()) return "interrupted";
+      ticks += (seconds - 20) * 30;
+      return false;
+    },
+  });
+  const game = simulatedGame({ runtime, economy });
+  await game.observe();
+  const texts = async () => (await game.tool("wait_and_observe").execute("wait", { seconds: 90, screenshot: false }))
+    .content.flatMap((c) => (c.type === "text" ? [c.text] : []));
+  const first = await texts();
+  assert.deepEqual(interrupts, [0], "warnings may end the wait once the turn's minimum has passed (none owed here)");
+  assert.ok(first.some((t) => /^A warning ended the wait early/.test(t)), first.join("\n"));
+  assert.deepEqual(JSON.parse(first.at(-1)!).warnings,
+    ["Popularity fell from 52 to 40 since your last observation.", "Gold fell below 500: 450."]);
+  // That observation is the new start: the same values bring nothing again, and the wait runs out.
+  const second = await texts();
+  assert.ok(!second.some((t) => /warning ended/.test(t)), second.join("\n"));
+  assert.equal(JSON.parse(second.at(-1)!).warnings, undefined);
 });
 
 test("only input that works from the screenshot marks the turn as pixel input", async () => {

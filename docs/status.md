@@ -361,7 +361,7 @@ between September and October 2026.
 - The 1.7.0 changes, not yet run live (`game-speed.test.ts`, `session.test.ts`,
   `controller.test.ts`, `device-lifecycle.test.ts`, `protocol.test.ts`, `anchors.test.ts`,
   `tile-map.test.ts`, `model-observation.test.ts`, `game-save.test.ts`, `video.test.ts`,
-  `tools/video/test_render_queue.py`, `tools/dataset/test_dataset.py`):
+  `warnings.test.ts`, `tools/video/test_render_queue.py`, `tools/dataset/test_dataset.py`):
   - [Fast waits](how-it-works.md#fast-waits), on a simulated game clock: waits of 3 to 300
     game seconds end at speed 40 before their last tick, short ones press nothing, a lost
     `-` press and a lower top speed are set right by the end measurement, dead speed keys
@@ -381,6 +381,11 @@ between September and October 2026.
     (reproduced with a reader sample that lags the right-click).
   - The episode runner: the video rendered in the background, one at a time behind a lock;
     the last interview left to the host; the save name typed on one capture.
+  - [Warnings](context.md#warnings) for popularity, food and gold: when each comes up and
+    comes up again, `wait_and_observe` ended early after the minimum turn, and a fast wait
+    brought back to 40 early, on a simulated game. The food rates come from recorded runs
+    (food falling with no deliveries, against population and the rations set); how often
+    each warning comes up was replayed on 97 recorded runs, not seen in a run.
   - The runner rebuilding the game machine's reader unless its programs were built from
     the reader sources of the version a run plays (`version-checkout.test.ts`, with a fake
     game machine; the build command also run in a shell with a stand-in `cmake`). The

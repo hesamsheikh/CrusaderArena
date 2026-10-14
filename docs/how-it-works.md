@@ -105,6 +105,9 @@ While the speed is not confirmed at 40, the host refuses any input to the game.
 A wait with a condition (`wait_and_observe` with `until`) can end at any moment, so it
 keeps the speed of 40. So do waits too short to gain: about 0.12 real seconds per key
 press and a 1.3-second measurement make the host's waits of 5 to 8 game seconds a loss.
+A [warning](context.md#warnings) can end the model's other waits too: a fast wait checks
+for one at speed and comes back down when one comes up, a few game seconds later, all of
+them within the wait.
 A wait that ends below 40 shows the game tops out lower than 90, so later waits press `+`
 fewer times; after three wrong end speeds, or if `+` does not speed the game up, the run
 plays the rest of its waits at 40. Each wait played fast is in the run's events

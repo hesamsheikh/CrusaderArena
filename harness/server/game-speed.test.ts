@@ -139,6 +139,25 @@ test("waits of any length end at 40 before their last tick, and short ones press
   assert.ok(new FastWaits(running().control, 40.4).plan(30 * 30));
 });
 
+test("a wait's stop brings it back to 40 early, and its record counts only the ticks it played", async () => {
+  const g = running();
+  const fast = new FastWaits(g.control, 40.4);
+  const start = g.ticks();
+  // A warning 30 game seconds into a 120-second wait.
+  const wait = await fast.run(start + 120 * 30, () => g.ticks() - start >= 30 * 30);
+  assert.ok(wait?.interrupted, JSON.stringify(wait));
+  assert.equal(g.speed(), 40);
+  assert.equal(fast.normal, true);
+  const played = g.ticks() - start;
+  assert.ok(played >= 30 * 30 && played < 40 * 30, `${played / 30} game s played`);
+  assert.ok(Math.abs(wait.ticks - played) <= 10, JSON.stringify(wait));
+  assert.ok(wait.savedMs > 0 && wait.savedMs < (played / 40.4) * 1000, JSON.stringify(wait));
+  // A stop that holds already presses nothing.
+  const h = running();
+  assert.equal(await new FastWaits(h.control, 40.4).run(h.ticks() + 60 * 30, () => true), null);
+  assert.deepEqual(h.pressed, []);
+});
+
 test("a game that tops out lower comes back to 40 with a correction, then presses fewer", async () => {
   const g = running({ top: 70 });
   const fast = new FastWaits(g.control, 40.4);

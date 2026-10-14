@@ -10,6 +10,7 @@ const defineTool = <T extends TSchema>(tool: AgentTool<T>): AgentTool<any> =>
 import type { RunMemory } from "./run-memory.js";
 import type { ObservationCycle, Session } from "./session.js";
 import { minutesSeconds, requestTimeout } from "./session.js";
+import type { Warnings } from "./warnings.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
 import { cacheKeyFetch } from "./cache-key.js";
@@ -110,7 +111,7 @@ import { categories, MapView } from "./map-view.js";
 import { marketTrade, rationLevels, setRations, setTax, taxLevels, tradeGoods } from "./economy.js";
 import { describeBuilding, observationStats, statusReport } from "./status.js";
 import type { GameHotkey } from "./device.js";
-import type { RunConfig } from "../shared/protocol.js";
+import type { RunConfig, Stats } from "../shared/protocol.js";
 /** The tool-call ID of the host's own screenshots, which never wait for the minimum turn. */
 export const HOST_OBSERVATION = "host-observation";
 /** The tool-call ID of the host's own text-only observations (no screenshot); same exemption. */
@@ -138,6 +139,8 @@ export interface AgentRuntime {
   runId: string;
   session: Session;
   cycle: ObservationCycle;
+  /** Popularity, food and gold warnings: they end wait_and_observe early and lead each observation. */
+  warnings?: Warnings;
   memory: RunMemory;
   config: RunConfig;
   /** Whether the benchmark includes military play; troop counts appear in observations only then. */
@@ -539,6 +542,10 @@ export function makeAgent(
     type: "text" as const,
     text: `Minimum turn (${runtime?.config.minTurnSeconds} game seconds): the host let ${seconds} more game seconds pass before this ${screenshot ? "screenshot" : "observation"}.`,
   });
+  /** The game values of a reader sample, when it has them. */
+  const gameValues = (stats: Stats) => (stats.status === "ok" ? stats.observation : null);
+  /** The warnings an observation showing `stats` leads with; from now on it is the agent's last (warnings.ts). */
+  const warningsFor = (stats: Stats) => runtime?.warnings?.observe(gameValues(stats)) ?? [];
   /**
    * For a tool that pauses itself (SELF_PAUSING_TOOLS), before a screenshot it returns: what
    * beforeToolCall does for every other tool that is not reading, unpausing the game if it is
@@ -679,6 +686,7 @@ export function makeAgent(
     refresh(observed);
     const messages = pendingEvents();
     const readerStats = device.currentStats();
+    const warnings = warningsFor(readerStats);
     return {
       content: [
         {
@@ -689,6 +697,7 @@ export function makeAgent(
         {
           type: "text" as const,
           text: JSON.stringify({
+            ...(warnings.length ? { warnings } : {}),
             ...(runtime ? { run_clock: runClock(runtime.session) } : {}),
             width: observed.width,
             height: observed.height,
@@ -715,12 +724,14 @@ export function makeAgent(
     runtime?.cycle.observe();
     const messages = pendingEvents();
     const readerStats = device.currentStats();
+    const warnings = warningsFor(readerStats);
     return {
       content: [
         { type: "text" as const, text: NO_SCREENSHOT_NOTE },
         {
           type: "text" as const,
           text: JSON.stringify({
+            ...(warnings.length ? { warnings } : {}),
             ...(runtime ? { run_clock: runClock(runtime.session) } : {}),
             stats: observationStats(readerStats, { military: runtime?.military ?? true }),
             game_events: messages.messages,
@@ -737,7 +748,7 @@ export function makeAgent(
       name: "observe",
       label: "Observe game",
       description:
-        `Screenshot of the game window with its stats, buffered game events and run_clock (game time left and used). It returns once your turn has run the minimum turn length of game time (the host lets the rest pass first). Coordinates are image pixels; a screenshot older than ${FRAME_MAX_AGE_GAME_SECONDS} game seconds cannot be used for clicks.`,
+        `Screenshot of the game window with its stats, buffered game events, warnings since your last observation (see wait_and_observe) and run_clock (game time left and used). It returns once your turn has run the minimum turn length of game time (the host lets the rest pass first). Coordinates are image pixels; a screenshot older than ${FRAME_MAX_AGE_GAME_SECONDS} game seconds cannot be used for clicks.`,
       parameters: Type.Object({}),
       execute: async (toolCallId) => {
         const owed = toolCallId === HOST_OBSERVATION || toolCallId === HOST_TEXT_OBSERVATION ? 0 : turnShortfall();
@@ -2040,7 +2051,7 @@ export function makeAgent(
         name: "wait_and_observe",
         label: "Wait and observe",
         description:
-          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. After " + WAIT_REMINDER_SECONDS / 60 + " game minutes in a row with no building, trading, tax or ration change, the result says how long you have only waited. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants. screenshot: false waits the same way and returns the stats, game events and run_clock as text only, with no image; pixel targets still come from your last screenshot, with its age limit.",
+          "Let N game seconds pass (30 game ticks each), then capture the game, stats and accumulated events. Replaces the default wait. After " + WAIT_REMINDER_SECONDS / 60 + " game minutes in a row with no building, trading, tax or ration change, the result says how long you have only waited. The wait lasts at least until your turn has run the minimum turn length, so zero means as soon as that is reached. The wait ends early if the game-time budget runs out, and with a warning (listed under warnings) once popularity falls 10 below your last observation, gold falls below 500 or food runs low for your people at their rations. With `until`, it also ends as soon as that amount reaches `at_least` (checked continuously), for example wood_planks 15 for the next wheat farm; `seconds` is then the longest wait. Amounts: any stored good, gold, population, food (the granary total) or idle_peasants. screenshot: false waits the same way and returns the stats, game events and run_clock as text only, with no image; pixel targets still come from your last screenshot, with its age limit.",
         parameters: Type.Object({
           seconds: Type.Number({ minimum: 0, maximum: 300 }),
           until: Type.Optional(Type.Object({
@@ -2055,23 +2066,34 @@ export function makeAgent(
           const current = () => until ? amountOf(device.currentStats().observation, until.amount) : undefined;
           const condition = until ? () => (current() ?? -1) >= until.at_least : undefined;
           const startTick = device.currentStats().observation?.game_time;
-          // The turn's minimum length comes first; `until` can end only the rest of the wait.
+          // The turn's minimum length comes first; `until` and warnings can end only the rest of the wait.
           const owed = turnShortfall();
+          const watch = runtime.warnings;
+          const interrupt = (afterSeconds: number) =>
+            watch ? { check: () => watch.check(gameValues(device.currentStats())), afterSeconds } : undefined;
           let met = false;
-          if (!condition) await runtime.session.waitGame(Math.max(args.seconds, owed));
+          let ended: boolean | "interrupted" = false;
+          if (!condition) ended = await runtime.session.waitGame(Math.max(args.seconds, owed), undefined, interrupt(owed));
           else {
             if (owed > 0) await runtime.session.waitGame(owed);
-            met = condition() || (await runtime.session.waitGame(Math.max(0, args.seconds - owed), condition));
+            met = condition();
+            if (!met) {
+              ended = await runtime.session.waitGame(Math.max(0, args.seconds - owed), condition, interrupt(0));
+              met = ended === true;
+            }
           }
           const view = args.screenshot === false ? await observeText() : await observe();
           const idle = (runtime.session.gameUsedTicks() - lastActionTicks) / TICKS_PER_GAME_SECOND;
+          const endTick = device.currentStats().observation?.game_time;
+          const waited = typeof startTick === "number" && typeof endTick === "number" ? Math.round((endTick - startTick) / 30) : undefined;
           const longer = [
+            ...(ended === "interrupted"
+              ? [{ type: "text" as const, text: `A warning ended the wait early${waited !== undefined ? `, after ${waited} of ${args.seconds} game seconds` : ""}: see warnings.` }]
+              : []),
             ...(owed > args.seconds ? [turnNote(Math.round((owed - args.seconds) * 10) / 10, args.screenshot !== false)] : []),
             ...(idle >= WAIT_REMINDER_SECONDS ? [{ type: "text" as const, text: waitReminder(idle) }] : []),
           ];
           if (!until) return { ...view, content: [...longer, ...view.content] };
-          const endTick = device.currentStats().observation?.game_time;
-          const waited = typeof startTick === "number" && typeof endTick === "number" ? Math.round((endTick - startTick) / 30) : undefined;
           const summary = { until: `${until.amount} >= ${until.at_least}`, met: !!met, value: current() ?? null, waitedGameSeconds: waited };
           return { ...view, content: [{ type: "text" as const, text: JSON.stringify(summary) }, ...longer, ...view.content] };
         },

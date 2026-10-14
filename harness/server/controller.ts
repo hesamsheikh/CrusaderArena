@@ -16,6 +16,7 @@ import type {
 import { EMPTY_REPLY_GRACE_SECONDS, EMPTY_REPLY_LIMIT, GAME_SPEED, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, isOpenRouter } from "../shared/protocol.js";
 import { Session, ObservationCycle } from "./session.js";
 import { FastWaits, setGameSpeed, type ClockReading, type FastWait, type FastWaitControl, type SpeedControl } from "./game-speed.js";
+import { Warnings } from "./warnings.js";
 import { DOCUMENT_BYTES, RunMemory } from "./run-memory.js";
 import { RunRecorder, defaultRecording } from "./recorder.js";
 import {
@@ -88,6 +89,8 @@ export class RunController {
   readonly session: Session;
   readonly memory: RunMemory;
   readonly cycle = new ObservationCycle();
+  /** Popularity, food and gold warnings that end the agent's waits (warnings.ts). */
+  readonly warnings = new Warnings();
   readonly agent: Agent;
   readonly runtime: AgentRuntime;
   /** Game-window video recording (run config `recordVideo`); captures only while the agent acts. */
@@ -209,6 +212,7 @@ export class RunController {
       runId: run.id,
       session: this.session,
       cycle: this.cycle,
+      warnings: this.warnings,
       memory: this.memory,
       config: run.config,
       military: benchmarkSpec(run.benchmarkType || "")?.military ?? true,
@@ -601,9 +605,9 @@ export class RunController {
     this.device.speedGuard = () => {
       if (!fast.normal) throw new Error(`The game is not confirmed at speed ${GAME_SPEED}; input refused.`);
     };
-    this.session.setFastWait(async (target) => {
+    this.session.setFastWait(async (target, stop) => {
       const off = fast.off;
-      const record = await fast.run(target);
+      const record = await fast.run(target, stop);
       if (record) this.recordFastWait(record, fast);
       if (fast.off && fast.off !== off) {
         this.store.event(this.run.id, { type: "fast_waits_off", reason: fast.off });

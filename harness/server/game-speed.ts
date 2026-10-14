@@ -100,7 +100,10 @@ export type FastWaitControl = SpeedControl & {
 
 /** One wait played fast, as the run's events record it (controller.ts, "fast_wait"). */
 export type FastWait = {
-  /** Game ticks the wait had left when it began, and the + presses it played them with. */
+  /**
+   * Game ticks the wait had left when it began (for one a warning cut short, the ticks it played
+   * until the game was back at the benchmark speed), and the + presses it played them with.
+   */
   ticks: number;
   presses: number;
   /** Ticks per real second measured at the top (null when too short to measure), and back down. */
@@ -111,6 +114,8 @@ export type FastWait = {
   savedMs: number;
   /** Presses it took to set the benchmark speed again after a wrong end speed, when it did. */
   corrected?: number;
+  /** The wait's `stop` came true (a warning) before it was due down: it came back down then. */
+  interrupted?: true;
 };
 
 /**
@@ -175,37 +180,48 @@ export class FastWaits {
   }
   /**
    * Play the game toward `target` ticks, as much of the way as pays at the top speed, and return
-   * with it measured back at the benchmark speed; the caller waits out the last ticks. Returns null,
-   * having pressed nothing, when the wait would not pay, the game is paused or fast waits are off.
-   * Throws when the run must stop or the benchmark speed cannot be set again: then `normal` stays
-   * false, and the caller must not act in the game.
+   * with it measured back at the benchmark speed; the caller waits out the last ticks. `stop`,
+   * checked between presses and readings at speed, brings it back down early (a warning ends the
+   * wait): a few game seconds pass at speed meanwhile, all within the wait. Returns null, having
+   * pressed nothing, when the wait would not pay, `stop` is true already, the game is paused or
+   * fast waits are off. Throws when the run must stop or the benchmark speed cannot be set again:
+   * then `normal` stays false, and the caller must not act in the game.
    */
-  async run(target: number): Promise<FastWait | null> {
+  async run(target: number, stop?: () => boolean): Promise<FastWait | null> {
     const c = this.control;
-    if (this.off || c.paused() !== false) return null;
+    if (this.off || c.paused() !== false || stop?.()) return null;
     const start = await nextReading(c, null);
     const ticks = target - start.tick;
     const plan = this.plan(ticks);
     if (!plan) return null;
     const began = c.now();
     this.normal = false;
+    let interrupted = false;
     // Up, stopping early if the wait turns out too short for more.
     for (let i = 0; i < plan.presses; i++) {
       c.check();
       await this.press("+");
       this.raised++;
+      if (stop?.()) {
+        interrupted = true;
+        break;
+      }
       if (target - (await nextReading(c, null)).tick <= this.reserve(this.raised)) break;
     }
     // At speed until the way down must begin, measuring the top speed on the way.
     let from: { tick: number; at: number } | undefined;
     let fastRate: number | null = null;
     let progress = { tick: start.tick, at: c.now() };
-    for (;;) {
+    while (!interrupted) {
       c.check();
       const now = await nextReading(c, null);
       if (from === undefined) from = now;
       else if (now.at - from.at >= 1000) fastRate = ((now.tick - from.tick) * 1000) / (now.at - from.at);
       if (target - now.tick <= this.reserve(this.raised)) break;
+      if (stop?.()) {
+        interrupted = true;
+        break;
+      }
       if (now.tick !== progress.tick) progress = { tick: now.tick, at: c.now() };
       else if (c.now() - progress.at > STALL_MS) break;
       await c.sleep(POLL_MS);
@@ -234,10 +250,13 @@ export class FastWaits {
     if (fastRate !== null && fastRate < this.rate(1) - TOLERANCE)
       this.off ??= `the + key did not speed the game up (${Math.round(fastRate)} ticks a second at the top)`;
     const realMs = c.now() - began;
+    // Cut short, the wait saved time only over the ticks it played.
+    const played = interrupted ? Math.min(ticks, ((await c.clock())?.tick ?? target) - start.tick) : ticks;
     return {
-      ticks, presses, fastRate: fastRate === null ? null : tenths(fastRate), endRate: tenths(endRate),
-      realMs: Math.round(realMs), savedMs: Math.round((ticks / this.rate(0)) * 1000 - realMs),
+      ticks: played, presses, fastRate: fastRate === null ? null : tenths(fastRate), endRate: tenths(endRate),
+      realMs: Math.round(realMs), savedMs: Math.round((played / this.rate(0)) * 1000 - realMs),
       ...(corrected !== undefined ? { corrected } : {}),
+      ...(interrupted ? { interrupted: true as const } : {}),
     };
   }
   private async press(key: "+" | "-") {

@@ -25,10 +25,11 @@ export class Session {
   private map?: string;
   /**
    * Plays a wait's way to a target tick faster (fast waits, game-speed.ts), returning with the
-   * game back at the benchmark speed; set by the controller when the run has them on.
+   * game back at the benchmark speed, early once `stop` is true; set by the controller when the
+   * run has them on.
    */
-  private fastWait?: (target: number) => Promise<unknown>;
-  setFastWait(fastWait: ((target: number) => Promise<unknown>) | undefined) {
+  private fastWait?: (target: number, stop?: () => boolean) => Promise<unknown>;
+  setFastWait(fastWait: ((target: number, stop?: () => boolean) => Promise<unknown>) | undefined) {
     this.fastWait = fastWait;
   }
   constructor(
@@ -120,11 +121,17 @@ export class Session {
    * budget. A stalled reader or very slow game speed ends the wait after three
    * real seconds per game second (the slowest speed runs about 10 ticks/s).
    * `until`, checked every 50 ms, ends it early; returns true when it did.
+   * `interrupt` (a warning, warnings.ts), checked the same way once `afterSeconds`
+   * of the wait have passed, ends it early too; returns "interrupted" when it did.
    * Without `until` the wait's last tick is known, so fast waits may play most
    * of the way there (by the budget's end at the latest) before the rest passes
-   * at the benchmark speed.
+   * at the benchmark speed; an interrupt also brings a fast wait back down.
    */
-  async waitGame(gameSeconds: number, until?: () => boolean) {
+  async waitGame(
+    gameSeconds: number,
+    until?: () => boolean,
+    interrupt?: { check: () => boolean; afterSeconds: number },
+  ): Promise<boolean | "interrupted"> {
     if (!this.game) {
       await this.wait(gameSeconds);
       return false;
@@ -133,12 +140,17 @@ export class Session {
     if (!Number.isFinite(gameSeconds) || gameSeconds < 0 || gameSeconds > 300)
       throw new Error("Wait must be 0–300 game seconds.");
     if (!gameSeconds) return false;
-    const target = this.lastTick! + gameSeconds * TICKS_PER_GAME_SECOND;
+    const from = this.lastTick!;
+    const target = from + gameSeconds * TICKS_PER_GAME_SECOND;
+    const stop = interrupt
+      ? () => this.lastTick! >= from + interrupt.afterSeconds * TICKS_PER_GAME_SECOND && interrupt.check()
+      : undefined;
     const wallCap = Math.min(this.remaining(), gameSeconds * 3000 + 2000);
     const started = this.now();
-    if (!until && this.fastWait) await this.fastWait(Math.min(target, this.startTick! + this.game.budgetTicks));
+    if (!until && this.fastWait) await this.fastWait(Math.min(target, this.startTick! + this.game.budgetTicks), stop);
     while (this.lastTick! < target && this.now() - started < wallCap) {
       if (until?.()) return true;
+      if (stop?.()) return "interrupted";
       await this.sleep(50);
       this.check();
     }
