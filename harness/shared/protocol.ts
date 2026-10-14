@@ -73,6 +73,9 @@ export type Frame = {
   capturedAt: number;
   receivedAt: number;
   scope: "game-window";
+  /** The game clock (reader ticks) and map when the capture was taken, when the reader had them (frameAgeSeconds). */
+  gameTick?: number;
+  mapName?: string;
 };
 export type LogEntry = {
   id: string;
@@ -275,6 +278,31 @@ export const TICKS_PER_GAME_SECOND = 30;
  * second, so a game second takes about 0.75 real seconds.
  */
 export const GAME_SPEED = 40;
+/**
+ * Game seconds of play after which a screenshot no longer serves for input aimed at its pixels:
+ * the game changes under a stale image. Counted on the game clock, so time the game spends paused
+ * does not count and waits the host plays faster (fast waits) count in full; 40 game seconds is
+ * the 30 real seconds the limit was before 1.7.0, at GAME_SPEED.
+ */
+export const FRAME_MAX_AGE_GAME_SECONDS = 40;
+/**
+ * Seconds of play since `frame` was captured, in game seconds: from the game clock when the frame
+ * and `clock` (the reader's latest reading) both have one for the same map, else from real time at
+ * GAME_SPEED, less `creditMs` (time the host kept the game paused since), as in menus or a reader
+ * gap. A clock that went back, or another map, means another game: the frame is too old for it.
+ */
+export function frameAgeSeconds(
+  frame: Pick<Frame, "receivedAt" | "gameTick" | "mapName">,
+  clock: { tick: number; map: string } | null,
+  now = Date.now(),
+  creditMs = 0,
+) {
+  if (clock && typeof frame.gameTick === "number" && frame.mapName !== undefined) {
+    if (frame.mapName !== clock.map || clock.tick < frame.gameTick) return Number.POSITIVE_INFINITY;
+    return (clock.tick - frame.gameTick) / TICKS_PER_GAME_SECOND;
+  }
+  return (Math.max(0, now - creditMs - frame.receivedAt) * GAME_SPEED) / (1000 * TICKS_PER_GAME_SECOND);
+}
 /**
  * Reading-only replies keep the game paused, so they cost no game time. From this many in a row,
  * the host lets game time pass after each one, so reading stops being free (it used to end the run).
@@ -494,13 +522,14 @@ export function windowAction<A extends GameAction>(action: A, frame: Pick<Frame,
   if (action.type === "drag") { scaled.endX = sx(action.endX); scaled.endY = sy(action.endY); }
   return scaled as A;
 }
+/** Refuses input aimed at `frame` once it is `ageSeconds` of play old (frameAgeSeconds), or outside it. */
 export function validateFrameAction(
   action: GameAction,
   frame: Frame,
-  now = Date.now(),
+  ageSeconds: number,
 ) {
-  if (now - frame.receivedAt > 30000)
-    throw new Error("Game image expired (older than 30 seconds of play): call observe for a fresh screenshot and target its pixels.");
+  if (ageSeconds > FRAME_MAX_AGE_GAME_SECONDS)
+    throw new Error(`Game image expired (older than ${FRAME_MAX_AGE_GAME_SECONDS} game seconds of play): call observe for a fresh screenshot and target its pixels.`);
   if ("x" in action && (action.x >= frame.width || action.y >= frame.height))
     throw new Error("Click outside the game window: x and y must be within the latest screenshot's width and height.");
   if (

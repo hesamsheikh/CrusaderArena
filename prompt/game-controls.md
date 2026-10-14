@@ -50,8 +50,8 @@ return the game only once it has passed, so act first and look last.
 - **Screenshot:** the game window only (its `width` and `height` come with it). Tool
   coordinates are pixels of the latest screenshot, (0, 0) at the top left. Aim at ground
   level: a click hits the ground tile under the cursor, so the top of a tall building
-  targets the ground behind it. Raised ground is drawn higher on screen than low ground. A screenshot older than 30 seconds cannot be used for
-  clicks. `find_sites` and a `build_structure` placement given by map tile (`tile_x`,
+  targets the ground behind it. Raised ground is drawn higher on screen than low ground. A screenshot older than 40 game seconds cannot be
+  used for clicks. `find_sites` and a `build_structure` placement given by map tile (`tile_x`,
   `tile_y`) need no screenshot at all: see Placing buildings.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
   `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population

@@ -117,7 +117,7 @@ same batch keeps its rules (latest screenshot, its age, the camera guard), so a 
 move for a tile target makes later pixel targets report `camera_moved`; a batch may mix
 both kinds. A tile target's clicks go with the latest capture, whatever its age, as the
 host's own hotkeys do: only the window's identity and size are taken from it, so the
-30-second limit, which protects pixels read off an image, does not apply to them.
+40-game-second limit, which protects pixels read off an image, does not apply to them.
 
 **Retries.** A `not_placed` target is retried at nearby spots: up to 6 per building and
 12 per call. With the tile map, the host picks the nearest spots where the building
@@ -187,8 +187,8 @@ through the camera as it is at the click, so a view that moved a tile after the 
 does not push a flush spot into the anchor. If every spot the map gave is refused
 without a message, they probe the view from the anchor outward, as they do without a
 tile map (`method: tile_map_then_probing`). Their clicks go through a frame captured
-afresh once the one they started with is 20 s old, so long probing never meets the 30 s
-age limit on input.
+afresh once the one they started with is 27 game seconds old, so long probing never meets
+the 40-game-second age limit on input.
 Without a screenshot of the live view, `find_sites` reads the map for the live camera in
 the call itself and reports tiles only, ignoring `near_x`/`near_y` (they are pixels of
 a screenshot); the next `build_structure` call reuses that read for tile targets in the

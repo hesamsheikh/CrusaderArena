@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Frame, GameAction, Stats } from "../shared/protocol.js";
-import { validateFrameAction, windowAction } from "../shared/protocol.js";
+import { frameAgeSeconds, validateFrameAction, windowAction } from "../shared/protocol.js";
 import { GameEvents } from "./game-events.js";
 import type { MapSummary } from "./map-view.js";
 /** Single-quoted for the remote shell. */
@@ -17,6 +17,8 @@ export function readerIntervalMs(value = process.env.GAME_READER_INTERVAL_MS) {
     throw new Error("GAME_READER_INTERVAL_MS must be an integer from 50 to 5000");
   return ms;
 }
+/** Age past which the reader's last game-clock reading no longer dates frames (GameDevice.gameClock). */
+const CLOCK_STALE_MS = 3000;
 
 /** SSH target (user@address) and source root on the game host, from .env. */
 export function gameHost() {
@@ -385,6 +387,7 @@ export class GameDevice {
     this.connected = false;
     this.latest = null;
     this.stats = null;
+    this.clock = null;
     this.frames.clear();
     this.onStats(null);
     for (const p of this.pending.values()) {
@@ -429,8 +432,31 @@ export class GameDevice {
    * window's own size. Input is scaled back to the window (windowAction).
    */
   screenshotWidth: number | undefined;
+  /**
+   * The game clock of the reader's latest valid sample: its tick, its map and when the host saw it.
+   * Kept through the reader's brief unavailable samples, so frame ages (frameAge) stay on the game
+   * clock; one older than CLOCK_STALE_MS no longer counts.
+   */
+  private clock: { tick: number; map: string; at: number } | null = null;
+  gameClock(): { tick: number; map: string } | null {
+    const stats = this.currentStats();
+    const o = stats.observation;
+    if (stats.status === "ok" && typeof o?.game_time === "number" && typeof o.map_name === "string")
+      this.clock = { tick: o.game_time, map: o.map_name, at: Date.now() };
+    return this.clock && Date.now() - this.clock.at <= CLOCK_STALE_MS ? { tick: this.clock.tick, map: this.clock.map } : null;
+  }
+  /**
+   * Seconds of play since `frame` was captured (frameAgeSeconds): game seconds on the game clock,
+   * or without one real time at the benchmark speed less `creditMs`, the time the host kept the
+   * game paused since the capture.
+   */
+  frameAge(frame: Frame, creditMs = 0) {
+    return frameAgeSeconds(frame, this.gameClock(), Date.now(), creditMs);
+  }
   async capture(): Promise<Frame> {
     return this.serial(async () => {
+      // The clock before the capture: at most a reader interval early, so an age only errs long.
+      const clock = this.gameClock();
       let result;
       try {
         result = await this.rpc("capture", this.screenshotWidth ? { width: this.screenshotWidth } : {});
@@ -438,7 +464,7 @@ export class GameDevice {
         this.fail("Game capture failed; reconnect before continuing.");
         throw error;
       }
-      const f: Frame = { ...result, id: randomUUID(), receivedAt: Date.now() };
+      const f: Frame = { ...result, id: randomUUID(), receivedAt: Date.now(), ...(clock ? { gameTick: clock.tick, mapName: clock.map } : {}) };
       this.latest = f;
       this.frames.set(f.id, f);
       for (const [id, old] of this.frames)
@@ -453,7 +479,7 @@ export class GameDevice {
       guard?.();
       const frame = this.frames.get(frameId);
       if (!frame) throw new Error("Unknown or expired game image: call observe for a fresh screenshot.");
-      validateFrameAction(action, frame, Date.now() - ageCreditMs);
+      validateFrameAction(action, frame, this.frameAge(frame, ageCreditMs));
       this.announce({ ...action, width: frame.width, height: frame.height });
       return this.rpc("action", {
         action: {

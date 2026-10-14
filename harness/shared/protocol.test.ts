@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actionSchema, modelToolAction, runConfigSchema, validateFrameAction, windowAction, type Frame } from "./protocol.js";
+import { FRAME_MAX_AGE_GAME_SECONDS, actionSchema, frameAgeSeconds, modelToolAction, runConfigSchema, validateFrameAction, windowAction, type Frame } from "./protocol.js";
 const frame: Frame = {
   id: "test",
   image: "",
@@ -33,15 +33,15 @@ test("projects only the selected model action fields while validating required v
 });
 test("rejects expired screenshots and out-of-window drag endpoints", () => {
   assert.throws(
-    () => validateFrameAction({ type: "key", key: "Space" }, frame, 31001),
-    /expired/,
+    () => validateFrameAction({ type: "key", key: "Space" }, frame, FRAME_MAX_AGE_GAME_SECONDS + 0.1),
+    /expired \(older than 40 game seconds of play\)/,
   );
   assert.throws(
     () =>
       validateFrameAction(
         { type: "click", x: 1920, y: 0, button: 1 },
         frame,
-        1001,
+        1,
       ),
     /outside/,
   );
@@ -50,7 +50,7 @@ test("rejects expired screenshots and out-of-window drag endpoints", () => {
       validateFrameAction(
         { type: "drag", x: 0, y: 0, endX: 20, endY: 1080, button: 1 },
         frame,
-        1001,
+        1,
       ),
     /outside/,
   );
@@ -58,9 +58,23 @@ test("rejects expired screenshots and out-of-window drag endpoints", () => {
     validateFrameAction(
       { type: "click", x: 1919, y: 1079, button: 1 },
       frame,
-      1001,
+      FRAME_MAX_AGE_GAME_SECONDS,
     ),
   );
+});
+
+test("a screenshot's age is game time on the game clock, else real time at the benchmark speed", () => {
+  const dated = { ...frame, gameTick: 3000, mapName: "Oasis" };
+  // 1,200 ticks are 40 game seconds, however long they took in real time (a fast wait, a pause).
+  assert.equal(frameAgeSeconds(dated, { tick: 4200, map: "Oasis" }, 1000 + 5000), 40);
+  assert.equal(frameAgeSeconds(dated, { tick: 3000, map: "Oasis" }, 1000 + 600_000), 0, "a paused clock does not age it");
+  // Another map, or a clock that went back (a reload), is another game.
+  assert.equal(frameAgeSeconds(dated, { tick: 4200, map: "Desert" }), Number.POSITIVE_INFINITY);
+  assert.equal(frameAgeSeconds(dated, { tick: 2999, map: "Oasis" }), Number.POSITIVE_INFINITY);
+  // Without a clock on both sides: real seconds less the paused credit, at speed 40 (30 s = 40 game s).
+  assert.equal(frameAgeSeconds(frame, { tick: 4200, map: "Oasis" }, 1000 + 30_000), 40);
+  assert.equal(frameAgeSeconds(dated, null, 1000 + 30_000, 15_000), 20);
+  assert.equal(frameAgeSeconds(frame, null, 500), 0);
 });
 
 test("maps fullscreen letterboxing and rejects clicks in the padding", async () => {

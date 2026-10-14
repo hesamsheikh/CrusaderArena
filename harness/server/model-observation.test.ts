@@ -21,6 +21,8 @@ test("observe delivers buffered warnings once even after current stats expire", 
       scope: "game-window",
     }),
     currentStats: () => ({ status: "unavailable", observation: null }),
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(
     device,
@@ -96,6 +98,8 @@ test("observations carry game values and messages, not reader bookkeeping", asyn
     events,
     capture: async () => ({ id: "frame", image: "", mimeType: "image/jpeg", width: 1920, height: 1080, scope: "game-window" }),
     currentStats: () => reader,
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   // One agent per benchmark kind; each keeps its own event cursor from creation.
   const agentFor = (military: boolean) => makeAgent(device, () => {}, () => {}, 1,
@@ -174,6 +178,8 @@ test("build_structure reports a single rejected placement and leaves placement m
       });
     },
     currentStats: () => ({ status: "unavailable", observation: null }),
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test",
@@ -243,6 +249,8 @@ test("build_structure batches placements from one image and attributes feedback 
       return { delivered: true, at: clock };
     },
     currentStats: () => stats,
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test",
@@ -306,6 +314,8 @@ test("build_structure reuses the construction tray's open category across calls,
       return { at: Date.now() };
     },
     currentStats: stats,
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test", baseUrl: "https://example.invalid", keyConfigured: false,
@@ -353,6 +363,8 @@ test("build_structure does not blame a later placement for reappearing feedback"
       return { delivered: true, at: clock };
     },
     currentStats: () => stats,
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test",
@@ -379,6 +391,8 @@ test("build_structure reports an invalid target on its own, without stopping the
     }),
     action: async (action: unknown) => { actions.push(action); },
     currentStats: () => ({ status: "unavailable", observation: null }),
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test",
@@ -410,6 +424,8 @@ test("build_structure sends nothing and leaves placement mode untouched when eve
     }),
     action: async (action: unknown) => { actions.push(action); },
     currentStats: () => ({ status: "unavailable", observation: null }),
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
     id: "test", name: "test", modelId: "test",
@@ -582,6 +598,8 @@ function simulatedGame(options: {
     },
     // A live stream's unavailable sample still carries its capture time.
     currentStats: () => (options.unavailableReads?.includes(++reads) ? { status: "unavailable", captured_unix_ms: Date.now(), observation: null } : stats()),
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   let reads = 0;
   const agent = makeAgent(device, () => {}, () => {}, 1, {
@@ -813,6 +831,8 @@ test("timed runs refuse Escape and P before sending input", async () => {
     capture: async () => ({ id: "frame", image: "", mimeType: "image/jpeg", width: 1920, height: 1080, scope: "game-window" }),
     action: async (action: unknown) => { actions.push(action); return { delivered: true }; },
     currentStats: () => ({ status: "unavailable", observation: null }),
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const runtime = {
     session: { check() {}, wait: async () => {}, gameBudgetSeconds: 600, gameRemainingSeconds: () => 600, remaining: () => 60000 },

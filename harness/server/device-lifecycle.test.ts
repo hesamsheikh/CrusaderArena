@@ -116,6 +116,43 @@ test("pressKey sends the host's own keys from the latest frame without a capture
   assert.equal(device.inputSerial, 3, "and an ordinary action");
 });
 
+/** A device whose bridge answers every request; `sent` lists the requests in order. */
+function bridged() {
+  const device = new GameDevice(() => {}, () => {});
+  const sent: string[] = [];
+  Object.assign(device, {
+    rpc: async (op: string) => {
+      sent.push(op);
+      if (op === "capture")
+        return { image: "", mimeType: "image/jpeg", width: 1920, height: 1080, windowId: 7, pid: 1, capturedAt: Date.now(), scope: "game-window" };
+      return { delivered: true };
+    },
+  });
+  /** The reader's sample: the game clock at `tick` on map "m". */
+  const clock = (tick: number) => {
+    device.stats = { status: "ok", valid_until_unix_ms: Date.now() + 5000, observation: { game_time: tick, map_name: "m" } } as never;
+  };
+  return { device, sent, clock };
+}
+
+test("a screenshot ages in game seconds on the game clock: 40 of them, however long they took", async () => {
+  const { device, clock } = bridged();
+  clock(10_000);
+  const frame = await device.capture();
+  assert.equal(frame.gameTick, 10_000);
+  // Long ago in real time (a paused game, or a wait played fast) but 39.9 game seconds of play: usable.
+  Object.assign(frame, { receivedAt: Date.now() - 600_000 });
+  clock(10_000 + 1197);
+  await device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id);
+  // Just past 40 game seconds, however recent in real time: expired.
+  Object.assign(frame, { receivedAt: Date.now() });
+  clock(10_000 + 1201);
+  await assert.rejects(device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id), /expired \(older than 40 game seconds/);
+  // Another map's clock is another game.
+  device.stats = { status: "ok", valid_until_unix_ms: Date.now() + 5000, observation: { game_time: 10_001, map_name: "other" } } as never;
+  await assert.rejects(device.action({ type: "click", x: 1, y: 1, button: 1 }, frame.id), /expired/);
+});
+
 test("a reader diagnostic naming a multiplayer game ends the connection; other refusals do not", () => {
   const failures: string[] = [];
   const device = new GameDevice(() => {}, (message) => failures.push(message));

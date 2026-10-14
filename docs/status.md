@@ -371,7 +371,7 @@ between September and October 2026.
   - `place_near` placing the first Armory (or first of any storage kind) against its anchor
     from the tile map, and the no-room remedy kept for a storage's own anchor.
   - `place_near` and `expand_storage` sending clicks through a frame captured afresh once
-    the one they started with is 20 s old.
+    the one they started with is 20 s old (27 game seconds from 1.7.0).
   - `market_trade` counting a purchase when the stock rose and the gold fell in one sample.
   - The end-of-run save trying once more when no save under the new name appears.
 

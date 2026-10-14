@@ -184,6 +184,7 @@ import type { GameDevice } from "./device.js";
 import {
   modelToolAction,
   allowedKeys,
+  FRAME_MAX_AGE_GAME_SECONDS,
   GAME_SPEED,
   isAnthropic,
   isMoonshot,
@@ -496,7 +497,7 @@ export function makeAgent(
       capture: captureAndRefresh,
       // A frame reused across this call's own input-only sends (clicks, minimap fractions):
       // window size and id do not change between them, so one capture does for all of them.
-      frame: frameCache(captureAndRefresh, Date.now, device.latest),
+      frame: frameCache(captureAndRefresh, (f) => device.frameAge(f), device.latest),
       send: async (frame, action) => {
         if (signal?.aborted) throw new Error("Stopped");
         runtime?.session.check();
@@ -730,7 +731,7 @@ export function makeAgent(
       name: "observe",
       label: "Observe game",
       description:
-        "Screenshot of the game window with its stats, buffered game events and run_clock (game time left and used). It returns once your turn has run the minimum turn length of game time (the host lets the rest pass first). Coordinates are image pixels; a screenshot older than thirty seconds cannot be used for clicks.",
+        `Screenshot of the game window with its stats, buffered game events and run_clock (game time left and used). It returns once your turn has run the minimum turn length of game time (the host lets the rest pass first). Coordinates are image pixels; a screenshot older than ${FRAME_MAX_AGE_GAME_SECONDS} game seconds cannot be used for clicks.`,
       parameters: Type.Object({}),
       execute: async (toolCallId) => {
         const owed = toolCallId === HOST_OBSERVATION || toolCallId === HOST_TEXT_OBSERVATION ? 0 : turnShortfall();
@@ -1187,8 +1188,9 @@ export function makeAgent(
                 const latest = current.status === "ok" && current.observation ? current.observation : result.after;
                 if (cameraKey(latest) !== keyOf(clickCamera)) { retryStopped = "camera_moved"; break; }
                 if (placementOf(latest)?.action !== 5) { retryStopped = "placement_mode_ended"; break; }
-                // Only a pixel target's spots come from the screenshot, so only they age with it.
-                if (!tileOrigin && Date.now() - pixelCreditMs - frame.receivedAt > 25000) { retryStopped = "image_too_old"; break; }
+                // Only a pixel target's spots come from the screenshot, so only they age with it;
+                // retries stop with a few game seconds of its age limit still left for the click.
+                if (!tileOrigin && device.frameAge(frame, pixelCreditMs) > FRAME_MAX_AGE_GAME_SECONDS - 6) { retryStopped = "image_too_old"; break; }
                 retryBudget--;
                 retries++;
                 const carriedNow = [...carried, ...visiblePlacementFeedback(device.currentStats().observation)];

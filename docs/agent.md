@@ -99,9 +99,11 @@ nearby spots if it was silently blocked.
 - **Game window only.** Every input goes to the game window, at pixel coordinates in
   the latest screenshot. The bridge checks the game is the active window and has not
   changed size.
-- **Fresh images only.** Input based on a screenshot more than 30 seconds old is
-  refused. Time the game spent paused by the host does not count, so slow thinking
-  does not expire a screenshot. Two exceptions need no screenshot at all: `find_sites`,
+- **Fresh images only.** Input based on a screenshot more than 40 game seconds old is
+  refused. The age is read off the game clock, so time the game spends paused does not
+  count (slow thinking does not expire a screenshot) and a wait played fast counts in
+  full; without a clock reading it is real time at speed 40, less the time paused. Two
+  exceptions need no screenshot at all: `find_sites`,
   and a `build_structure` placement given by map tile instead of pixels, which read the
   live camera themselves right before acting (see [Tools](tools.md#build)).
 - **Camera guards.** Placement and inspection tools targeted by pixel stop if the

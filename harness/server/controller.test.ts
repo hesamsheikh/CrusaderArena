@@ -189,6 +189,8 @@ function fixture(
       guardListeners.add(listener);
       return () => guardListeners.delete(listener);
     },
+    // Frames do not age in these tests (GameDevice.frameAge).
+    frameAge: () => 0,
   } as unknown as GameDevice;
   const controller = new RunController(
     run,

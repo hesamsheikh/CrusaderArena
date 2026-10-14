@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adjacentRays, cameraShift, FRAME_REUSE_MS, frameCache, sideOrder, tilePixel } from "./anchors.js";
+import { adjacentRays, cameraShift, FRAME_REUSE_GAME_SECONDS, frameCache, sideOrder, tilePixel } from "./anchors.js";
 import { describeBuilding, statusReport, storageOf } from "./status.js";
 import type { Frame } from "../shared/protocol.js";
 
@@ -30,26 +30,29 @@ test("adjacent probe lines march outward per side and lateral shift, stopping at
   assert.deepEqual(sideOrder("up-left"), ["up-left", "down-right", "down-left", "up-right"]);
 });
 
-test("frameCache reuses a capture while it is comfortably younger than the action age limit, else captures fresh", async () => {
+// The game clock in these tests, in game milliseconds: a frame's age is the clock less its gameTick.
+const ageOn = (clock: () => number) => (f: Frame) => (clock() - (f.gameTick ?? 0)) / 1000;
+
+test("frameCache reuses a capture while it is comfortably younger than the input age limit, else captures fresh", async () => {
   let captures = 0;
   let clock = 0;
   const capture = async (): Promise<Frame> => {
     captures++;
-    return { id: `f${captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: clock } as Frame;
+    return { id: `f${captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: 0, gameTick: clock } as Frame;
   };
-  const frame = frameCache(capture, () => clock);
+  const frame = frameCache(capture, ageOn(() => clock));
   const a = await frame();
   assert.equal(captures, 1);
-  clock += FRAME_REUSE_MS - 1000;
+  clock += (FRAME_REUSE_GAME_SECONDS - 1) * 1000;
   const b = await frame();
   assert.equal(captures, 1, "reused within the window");
   assert.equal(b, a);
-  clock += 2000; // past FRAME_REUSE_MS since the first capture
+  clock += 2000; // past FRAME_REUSE_GAME_SECONDS since the first capture
   const c = await frame();
   assert.equal(captures, 2, "captured fresh once past the reuse window");
   assert.notEqual(c, a);
   // A fresh frameCache() per call starts with nothing cached, however recent the clock.
-  const other = frameCache(capture, () => clock);
+  const other = frameCache(capture, ageOn(() => clock));
   const d = await other();
   assert.equal(captures, 3, "a new cache never reuses another call's frame");
   assert.notEqual(d, c);
@@ -57,18 +60,18 @@ test("frameCache reuses a capture while it is comfortably younger than the actio
 
 test("frameCache starts from the device's latest capture while it is young enough, else captures", async () => {
   let captures = 0;
-  let clock = 100_000;
+  const clock = 100_000;
   const capture = async (): Promise<Frame> => {
     captures++;
-    return { id: `f${captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: clock } as Frame;
+    return { id: `f${captures}`, image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: 0, gameTick: clock } as Frame;
   };
-  const latest = { id: "latest", image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: clock - 5000 } as Frame;
-  assert.equal(await frameCache(capture, () => clock, latest)(), latest);
-  assert.equal(captures, 0, "a 5 s old capture serves for input");
-  const stale = { ...latest, receivedAt: clock - FRAME_REUSE_MS - 1 };
-  assert.equal((await frameCache(capture, () => clock, stale)()).id, "f1");
+  const latest = { id: "latest", image: "", mimeType: "image/jpeg", width: 1920, height: 1080, receivedAt: 0, gameTick: clock - 5000 } as Frame;
+  assert.equal(await frameCache(capture, ageOn(() => clock), latest)(), latest);
+  assert.equal(captures, 0, "a capture 5 game seconds old serves for input");
+  const stale = { ...latest, gameTick: clock - FRAME_REUSE_GAME_SECONDS * 1000 - 1 };
+  assert.equal((await frameCache(capture, ageOn(() => clock), stale)()).id, "f1");
   assert.equal(captures, 1, "too old to reuse");
-  assert.equal((await frameCache(capture, () => clock, null)()).id, "f2");
+  assert.equal((await frameCache(capture, ageOn(() => clock), null)()).id, "f2");
   assert.equal(captures, 2, "nothing captured yet");
 });
 
