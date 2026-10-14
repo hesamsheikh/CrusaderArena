@@ -76,8 +76,9 @@ warnings can end the model's waits.
   model's waits and at every observation. When popularity falls 10 points below the model's
   last observation, food drops below two game months of what the people eat at their
   rations, or gold falls below 500, `wait_and_observe` ends early (after the minimum turn)
-  and the observation lists it under `warnings` as a plain fact, such as "Popularity fell
-  from 52 to 42 since your last observation." On Large Barren Desert, Claude Opus 5.5 set Mean taxes with little food and
+  and the observation lists it under `warnings` as a plain fact in that observation's own
+  values, such as "Popularity fell from 52 to 42 since your last observation." or "Gold is
+  low: 450 left, down from 800 at your last observation." On Large Barren Desert, Claude Opus 5.5 set Mean taxes with little food and
   waited 90 game seconds; its next observation showed popularity 14, down from 52, and food 1,
   and the game ended at popularity 0. Replayed, the food warning would have come at 30:01 and
   the popularity warning at 30:27, a minute or more earlier. The rates at which people eat

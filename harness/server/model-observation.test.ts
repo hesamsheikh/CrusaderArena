@@ -1644,7 +1644,7 @@ test("a warning ends wait_and_observe early and leads its observation, once", as
   assert.deepEqual(interrupts, [0], "warnings may end the wait once the turn's minimum has passed (none owed here)");
   assert.ok(first.some((t) => /^A warning ended the wait early/.test(t)), first.join("\n"));
   assert.deepEqual(JSON.parse(first.at(-1)!).warnings,
-    ["Popularity fell from 52 to 40 since your last observation.", "Gold fell below 500: 450."]);
+    ["Popularity fell from 52 to 40 since your last observation.", "Gold is low: 450 left, down from 600 at your last observation."]);
   // That observation is the new start: the same values bring nothing again, and the wait runs out.
   const second = await texts();
   assert.ok(!second.some((t) => /warning ended/.test(t)), second.join("\n"));

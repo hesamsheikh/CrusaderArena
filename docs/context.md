@@ -156,11 +156,14 @@ has turned bad since its previous observation:
   eat from recorded runs (per person and game month, 0.086 food at half rations, 0.174
   full, 0.26 extra, 0.344 double, from about 1,300 stretches with no food arriving);
   the model is not told these rates.
-- **Gold** below 500: "Gold fell below 500: 450."
+- **Gold** below 500: "Gold is low: 450 left, down from 800 at your last observation."
 
 A warning ends `wait_and_observe` early, once the turn's minimum length has passed (as
 `until` does), with a line saying so and how long the wait ran; the observation lists it
-under `warnings`. Any other observation, such as the host's own after its waits, or a
+under `warnings`, in that observation's own values while they still show it: the game
+plays on for a few seconds while a fast wait slows down, and a popularity warning worded
+when it came up said 81 beside stats showing 68 (live, 2026-10-14). One whose condition is
+gone by then reads as it came up. Any other observation, such as the host's own after its waits, or a
 tool's screenshot, lists the warnings that hold when it is taken. Each comes up once:
 what an observation already shows brings no warning, and popularity counts from the last
 observation's value. Warnings are tool results, never part of the system prompt. Over

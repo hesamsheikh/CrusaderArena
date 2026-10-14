@@ -21,10 +21,14 @@ test("popularity warns 10 points below the last observation, and again 10 below 
   assert.deepEqual(w.observe(reading({ popularity: 52 })), []);
   assert.equal(w.check(reading({ popularity: 43 })), false);
   assert.equal(w.check(reading({ popularity: 42 })), true);
-  // Reported with the values it came up with, then the next observation is the new start.
-  assert.deepEqual(w.observe(reading({ popularity: 41 })), ["Popularity fell from 52 to 42 since your last observation."]);
-  assert.equal(w.check(reading({ popularity: 32 })), false);
-  assert.equal(w.check(reading({ popularity: 31 })), true);
+  // Reported in the values of the observation that carries it (the game plays on while a fast wait
+  // slows down: live, a warning that came up at 81 went out beside stats showing 68), then that
+  // observation is the new start.
+  assert.deepEqual(w.observe(reading({ popularity: 39 })), ["Popularity fell from 52 to 39 since your last observation."]);
+  assert.equal(w.check(reading({ popularity: 30 })), false);
+  assert.equal(w.check(reading({ popularity: 29 })), true);
+  // Recovered by the time of the observation: reported as it came up.
+  assert.deepEqual(w.observe(reading({ popularity: 33 })), ["Popularity fell from 39 to 29 since your last observation."]);
 });
 
 test("food warns below two game months of what the people eat at their rations", () => {
@@ -55,10 +59,14 @@ test("food or gold the last observation already showed low brings no warning unt
   assert.equal(w.check(reading({ food: 120, gold: 499 })), true);
   assert.equal(w.check(reading({ food: 30, gold: 450 })), true);
   assert.deepEqual(w.observe(reading({ food: 30, gold: 450 })), [
-    "Gold fell below 500: 499.",
+    "Gold is low: 450 left, down from 800 at your last observation.",
     "Food is low: 30 in the granaries for 100 people on full rations.",
   ]);
   assert.deepEqual(w.observe(reading({ food: 20, gold: 300 })), [], "reported once");
+  // Gold back above 500 by the observation: reported as it came up.
+  w.observe(reading({ gold: 900 }));
+  assert.equal(w.check(reading({ gold: 50 })), true);
+  assert.deepEqual(w.observe(reading({ gold: 650 })), ["Gold is low: 50 left, down from 900 at your last observation."]);
 });
 
 test("nothing warns before the first observation, and one without game values counts what it reported as seen", () => {
@@ -66,7 +74,7 @@ test("nothing warns before the first observation, and one without game values co
   assert.equal(w.check(reading({ popularity: 0, gold: 0, food: 0 })), false);
   w.observe(reading({ popularity: 60 }));
   assert.equal(w.check(reading({ popularity: 50, gold: 400 })), true);
-  assert.deepEqual(w.observe(null), ["Popularity fell from 60 to 50 since your last observation.", "Gold fell below 500: 400."]);
+  assert.deepEqual(w.observe(null), ["Popularity fell from 60 to 50 since your last observation.", "Gold is low: 400 left, down from 2000 at your last observation."]);
   // Not again for what was reported; popularity counts down from 50 now.
   assert.equal(w.check(reading({ popularity: 41, gold: 300 })), false);
   assert.equal(w.check(reading({ popularity: 40, gold: 300 })), true);

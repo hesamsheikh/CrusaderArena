@@ -93,10 +93,10 @@ read the live camera themselves and need no screenshot.
   the ground under them (plain, oasis grass, stone, iron ore, oil), each with its map
   tile (and its pixel while the latest screenshot shows it); for a woodcutter, those
   closest to trees first. With no spot on a building's own ground in view, it also
-  searches the nearest such ground on the map. `flat_view` shows free and occupied
-  ground. `demolish_building` removes one of your buildings, given by map tile or pixel.
-  `set_workshop` chooses what a fletcher (bows or crossbows), poleturner (spears or
-  pikes) or blacksmith (swords or maces) makes.
+  searches the nearest such ground on the map. `flat_view` shows building footprints
+  and raised ground flat (trees shrink to stumps in it). `demolish_building` removes one
+  of your buildings, given by map tile or pixel. `set_workshop` chooses what a fletcher
+  (bows or crossbows), poleturner (spears or pikes) or blacksmith (swords or maces) makes.
 - **Find your way:** `center_on` jumps to your keep, granary, stockpile, market and
   other key buildings. `map_overview` shows the whole map with its stone, iron, oil,
   farmland and trees; `go_to_tile` moves the camera to a tile it names.
