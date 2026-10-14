@@ -299,6 +299,12 @@ between September and October 2026.
   - Fast waits saved 89 and 92 seconds in GLM's and Haiku's runs; Luna never waited. During
     Haiku's run the overlay showed "thinking · paused" while it thought, "acting · speed 40"
     and its waits rising to speed 60 or 75 and back to 40.
+- `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
+  5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
+  waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
+  arriving showed as an other rise; after the purchase they still showed 0, the 20 bought left
+  out; at 3 min 40 s they showed 36 wood in the last 3 game minutes, 12 a minute and 4 per
+  woodcutter, as the stock had risen.
 - The run overlay's speed, on 2026-10-14 (stand-in on Oasis by the Sea, 3 game minutes): the
   phase line went from "waiting · speed 40" through 45 to "speed 90" and back down to 40 in
   each fast wait, as the + and - presses went; panels rendered from the live status showed it.

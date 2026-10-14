@@ -107,6 +107,12 @@ warnings can end the model's waits.
     built that round never showed a religion factor, and three models could not tell a
     chapel giving nothing from a factor the reader does not read.
   - `status` counts the player's buildings by type, from the reader's counts.
+  - `status` reports production: for each type of producing building standing, the goods it
+    delivered to storage in the last 3 game minutes, per game minute in all and per
+    building, from every reader sample's rises in stock (purchases and demolition refunds
+    held out). The game shows no production figures, and three of the 1.7.0 trial
+    interviews asked for them: GLM 5.3 Flash's quarries and iron mines delivered little for
+    minutes before it could tell.
   - `inspect_building` takes a map tile, like `set_workshop` and `demolish_building`: three
     calls that round failed for want of a fresh screenshot. By tile it clicks the building's
     middle, then the back corner of its footprint and its roof, and says when only a

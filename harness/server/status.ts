@@ -1,3 +1,4 @@
+import type { ProductionLedger } from "./production.js";
 import type { Stats } from "../shared/protocol.js";
 import { FACTOR_UNITS_PER_POINT, foodPopularity, popularityFactors } from "../shared/popularity.js";
 import { buildingTypeNames } from "./anchors.js";
@@ -162,9 +163,14 @@ export function observationStats(stats: Stats, { military = true } = {}) {
 }
 
 /** Compact settlement status from one fresh reader sample; missing values stay absent, never zero. */
+/** The `production` entry of a status, when the ledger has anything to say. */
+function withProduction(report: ReturnType<ProductionLedger["report"]>) {
+  return report ? { production: report } : {};
+}
+
 export function statusReport(
   stats: Stats,
-  extra: { budget?: Record<string, number | string>; views?: string[] } = {},
+  extra: { budget?: Record<string, number | string>; views?: string[]; production?: Pick<ProductionLedger, "report"> } = {},
 ) {
   const o = stats.observation;
   if (stats.status !== "ok" || !o)
@@ -194,6 +200,8 @@ export function statusReport(
     // them to manage 100+ buildings, 1.6.3). A building counts from the click that places it, as
     // build_structure's own_buildings evidence relies on.
     ...(o.buildings ? { buildings: namedBuildings(o.buildings) } : {}),
+    // What the producing buildings delivered lately, which the game shows nowhere (production.ts).
+    ...(o.buildings && extra.production ? withProduction(extra.production.report(namedBuildings(o.buildings))) : {}),
     troops: o.own_troops?.total,
     structures_map_wide: o.structures?.count,
     placement_mode: placementOf(o),

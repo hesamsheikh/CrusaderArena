@@ -141,6 +141,8 @@ export interface AgentRuntime {
   cycle: ObservationCycle;
   /** Popularity, food and gold warnings: they end wait_and_observe early and lead each observation. */
   warnings?: Warnings;
+  /** Goods delivered to storage by building type (production.ts): status reports them. */
+  production?: ProductionLedger;
   memory: RunMemory;
   config: RunConfig;
   /** Whether the benchmark includes military play; troop counts appear in observations only then. */
@@ -173,6 +175,7 @@ export interface AgentRuntime {
   ) => void;
 }
 
+import type { ProductionLedger } from "./production.js";
 import { footprintOf } from "./footprints.js";
 import { adjacentRemedy, anchorRemedy, placementRemedy, READER_RETRY } from "./remedies.js";
 import { DEMOLISH_BUTTON, DEMOLISHING, demolishOutcome } from "./demolish.js";
@@ -1607,8 +1610,14 @@ export function makeAgent(
         runtime?.cycle.action();
         observed = null;
         observedClearedBy = "market_trade";
-        const result = await marketTrade(anchorContext(signal), args.good, args.action, args.lots ?? 1);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
+        // A purchase is not a delivery: the good's rises are held from the ledger meanwhile.
+        const release = runtime?.production?.hold([args.good]);
+        try {
+          const result = await marketTrade(anchorContext(signal), args.good, args.action, args.lots ?? 1);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
+        } finally {
+          release?.();
+        }
       },
     }),
     defineTool({
@@ -1929,11 +1938,11 @@ export function makeAgent(
       name: "status",
       label: "Settlement status",
       description:
-        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, your buildings counted by type (from the click that places each), placement mode, open building panel, camera and saved views. No screenshot and no game input.",
+        "Text-only settlement summary from the read-only game reader: game-time budget, date, gold, population and housing, idle peasants, popularity with its factors, food and rations, stockpile and granary goods, your buildings counted by type (from the click that places each), production (the goods each type of your producing buildings delivered to storage in the last 3 game minutes, per game minute in all and per building, from the reader's stock: purchases are not counted), placement mode, open building panel, camera and saved views. No screenshot and no game input.",
       parameters: Type.Object({}),
       execute: async () => {
         const budget = runtime ? runClock(runtime.session) : undefined;
-        const report = statusReport(device.currentStats(), { budget, views: [...views.keys()] });
+        const report = statusReport(device.currentStats(), { budget, views: [...views.keys()], production: runtime?.production });
         return { content: [{ type: "text" as const, text: JSON.stringify(report) }], details: { readOnly: true } };
       },
     }),
@@ -2050,12 +2059,19 @@ export function makeAgent(
           }
           if (aimed) target = aimed.point;
         }
-        const ack = await click(target.x, target.y, 1);
-        const after = await sampleAfter(ctx, at(ack), (o) => (structures(o) ?? Infinity) < (before ?? -Infinity), 2);
-        const latest = after ?? device.currentStats().observation;
-        const outcome = demolishOutcome(before, structures(latest));
-        // Leave demolish mode.
-        await click(target.x, target.y, 3);
+        // A demolition gives back part of the building's materials: not deliveries (production.ts).
+        const releaseRefund = runtime?.production?.hold(["wood_planks", "stone", "iron", "pitch"]);
+        let outcome: ReturnType<typeof demolishOutcome>;
+        try {
+          const ack = await click(target.x, target.y, 1);
+          const after = await sampleAfter(ctx, at(ack), (o) => (structures(o) ?? Infinity) < (before ?? -Infinity), 2);
+          const latest = after ?? device.currentStats().observation;
+          outcome = demolishOutcome(before, structures(latest));
+          // Leave demolish mode.
+          await click(target.x, target.y, 3);
+        } finally {
+          releaseRefund?.();
+        }
         menuMemory = undefined;
         return text({
           status: outcome,

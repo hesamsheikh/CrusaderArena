@@ -101,6 +101,7 @@ export class GameDevice {
   guardState: "off" | "starting" | "active" | "failed" = "off";
   lastGuardSample: GuardRecord | undefined;
   private guardListeners = new Set<(record: GuardRecord) => void>();
+  private sampleListeners = new Set<(stats: Stats) => void>();
   private inputListeners = new Set<(input: GameInput) => void>();
   /** Requests sent to the bridge and not yet answered, oldest first; only the oldest's time runs (startNext). */
   private pending = new Map<
@@ -196,6 +197,7 @@ export class GameDevice {
         this.stats = JSON.parse(line);
         this.events.ingest(this.stats);
         this.onStats(this.stats);
+        for (const listener of this.sampleListeners) listener(this.stats!);
         if (
           this.stats?.status === "game_exited" ||
           this.stats?.status === "game_exiting"
@@ -354,6 +356,11 @@ export class GameDevice {
   onGuard(listener: (record: GuardRecord) => void) {
     this.guardListeners.add(listener);
     return () => void this.guardListeners.delete(listener);
+  }
+  /** Hear every reader sample as it arrives (the run's production ledger, production.ts). */
+  onSample(listener: (stats: Stats) => void) {
+    this.sampleListeners.add(listener);
+    return () => void this.sampleListeners.delete(listener);
   }
   /**
    * True once the reader confirms an active local single-player map within the timeout. The

@@ -225,9 +225,9 @@
     },
     {
       "version": "1.7.0",
-      "fingerprint": "eef817ce8ae010f8342de6ac41d72030f17f8aefb2a2f7f9dee5d44f8d85c133",
+      "fingerprint": "46587b64d82cc09c042f0c5ea3b3f96acece064b52ae07a795e503303b3caea3",
       "date": "2026-10-14",
-      "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; religion and the inn show at 0 once one stands, status counts buildings, inspect_building takes a map tile, find_sites says when no woodcutter spot has trees, and expand_storage and place_near go back to the anchor's view after choosing storage moved it; clicks at a map tile are aimed by the tile the game picks under the pointer; the game machine's reader is rebuilt unless it was built from the version's sources"
+      "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; religion and the inn show at 0 once one stands, status counts buildings and reports what producing buildings delivered, inspect_building takes a map tile, find_sites says when no woodcutter spot has trees, and expand_storage and place_near go back to the anchor's view after choosing storage moved it; clicks at a map tile are aimed by the tile the game picks under the pointer; the game machine's reader is rebuilt unless it was built from the version's sources"
     }
   ]
 }

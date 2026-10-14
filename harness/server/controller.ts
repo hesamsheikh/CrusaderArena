@@ -1,3 +1,4 @@
+import { ProductionLedger } from "./production.js";
 import path from "node:path";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -91,6 +92,8 @@ export class RunController {
   readonly cycle = new ObservationCycle();
   /** Popularity, food and gold warnings that end the agent's waits (warnings.ts). */
   readonly warnings = new Warnings();
+  /** Goods delivered to storage by building type, from every reader sample (production.ts), for status. */
+  readonly production = new ProductionLedger();
   readonly agent: Agent;
   readonly runtime: AgentRuntime;
   /** Game-window video recording (run config `recordVideo`); captures only while the agent acts. */
@@ -213,6 +216,7 @@ export class RunController {
       session: this.session,
       cycle: this.cycle,
       warnings: this.warnings,
+      production: this.production,
       memory: this.memory,
       config: run.config,
       military: benchmarkSpec(run.benchmarkType || "")?.military ?? true,
@@ -848,6 +852,9 @@ export class RunController {
     // Memory-guard samples (every 5 s) go to the run's events with the game clock, pause state and
     // the reader's managed-heap reading, so a guard stop shows what grew; a collection count that
     // stops moving is the collector stall the reader's watchdog breaks (docs/status.md).
+    const unsubscribeSamples = this.device.onSample?.((stats) => {
+      if (stats.status === "ok") this.production.sample(stats.observation);
+    });
     let forcedSeen = 0;
     const unsubscribeGuard = this.device.onGuard?.((record) => {
       if (record.kind === "sample") {
@@ -1149,6 +1156,7 @@ export class RunController {
         this.publish();
       } finally {
         unsubscribe();
+        unsubscribeSamples?.();
         unsubscribeGuard?.();
         unsubscribeInput?.();
         // The device outlives the run: no guard or fast waits carry over to whatever comes next. A
