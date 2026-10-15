@@ -308,13 +308,23 @@ between September and October 2026.
     times a game in all three rounds; both wondered mid-game whether their quarries, mines and
     fletchers delivered, and asked for production figures again in their interviews. Luna took
     its orchards for poor ones when three had just been built beside the first: the rate per
-    building had divided the first one's apples by four. Both changed since (Tested in code
-    only, below).
+    building had divided the first one's apples by four. Both changed since (next entry).
   - 36 of 37 placements went through; GLM's iron mine lacked wood. One aim missed: a GLM hovel
     aimed at (356, 461) on The Sinkhole's slope near the top edge, where the game showed (360,
     465) under the pointer. The tile was drawn off screen, so the click had gone to its flat
     position, and the 4-tile offset there was past the 3 the aim followed. Changed since
-    (Tested in code only, below).
+    (next entry).
+- The fixes from that round (a2cfb69), on 2026-10-15 with the stand-in on "The Sinkhole start":
+  - GLM's case replayed: a woodcutter at (363, 481) moved the camera there, then the hovel at
+    (356, 461), whose flat position lay near the top edge, moved the camera again and was
+    clicked mid-screen at (683, 369) with the game's tile under the pointer the one asked;
+    `inspect_building` there opened a hovel. In a second run, from the woodcutter's view
+    again, `inspect_building` and `demolish_building` on (356, 461) each moved the camera
+    (centred on (350, 457) after) and opened, then demolished, the hovel.
+  - Production in every observation: two woodcutters built at about 0:28 and 1:22 showed 0
+    delivered, both `built_in_window`, at 2:29 and 2:38; at 4:09, the window from 1:09, 12
+    wood, 4 a minute and 2.1 per woodcutter over their 5.8 woodcutter-minutes, one built in
+    the window; at 5:10, 24 wood, 8 a minute and 4 per woodcutter. `status` gave the same.
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
@@ -557,19 +567,15 @@ between September and October 2026.
     machine on 2026-10-14: its sources were 1.6.3's, its `crusader_probe.exe`
     dated from a 1.5.0 round 11 minutes before, and the sync's build said "ninja: no work
     to do". The reader DLL was 1.6.2's build, whose sources 1.6.3 shares.
-  - Production in every observation's stats, with the rate per building over the time each
-    building stood in the window, `built_in_window`, and a rise credited to its good's maker
-    only once one stands (`production.test.ts`). The readout in `status` was seen live
-    (Runs above); these changes were made after the third round of models, while the game
-    machine could not be reached (2026-10-15), and have not been seen live.
-  - A tile target drawn off screen while its flat position is on screen, as raised ground near
-    the top edge can be: `build_structure`, `demolish_building` and `inspect_building` move the
-    camera to where the tile is drawn mid-screen, a second time when only the map read after
-    the first move shows its height, and click where it is drawn; the aim follows raised
-    ground's offset up the screen as far as it goes and keeps only an offset of up to 3 tiles
-    for the view (`model-observation.test.ts`, `placement.test.ts`, on a simulated plateau;
-    the test of `build_structure` fails on the code before). Not seen live, for the same
-    reason.
+  - Of the production changes (`production.test.ts`), what the live check (Runs above) did not
+    reach: a rise credited to its good's maker only once one stands, else an other rise, and
+    a sample without building counts keeping the last ones.
+  - Of the raised-tile changes (`model-observation.test.ts`, `placement.test.ts`, on a
+    simulated plateau; the test of `build_structure` fails on the code before), what the live
+    check did not reach: the second camera move when only the map read after the first shows
+    the tile's height, and the aim following raised ground's offset up the screen past 3 tiles
+    when a click starts from a flat position (no tile map), keeping only an offset of up to 3
+    tiles for the view.
 
 - The shims that bring two harness changes to rounds played on earlier versions
   (`cache-key.test.ts`, `overlay-feed.test.ts`, `test_overlay.py`; both also used in a
