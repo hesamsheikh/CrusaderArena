@@ -185,6 +185,12 @@ export type Stats = {
      * numbers it is making and will make next; null otherwise, absent from readers before it.
      */
     selected_workshop?: { id: number; type: number; making: number; next: number } | null;
+    /**
+     * The starting goods still to come, by name, as the list at the top left of the screen shows
+     * them while they arrive (a good leaves it once it has come in); null when unavailable, absent
+     * from readers before it.
+     */
+    starting_goods_to_come?: Record<string, number> | null;
     [key: string]: unknown;
   } | null;
 };

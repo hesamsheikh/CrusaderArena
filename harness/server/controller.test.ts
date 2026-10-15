@@ -1510,6 +1510,7 @@ test("transient provider failures are retried; others end the run", async () => 
   assert.ok(isTransientProviderError("Provider returned an empty response"));
   assert.ok(isTransientProviderError("503 Service Unavailable"));
   assert.ok(isTransientProviderError("JSON error injected into SSE stream"));
+  assert.ok(isTransientProviderError("Stream ended before a terminal response event"));
   assert.ok(isTransientProviderError('429: {"message":"Provider returned error","code":429}'));
   assert.ok(isTransientProviderError("z-ai/glm-5.3-flash is rate-limited upstream"));
   assert.ok(!isTransientProviderError("Invalid API key"));

@@ -5,7 +5,8 @@
  * 5.5 twice, 2026-10-14): the game shows none. Every reader sample's rise in a good is a delivery,
  * as the stockpile, granary or armory takes it in, except while a harness action that changes that
  * good holds it (a trade, a demolition's refund). A fall is a building taking the good to use, or a
- * cost. A rise counts for the type that makes the good only if one of them stood before it.
+ * cost. A rise counts for the type that makes the good only if one of them stood before it, and not
+ * while the good's starting goods are still coming in.
  */
 import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
 import { namedBuildings } from "./building-types.js";
@@ -39,7 +40,7 @@ const MAKER: Readonly<Record<string, string>> = Object.fromEntries(
 export const PRODUCTION_WINDOW_TICKS = 3 * 60 * TICKS_PER_GAME_SECOND;
 const TICKS_PER_GAME_MINUTE = 60 * TICKS_PER_GAME_SECOND;
 
-type Sample = { game_time?: unknown; map_name?: unknown; resources_by_name?: unknown; buildings?: unknown };
+type Sample = { game_time?: unknown; map_name?: unknown; resources_by_name?: unknown; buildings?: unknown; starting_goods_to_come?: unknown };
 type Counts = Record<string, number>;
 
 const minutesText = (ticks: number) => {
@@ -62,6 +63,13 @@ export class ProductionLedger {
   private deliveries: { tick: number; good: string; amount: number; maker: string | null }[] = [];
   /** The producing buildings standing from each change on, by type: their time standing in the window. */
   private standing: { tick: number; counts: Counts }[] = [];
+  /**
+   * The starting goods, by good: the most the list at the top left showed still to come, and how
+   * much of it has come in since. On Large Barren Desert's start the 15 iron arrived while GPT-6
+   * Luna's first iron mine stood, and the readout gave the mine 5.9 a minute; when its real rate
+   * showed, Luna took the ore for running out (2026-10-15).
+   */
+  private starting: Record<string, { listed: number; arrived: number }> = {};
   private held = new Map<string, number>();
 
   /** One reader sample: each good's rise since the last sample is a delivery, unless held. */
@@ -76,7 +84,15 @@ export class ProductionLedger {
       this.start = null;
       this.deliveries = [];
       this.standing = [];
+      this.starting = {};
     }
+    const toCome = observation!.starting_goods_to_come;
+    if (toCome && typeof toCome === "object")
+      for (const [good, n] of Object.entries(toCome as Counts))
+        if (typeof n === "number" && n > 0) {
+          const listed = (this.starting[good] ??= { listed: 0, arrived: 0 });
+          listed.listed = Math.max(listed.listed, n);
+        }
     const before = this.standing.at(-1)?.counts ?? {};
     // A sample without building counts keeps the last ones.
     const byType = observation!.buildings;
@@ -85,8 +101,15 @@ export class ProductionLedger {
       for (const [good, amount] of Object.entries(goods)) {
         const rise = (typeof amount === "number" ? amount : 0) - (this.last[good] ?? 0);
         if (!(rise > 0) || this.held.get(good)) continue;
+        // The good's starting goods come in first, as far as the list showed them.
+        const listed = this.starting[good];
+        const arriving = listed ? Math.min(rise, listed.listed - listed.arrived) : 0;
+        if (arriving > 0) {
+          listed!.arrived += arriving;
+          this.deliveries.push({ tick, good, amount: arriving, maker: null });
+        }
         const maker = MAKER[good];
-        this.deliveries.push({ tick, good, amount: rise, maker: maker && before[maker] ? maker : null });
+        if (rise > arriving) this.deliveries.push({ tick, good, amount: rise - arriving, maker: maker && before[maker] ? maker : null });
       }
     this.last = { ...goods };
     this.lastTick = tick;
@@ -114,9 +137,9 @@ export class ProductionLedger {
    * producing type of `buildings` (the player's buildings by name, as status counts them): the
    * goods, per game minute in all, and per building over the time each stood in the window (three
    * orchards built beside an old one divided its apples by four, and GPT-6 Luna took the orchards
-   * for poor ones, 2026-10-14), with how many more stand than at the window's start. A rise with
-   * none of its good's makers standing (the starting goods still arriving, say) is under
-   * `other_rises`. Null before any sample.
+   * for poor ones, 2026-10-14), with how many more stand than at the window's start. The starting
+   * goods coming in, and a rise with none of its good's makers standing, are under `other_rises`.
+   * Null before any sample.
    */
   report(buildings: Readonly<Record<string, number>>) {
     if (this.lastTick === null || this.start === null) return null;

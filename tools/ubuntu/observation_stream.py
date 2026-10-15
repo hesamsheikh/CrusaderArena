@@ -51,6 +51,13 @@ class ObservationStream:
             observation['wood_planks'] = observation['resources'][2]
             observation['resources_by_name'] = {
                 name: observation['resources'][index] for index, name in RESOURCE_FIELDS.items()}
+        # The starting goods still to come, by goods number as in resources (the list at the top left
+        # of the screen; a good leaves it once it has come in): the goods listed, by name.
+        if 'starting_goods' in observation:
+            values = observation.pop('starting_goods')
+            observation['starting_goods_to_come'] = None if not isinstance(values, list) else {
+                name: values[index] for index, name in RESOURCE_FIELDS.items()
+                if index < len(values) and values[index] > 0}
         # Stockpile piles [x, y, good, amount, capacity] and granaries [x, y, amount, capacity]; an
         # empty pile keeps its last good, so it is reported without one.
         if isinstance(observation.get('storage'), dict):

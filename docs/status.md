@@ -325,6 +325,25 @@ between September and October 2026.
     delivered, both `built_in_window`, at 2:29 and 2:38; at 4:09, the window from 1:09, 12
     wood, 4 a minute and 2.1 per woodcutter over their 5.8 woodcutter-minutes, one built in
     the window; at 5:10, 24 wood, 8 a minute and 4 per woodcutter. `status` gave the same.
+- 1.7.0 with three models a fourth time, on 2026-10-15, with production in every observation
+  (49fee97): GLM 5.3 Flash on Oasis by the Sea and GPT-6 Luna on Large Barren Desert, 10 game
+  minutes each; Claude Haiku 5.5's game on The Sinkhole came after the fixes below.
+  - GLM never called `status` but read production from its observations throughout: it saw its
+    woodcutters and iron mine still at 0 after 2 minutes, added up its food rates (apples 2.3 and
+    cheese 3 a minute), and inspected a bakery and brewery that stayed at 0.
+  - Luna's first game ended at 9 min 46 s of its 10: the provider's stream ended before its last
+    event ("Stream ended before a terminal response event"), an error the harness did not retry;
+    the runner played the episode again (valid, net worth 5,792). Retried since.
+  - In that first game the readout gave Luna's first iron mine 5.9 iron a minute: the desert's 15
+    starting iron had come in while the mine stood. Luna took the mine's real rate later for the
+    ore running out. The reader reads the starting goods still to come since (next entry).
+- The starting goods still to come, on 2026-10-15 with the stand-in on "Large Barren Desert
+  benchmark start": the reader's new `starting_goods_to_come` read wood 33, stone 50, iron 15,
+  pitch 20 and ale 20, as the game lists them at the top left, and stayed so while full piles kept
+  them out; after a second stockpile took in the wood, stone and iron, it listed only the pitch and
+  ale. On "Oasis by the Sea benchmark start", loaded right after a desert game, it was empty once
+  that map's package was in. With Luna's early iron mine standing as the 15 iron came in, the
+  readout showed the iron under `other_rises` and the mine at 0 until its own first iron at 3:53.
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
@@ -568,8 +587,11 @@ between September and October 2026.
     dated from a 1.5.0 round 11 minutes before, and the sync's build said "ninja: no work
     to do". The reader DLL was 1.6.2's build, whose sources 1.6.3 shares.
   - Of the production changes (`production.test.ts`), what the live check (Runs above) did not
-    reach: a rise credited to its good's maker only once one stands, else an other rise, and
-    a sample without building counts keeping the last ones.
+    reach: a rise credited to its good's maker only once one stands, else an other rise, a
+    sample without building counts keeping the last ones, and a rise of a starting good past the
+    most the list showed of it going to its makers.
+  - A model request whose stream ended before its last event retried like the other provider
+    failures (`controller.test.ts`); no such error has come up since.
   - Of the raised-tile changes (`model-observation.test.ts`, `placement.test.ts`, on a
     simulated plateau; the test of `build_structure` fails on the code before), what the live
     check did not reach: the second camera move when only the map read after the first shows

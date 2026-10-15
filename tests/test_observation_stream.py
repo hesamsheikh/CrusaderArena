@@ -88,6 +88,18 @@ class StreamTests(unittest.TestCase):
         self.record['observation']['storage'] = None
         self.assertIsNone(self.stream.consume(self.record, 1030)['observation']['storage'])
 
+    def test_starting_goods_still_to_come_are_named(self):
+        # Large Barren Desert's start, as the list at the top left showed it (live 2026-10-15); slot 0 reads -1.
+        values = [0] * 26
+        values[0], values[2], values[4], values[6], values[7], values[14] = -1, 33, 50, 15, 20, 20
+        self.record['observation']['starting_goods'] = values
+        observation = self.stream.consume(self.record, 1020)['observation']
+        self.assertEqual(observation['starting_goods_to_come'],
+                         {'wood_planks': 33, 'stone': 50, 'iron': 15, 'pitch': 20, 'ale': 20})
+        self.assertNotIn('starting_goods', observation)
+        self.record['observation']['starting_goods'] = None
+        self.assertIsNone(self.stream.consume(self.record, 1030)['observation']['starting_goods_to_come'])
+
     def test_exit_invalidates_data(self):
         self.stream.consume(self.record, 1020)
         result = self.stream.consume({'status': 'game_exited'}, 1030)

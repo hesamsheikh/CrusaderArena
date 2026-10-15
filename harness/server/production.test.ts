@@ -87,6 +87,30 @@ test("a rise while none of its good's makers stood is an other rise, even once o
   assert.deepEqual(ledger.report({ Woodcutter: 1, Bakery: 1 })!.by_building.Bakery.delivered, { bread: 8 });
 });
 
+test("the starting goods still to come are other rises, though one of their makers stands", () => {
+  // On Large Barren Desert's start the 15 iron arrived while GPT-6 Luna's first iron mine stood, and
+  // the readout gave the mine 5.9 a minute (2026-10-15). The list leaves a good once it has come in.
+  const ledger = new ProductionLedger();
+  const desert = (tick: number, iron: number, toCome: Record<string, number>) =>
+    ({ ...sample(tick, { iron, stone: 0 }, { "5": 1 }, "Desert"), starting_goods_to_come: toCome });
+  ledger.sample(desert(0, 0, { iron: 15, stone: 50 }));
+  ledger.sample(desert(300, 15, { stone: 50 }));
+  ledger.sample(desert(600, 16, { stone: 50 }));
+  let report = ledger.report({ "Iron Mine": 1 })!;
+  assert.deepEqual(report.by_building["Iron Mine"].delivered, { iron: 1 }, "only the mine's own iron");
+  assert.deepEqual(report.other_rises, { iron: 15 });
+  // A rise past what the list showed is the makers' again; another game forgets the list.
+  const again = new ProductionLedger();
+  again.sample(desert(0, 0, { iron: 15 }));
+  again.sample(desert(300, 20, {}));
+  report = again.report({ "Iron Mine": 1 })!;
+  assert.deepEqual(report.by_building["Iron Mine"].delivered, { iron: 5 });
+  assert.deepEqual(report.other_rises, { iron: 15 });
+  again.sample({ ...sample(100, { iron: 0 }, { "5": 1 }, "Oasis"), starting_goods_to_come: null });
+  again.sample({ ...sample(400, { iron: 4 }, { "5": 1 }, "Oasis"), starting_goods_to_come: null });
+  assert.deepEqual(again.report({ "Iron Mine": 1 })!.by_building["Iron Mine"].delivered, { iron: 4 });
+});
+
 test("another game starts over, and there is nothing to report before the first sample", () => {
   const ledger = new ProductionLedger();
   ledger.sample(sample(0, { stone: 0, wood_planks: 0 }, { "3": 1 }, "Desert"));

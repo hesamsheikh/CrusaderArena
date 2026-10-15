@@ -146,7 +146,8 @@ turn. The dashboard shows both to the operator live.
 ## When things go wrong
 
 - **Provider errors.** Timeouts, rate limits, overloads, server errors, empty replies
-  and streams the provider broke off are retried up to 5 times, waiting 2, 4, 8, 16 and
+  and streams the provider broke off (an error injected into the stream, or the stream
+  ending before its last event) are retried up to 5 times, waiting 2, 4, 8, 16 and
   30 seconds, with the game paused. This holds for gameplay, preparation, compaction and the playbook request
   after an episode. Other errors end the run.
 - **Cut-off replies.** A reply that hits the profile's output limit (8,192 tokens by

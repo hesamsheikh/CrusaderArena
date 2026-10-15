@@ -262,6 +262,22 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
         return "{\"id\":"+std::to_string(id)+",\"type\":"+std::to_string(type)+
             ",\"making\":"+std::to_string(at(id,0x1bc))+",\"next\":"+std::to_string(at(id,0x1be))+"}";
     });
+    // The starting goods, as the list at the top left of the screen shows them while they arrive:
+    // the on-screen text's last values, by goods number as in resources. Optional.
+    const auto starting_goods=optional([&]()->std::string {
+        m::Root text(a.api,a.singleton("OnScreenText"));
+        m::Root values(a.api,m::field<m::Object*>(a.api,text.get(),"lastStartingGoodsValues"));
+        auto element=a.api.element_class(a.api.object_class(values.get()));
+        auto array=reinterpret_cast<m::Array*>(values.get());
+        const auto n=a.api.array_length(array);
+        if(!element || std::strcmp(a.api.class_name(element),"Int32") ||
+           std::strcmp(a.api.class_namespace(element),"System") || n>64)
+            throw std::runtime_error("starting goods array metadata mismatch");
+        std::ostringstream s;s<<'[';
+        for(std::uintptr_t i=0;i<n;++i){std::int32_t v;std::memcpy(&v,a.api.array_address(array,4,i),4);s<<(i?",":"")<<v;}
+        s<<']';
+        return s.str();
+    });
     const std::string managed_heap=a.gc_heap_size
         ? "{\"heap_bytes\":"+std::to_string(a.gc_heap_size())+",\"used_bytes\":"+std::to_string(a.gc_used_size())+
           (a.gc_collections ? ",\"collections\":"+std::to_string(a.gc_collections(0))+
@@ -282,7 +298,7 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
     out<<"],\"own_troops\":{\"total\":"<<total<<",\"by_type_1_to_34\":["<<counts.str()<<"]}"
        <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"mouse_tile\":"<<mouse_tile<<",\"managed_heap\":"<<managed_heap
        <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building<<",\"storage\":"<<storage
-       <<",\"buildings\":"<<buildings<<",\"selected_workshop\":"<<selected_workshop
+       <<",\"buildings\":"<<buildings<<",\"selected_workshop\":"<<selected_workshop<<",\"starting_goods\":"<<starting_goods
        <<",\"visible_messages\":[";
     bool comma=false;
     for(const char* channel:{"Keep_Message","Message_Bar","Feedback_1"}) {

@@ -114,7 +114,11 @@ warnings can end the model's waits.
     building standing, the goods it delivered to storage in the last 3 game minutes, per game
     minute in all and per building over the time each stood, and how many were built in that
     time, from every reader sample's rises in stock (a rise counts for its maker once one
-    stands; purchases and demolition refunds held out). The game shows no production figures,
+    stands; purchases and demolition refunds held out). The reader reads the starting goods
+    still to come, which the game lists at the top left, and their rises count as their
+    arrival: on Large Barren Desert's start the 15 iron came in while GPT-6 Luna's first iron
+    mine stood, the readout gave the mine 5.9 a minute, and Luna later took its real rate for
+    the ore running out. The game shows no production figures,
     and three of the 1.7.0 trial interviews asked for them: GLM 5.3 Flash's quarries and iron
     mines delivered little for minutes before it could tell. In `status` alone it reached only
     GPT-6 Luna: GLM 5.3 Flash and Claude Haiku 5.5 called `status` at most once a game and
@@ -171,6 +175,10 @@ warnings can end the model's waits.
   probe. Its map summary drew cacti as trees, so `map_overview` listed cactus groves on
   Large Barren Desert and Oasis by the Sea; the desert has no trees, and woodcutters built
   by its groves cut nothing.
+- A model request whose stream the provider ended before its last event ("Stream ended
+  before a terminal response event") is retried like the other provider failures. One ended
+  a GPT-6 Luna run at 9 min 46 s of its 10 game minutes, and the runner played the episode
+  again from the start.
 
 ## [1.6.3] - 2026-10-13
 

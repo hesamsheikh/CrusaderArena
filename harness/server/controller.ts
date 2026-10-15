@@ -77,10 +77,11 @@ const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
 /**
  * Provider failures worth one more request: no content, overload, rate limit, server error, or a
  * stream the provider broke off ("JSON error injected into SSE stream" from OpenRouter ended a GLM
- * episode, 2026-10-08).
+ * episode, 2026-10-08; "Stream ended before a terminal response event" a GPT-6 Luna one at 9 min
+ * 46 s of its 10, 2026-10-15).
  */
 export function isTransientProviderError(message?: string) {
-  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream/i.test(message ?? "");
+  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before/i.test(message ?? "");
 }
 
 /** What the controller uses of FastWaits (game-speed.ts). */
