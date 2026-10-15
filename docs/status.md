@@ -555,6 +555,9 @@ between September and October 2026.
   game, the NVIDIA driver, Mesa, Mutter, Xwayland and the Steam client, which did not
   change in between. The kernel update is the likeliest fix; the only other change near
   the display path was FreeRDP, which GNOME's remote desktop uses.
+  Agent runs have played on the NVIDIA GPU since: the 26 evaluation games from 2026-10-13
+  10:39 UTC to 2026-10-14 (the 1.6.3 rounds on Oasis by the Sea and Large Barren Desert, and
+  games on 1.5.1, 1.5.6 and 1.6.2) all ran their full game time at the first attempt.
 
 ## Tested in code only
 
@@ -901,8 +904,6 @@ between September and October 2026.
 - **Mouse-wheel camera zoom** does not work through the bridge (use `Z` and `X`).
 - **Other setups:** other Linux distributions and desktops, native Wayland, Windows
   or macOS game machines, window sizes other than 1920 × 1080, other game builds.
-- **Agent runs on the NVIDIA GPU:** none yet. Only a 45-game-minute do-nothing run has
-  played there (above).
 - **The text-only menu guide** that a fresh checkout uses: no model has played with it
   yet.
 - **Benchmark:** there is no military scoring. Early single-model pilots used older

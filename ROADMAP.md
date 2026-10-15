@@ -11,13 +11,16 @@ two. The project website shows this file, so keep that shape.
 ## Now
 
 - **Find the bugs we have not hit yet.** Run more models for longer, and try in the live
-  game what is so far only tested in code, starting with the 1.6.3 fixes: `place_near`
-  placing a first Armory, purchases counted while the town eats and pays taxes, and the
-  second try at the end-of-run save.
-- **Full-length runs.** Keep long runs reliable. None of the 21 runs in the evaluation was
-  cut short by the game: the reader's watchdog broke 16 garbage-collector stalls in 12 of
-  them. The game now renders on the game machine's NVIDIA GPU, where only a do-nothing run
-  has played so far.
+  game what is so far only tested in code, starting with what 1.7.0 relies on: that a tick
+  played at speed 90 is the same game as at 40, and that people walk through trees, bushes
+  and farm fields, as the routes to the keep count them. The 1.6.3 fixes are still to be
+  seen live too: `place_near` placing a first Armory, purchases counted while the town eats
+  and pays taxes, and the second try at the end-of-run save.
+- **Full-length runs.** Keep long runs reliable. None of the 21 runs in the evaluation by
+  the morning of 2026-10-13 was cut short by the game: the reader's watchdog broke 16
+  garbage-collector stalls in 12 of them. Since then the game has rendered on the game
+  machine's NVIDIA GPU, and the 26 evaluation games played there all ran their full game
+  time at the first attempt.
 - **A better harness.** Improve the tools, prompt and context where recorded runs show
   models getting stuck, make the two machines easier to set up, and play with the
   text-only menu guide that a fresh checkout uses, which no model has used yet.
