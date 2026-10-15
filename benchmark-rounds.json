@@ -14,10 +14,10 @@
       "since": "2026-10-13"
     },
     "The Sinkhole construction": {
-      "version": "1.6.2",
-      "fingerprint": "6cc0c01622622bde8e5bc0a271af08f8413efd4576a44c1060182f4e21b8ba56",
-      "commit": "1e52aca02de415323e1034aebb724746b5770941",
-      "since": "2026-10-13"
+      "version": "1.7.1",
+      "fingerprint": "6ee823bf5cb0f288ce08c252482fd14436b1d3aba129e026eb147b35381d5805",
+      "commit": "07f2b7abb5d70e6f8c74158f88cfd804a04a0dc1",
+      "since": "2026-10-15"
     }
   }
 }

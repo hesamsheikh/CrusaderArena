@@ -372,6 +372,11 @@ between September and October 2026.
     on that start, stood in blocks of two, two and one hovels and of three, one and one
     woodcutters, none wider than two footprints, with a tile of open ground between blocks (the
     tile map read after); before it, the four hovels of the run above had stood in one column.
+- GLM 5.3 Flash on The Sinkhole on 1.7.1, on 2026-10-15, the round's first game there (45 game
+  minutes, recorded and interviewed): valid, net worth 9,319 (5,084 on 1.6.2), population 98,
+  81 turns in 43.5 real minutes, $0.14 with 93% of prompt tokens cached. 72 of 84 placements
+  went in, none off its tile; none of its 57 host observations lacked the reader's values. Its
+  1.7.0 game before it was stopped at 34 turns for the reader fix and does not count.
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
