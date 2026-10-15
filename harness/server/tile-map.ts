@@ -94,6 +94,14 @@ export const needsRoute = (building: string) => needsOpenSide(building) || ["Sto
  * campfire, and hovels packed around it stand in their way.
  */
 export const KEEP_CLEARANCE = 6;
+/**
+ * Buildings one block may hold when the harness picks a spot: blocks of up to four, two footprints
+ * across each way, with a walkway of open ground around each, so people have a way between them
+ * (the user's layout rule, 2026-10-15).
+ */
+export const BLOCK_SIZE = 4;
+/** Whether two footprints share an edge or a corner. */
+const touching = (a: Rect, b: Rect) => a.x1 <= b.x2 + 1 && b.x1 <= a.x2 + 1 && a.y1 <= b.y2 + 1 && b.y1 <= a.y2 + 1;
 /** Engine types of the keep (each size), its doors and its campfire courtyard. */
 const KEEP_PARTS = new Set(Object.entries(buildingTypes)
   .filter(([, name]) => name === "Keep" || name === "Keep door" || name === "Campfire").map(([type]) => Number(type)));
@@ -767,7 +775,7 @@ export class TileMap {
     found.sort((a, b) => farmNames.has(building)
       ? Math.floor(a.d / 2) - Math.floor(b.d / 2) || (b.oasisShare ?? 0) - (a.oasisShare ?? 0)
       : a.d - b.d);
-    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count, avoid, options.spaced);
+    return this.distinct(building, found.map(({ d: _d, ...s }) => s), count, avoid, options.spaced, !isStorageKind(building));
   }
   /**
    * Woodcutter sites closest to trees (in 4-tile bands of the distance to the nearest tree), the
@@ -787,7 +795,7 @@ export class TileMap {
       return { ...s, trees: within, band: within ? Math.floor(nearest / 4) : Infinity };
     });
     found.sort((a, b) => a.band - b.band || a.d - b.d);
-    return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count, [], options.spaced);
+    return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count, [], options.spaced, true);
   }
   /**
    * Every site within `radius` tiles of `near` (default: the camera centre), with its distance. A
@@ -807,9 +815,34 @@ export class TileMap {
         if (avoid.some((r) => overlaps(r, footprintRect(t, size)))) continue;
         if (clear && this.nearKeep(building, t)) continue;
         const s = this.site(building, t, avoid, options);
-        if (s) found.push({ ...s, d: Math.max(Math.abs(dx), Math.abs(dy)) });
+        // Storage goes flush against its own kind, by its own rules.
+        if (s && (isStorageKind(building) || this.inBlock(footprintRect(t, size), avoid)))
+          found.push({ ...s, d: Math.max(Math.abs(dx), Math.abs(dy)) });
       }
     return found;
+  }
+  /**
+   * Whether `rect` keeps the block layout with the buildings built, placed this call or `planned`:
+   * the buildings it would touch (corners too), and the ones touching those in turn, make with it a
+   * block of at most BLOCK_SIZE, at most two footprints across each way. Every other building then
+   * stands a tile or more off, so a walkway runs around each block. The keep, its doors and its
+   * courtyard make a block of five, so nothing a search picks touches them.
+   */
+  inBlock(rect: Rect, planned: readonly Footprint[] = []) {
+    const all: Rect[] = [...this.existing(), ...this.claimed.filter((c) => c.building), ...planned];
+    const block: Rect[] = [rect];
+    const seen = new Set<Rect>();
+    for (let i = 0; i < block.length; i++)
+      for (const n of all) {
+        if (seen.has(n) || overlaps(n, rect) || !touching(block[i], n)) continue;
+        seen.add(n);
+        block.push(n);
+        if (block.length > BLOCK_SIZE) return false;
+      }
+    const side = Math.max(...block.map((r) => Math.max(r.x2 - r.x1, r.y2 - r.y1) + 1));
+    const wide = Math.max(...block.map((r) => r.x2)) - Math.min(...block.map((r) => r.x1)) + 1;
+    const high = Math.max(...block.map((r) => r.y2)) - Math.min(...block.map((r) => r.y1)) + 1;
+    return wide <= 2 * side && high <= 2 * side;
   }
   /** The keep's, its doors' and its campfire courtyard's bounding rects in the region. */
   private keepParts() {
@@ -899,8 +932,12 @@ export class TileMap {
     }
     return [];
   }
-  /** Sites in order that neither overlap nor close each other's last open side. */
-  private distinct(building: string, sites: Site[], count: number, planned: readonly Footprint[] = [], spaced = true) {
+  /**
+   * Sites in order that neither overlap nor close each other's last open side, and with `blocks`
+   * keep the block layout among themselves too (inBlock): a search's picks, not spots beside an
+   * anchor or storage flush with its kind.
+   */
+  private distinct(building: string, sites: Site[], count: number, planned: readonly Footprint[] = [], spaced = true, blocks = false) {
     const size = footprintOf(building);
     const chosen: Site[] = [];
     const taken: Footprint[] = [];
@@ -909,6 +946,7 @@ export class TileMap {
       const r = footprintRect(s.tile, size);
       if (taken.some((c) => overlaps(r, c))) continue;
       if (taken.length && !this.access(building, s.tile, [...planned, ...taken], spaced).ok) continue;
+      if (blocks && taken.length && !this.inBlock(r, [...planned, ...taken])) continue;
       chosen.push(s);
       taken.push({ ...r, needsOpenSide: needsOpenSide(building), building });
     }

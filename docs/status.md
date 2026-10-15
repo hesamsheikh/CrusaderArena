@@ -361,6 +361,10 @@ between September and October 2026.
   - `find_sites` for hovels with no tile on that start, nearest the view centre on the keep, had
     listed spots flush against the campfire courtyard; now its four spots stood in a row 6 tiles
     from the keep and courtyard, as the tile map read after showed.
+  - The block layout: five hovels and five woodcutters from `find_sites`, built in one call each
+    on that start, stood in blocks of two, two and one hovels and of three, one and one
+    woodcutters, none wider than two footprints, with a tile of open ground between blocks (the
+    tile map read after); before it, the four hovels of the run above had stood in one column.
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still

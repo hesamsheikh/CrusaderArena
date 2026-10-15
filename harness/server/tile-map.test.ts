@@ -284,6 +284,44 @@ test("spots the harness picks for buildings nobody walks to keep clear of the ke
   assert.equal(gap(footprintRect(beside.tile, 4), keep), 0);
 });
 
+test("spots a search picks make blocks of up to four, two across each way, with a walkway around each", () => {
+  // The user's layout rule (2026-10-15): buildings in 2×2 blocks, with room between blocks for routes.
+  const rects = (sites: { tile: { x: number; y: number } }[], size: number) => sites.map((s) => footprintRect(s.tile, size));
+  const touch = (a: ReturnType<typeof footprintRect>, b: ReturnType<typeof footprintRect>) =>
+    a.x1 <= b.x2 + 1 && b.x1 <= a.x2 + 1 && a.y1 <= b.y2 + 1 && b.y1 <= a.y2 + 1;
+  const blocks = (rs: ReturnType<typeof footprintRect>[]) => {
+    const groups: (typeof rs)[] = [];
+    for (const r of rs) {
+      const joined = groups.filter((g) => g.some((o) => touch(o, r)));
+      const merged = [r, ...joined.flat()];
+      for (const g of joined) groups.splice(groups.indexOf(g), 1);
+      groups.push(merged);
+    }
+    return groups;
+  };
+  for (const [building, size] of [["Hovel", 4], ["Bakery", 4], ["Woodcutter", 3]] as const) {
+    const sites = new TileMap(region(), camera, frame).sitesNear(building, { x: 100, y: 100 }, 5);
+    assert.equal(sites.length, 5, building);
+    const groups = blocks(rects(sites, size));
+    for (const g of groups) {
+      assert.ok(g.length <= 4, `${building}: a block of ${g.length}`);
+      const wide = Math.max(...g.map((r) => r.x2)) - Math.min(...g.map((r) => r.x1)) + 1;
+      const high = Math.max(...g.map((r) => r.y2)) - Math.min(...g.map((r) => r.y1)) + 1;
+      assert.ok(wide <= 2 * size && high <= 2 * size, `${building}: a block ${wide}×${high}`);
+    }
+    assert.deepEqual(groups.map((g) => g.length).sort(), [1, 4], `${building}: the nearest four in one 2×2 block, the fifth a tile or more off`);
+  }
+  // A row of three hovels standing already: no spot touches it, which would make a block of four in a row.
+  const row = [{ x1: 96, y1: 92, x2: 99, y2: 95 }, { x1: 100, y1: 92, x2: 103, y2: 95 }, { x1: 104, y1: 92, x2: 107, y2: 95 }];
+  const built = new TileMap({
+    ...region((set) => row.forEach((r, i) => fill(set, "structure", r.x1, r.y1, r.x2, r.y2, 30 + i))),
+    structure_types: { "30": STRUCTURE_TYPES.hovel, "31": STRUCTURE_TYPES.hovel, "32": STRUCTURE_TYPES.hovel },
+  }, camera, frame);
+  const near = built.sitesNear("Hovel", { x: 101, y: 98 }, 5);
+  assert.ok(near.length > 0);
+  for (const r of rects(near, 4)) assert.ok(row.every((o) => !touch(o, r)), `hovel at ${JSON.stringify(r)} touches the row`);
+});
+
 test("a building with workers keeps one whole side of open ground; houses need none", () => {
   // A bakery (4×4) on tile 100 covers 98..101; trees close its up-left, down-right and up-right sides.
   const closeSides = (set: Parameters<Parameters<typeof region>[0] & {}>[0], sides: string[]) => {

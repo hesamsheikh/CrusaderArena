@@ -133,6 +133,10 @@ warnings can end the model's waits.
     tiles from the keep, its doors and its campfire courtyard, where the peasants come from.
     Ranked nearest the view centre, which a game starts on the keep, they had come packed
     around the campfire. `place_near` beside the keep still puts them flush against it.
+  - Spots the harness picks come in blocks: one may touch other buildings only if they make
+    with it a block of at most four, two footprints across each way, so a tile of open ground
+    runs around each block for people to walk; nothing picked touches the keep. Packed nearest
+    first, spots had come in long rows: four hovels in a row on Oasis by the Sea's start.
   - The stats show `open_jobs` beside the idle peasants: the places in the player's buildings no
     worker has taken, which the reader sums from the building records (workers needed, there
     and open, as each building's panel shows them). Claude Haiku 5.5 asked for idle workers and
