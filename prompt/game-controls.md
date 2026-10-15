@@ -56,7 +56,8 @@ passed, so act first and look last.
   `tile_y`) need no screenshot at all: see Placing buildings.
 - **Stats** (JSON beside each screenshot): read-only values from the game's memory.
   `run_clock` gives the game time left and used, in minutes and seconds. `stats` has the date, gold, population
-  (with housing and idle peasants), popularity (with its upcoming change and factors, in
+  (with housing, idle peasants and `open_jobs`, the places in your buildings no worker has
+  taken), popularity (with its upcoming change and factors, in
   the game's popularity points; a factor at zero is left out, except religion and the inn
   once you have a chapel, church, cathedral or inn), `tax_level`, food, the `goods` in stock by name (a good
   not listed there has none), `storage` (stockpile piles, empty piles and, for each
@@ -88,7 +89,7 @@ read the live camera themselves and need no screenshot.
 
 ## Tools by purpose
 
-- **Build:** `build_structure` places 1–4 named buildings, each given either as pixels
+- **Build:** `build_structure` places 1–8 named buildings, each given either as pixels
   from the latest screenshot (`x`, `y`, needs a screenshot) or as a map tile (`tile_x`,
   `tile_y`, named by `map_overview` or `find_sites`, needs no screenshot, anywhere on
   the map: the camera is moved there); it opens the menus and selects the building for
@@ -108,8 +109,8 @@ read the live camera themselves and need no screenshot.
   farmland and trees; `go_to_tile` moves the camera to a tile it names.
   `save_view` / `go_to_view` bookmark places you revisit. `navigate_minimap` clicks
   the minimap.
-- **Run the economy:** `status` summarises the settlement (housing, idle peasants,
-  popularity factors, food, goods, your buildings by type). `get_inventory` reads stored
+- **Run the economy:** `status` summarises the settlement (housing, idle peasants, open
+  jobs, popularity factors, food, goods, your buildings by type). `get_inventory` reads stored
   goods with the change since your last call. `inspect_building` (by map tile or pixel)
   reports a building's workers, inputs and access to the keep. `set_tax` sets taxes and
   `set_rations` the granary's rations; `market_trade` buys and sells at your marketplace.

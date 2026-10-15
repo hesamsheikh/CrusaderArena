@@ -1,4 +1,5 @@
 import type { TileRegion } from "./device.js";
+import { buildingTypes } from "./building-types.js";
 import { decorationNames } from "./decorations.js";
 import { footprintOf } from "./footprints.js";
 
@@ -87,6 +88,15 @@ export const needsOpenSide = (building: string) => !noWorkers.has(building);
  * bad things need no route.
  */
 export const needsRoute = (building: string) => needsOpenSide(building) || ["Stockpile", "Granary", "Armory"].includes(building);
+/**
+ * Tiles a building nobody walks to keeps from the keep, its doors and its campfire courtyard when
+ * the harness picks its spot (find_sites, build_structure's retries): the peasants come from the
+ * campfire, and hovels packed around it stand in their way.
+ */
+export const KEEP_CLEARANCE = 6;
+/** Engine types of the keep (each size), its doors and its campfire courtyard. */
+const KEEP_PARTS = new Set(Object.entries(buildingTypes)
+  .filter(([, name]) => name === "Keep" || name === "Keep door" || name === "Campfire").map(([type]) => Number(type)));
 /**
  * Engine types that need no open side. Buildings of other types in the map, including ones the
  * harness cannot name, are kept with an open side too.
@@ -193,6 +203,7 @@ export class TileMap {
   private trees?: Tile[];
   private buildings?: Footprint[];
   private stockpileRoom?: Rect[][];
+  private keepRects?: Rect[];
   constructor(
     readonly region: TileRegion,
     readonly camera: Camera,
@@ -778,19 +789,46 @@ export class TileMap {
     found.sort((a, b) => a.band - b.band || a.d - b.d);
     return this.distinct("Woodcutter", found.map(({ d: _d, band: _b, ...s }) => s), count, [], options.spaced);
   }
-  /** Every site within `radius` tiles of `near` (default: the camera centre), with its distance. */
+  /**
+   * Every site within `radius` tiles of `near` (default: the camera centre), with its distance. A
+   * building nobody walks to (one needsRoute leaves out) keeps KEEP_CLEARANCE tiles from the keep and its campfire
+   * courtyard, where the peasants come from: nearest the view centre, which a game starts on the
+   * keep, find_sites had packed hovels around the campfire (2026-10-15). Spots beside an anchor the
+   * model names (sitesBeside, place_near) are not searched here.
+   */
   private candidates(building: string, near?: Tile, radius = 20, avoid: Footprint[] = [], options: SiteOptions = {}) {
     const c = near ?? { x: this.camera.centre_tile_x, y: this.camera.centre_tile_y };
     const size = footprintOf(building);
+    const clear = !needsRoute(building);
     const found: (Site & { d: number })[] = [];
     for (let dx = -radius; dx <= radius; dx++)
       for (let dy = -radius; dy <= radius; dy++) {
         const t = { x: c.x + dx, y: c.y + dy };
         if (avoid.some((r) => overlaps(r, footprintRect(t, size)))) continue;
+        if (clear && this.nearKeep(building, t)) continue;
         const s = this.site(building, t, avoid, options);
         if (s) found.push({ ...s, d: Math.max(Math.abs(dx), Math.abs(dy)) });
       }
     return found;
+  }
+  /** The keep's, its doors' and its campfire courtyard's bounding rects in the region. */
+  private keepParts() {
+    if (this.keepRects) return this.keepRects;
+    const { x0, y0, w, layers, structure_types: types } = this.region;
+    const rects = new Map<number, Rect>();
+    layers.structure.forEach((id, i) => {
+      if (!id || !KEEP_PARTS.has(types?.[id] ?? -1)) return;
+      const x = x0 + (i % w), y = y0 + Math.floor(i / w);
+      const r = rects.get(id);
+      rects.set(id, r ? { x1: Math.min(r.x1, x), y1: Math.min(r.y1, y), x2: Math.max(r.x2, x), y2: Math.max(r.y2, y) } : { x1: x, y1: y, x2: x, y2: y });
+    });
+    return (this.keepRects = [...rects.values()]);
+  }
+  /** Whether `building`'s footprint at `centre` comes within KEEP_CLEARANCE tiles of the keep or its courtyard. */
+  nearKeep(building: string, centre: Tile) {
+    const f = footprintRect(centre, footprintOf(building));
+    return this.keepParts().some((k) =>
+      overlaps(f, { x1: k.x1 - KEEP_CLEARANCE, y1: k.y1 - KEEP_CLEARANCE, x2: k.x2 + KEEP_CLEARANCE, y2: k.y2 + KEEP_CLEARANCE }));
   }
   /** Tree tiles in the read region. */
   private treeTiles() {

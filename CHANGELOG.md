@@ -123,6 +123,20 @@ warnings can end the model's waits.
     mines delivered little for minutes before it could tell. In `status` alone it reached only
     GPT-6 Luna: GLM 5.3 Flash and Claude Haiku 5.5 called `status` at most once a game and
     asked for it again.
+  - `build_structure` takes up to 8 placements a call instead of 4, with up to 24 retries a call
+    instead of 12; a reply still has 8 actions. GLM 5.3 Flash asked for larger batches in two
+    1.7.0 trial interviews. A pixel target whose screenshot has under 10 of its 40 game seconds
+    left, too little for a placement, is skipped as `screenshot_expired`, with the later pixel
+    targets; tile targets still run.
+  - Spots the harness picks for buildings nobody walks to (hovels, the marketplace, churches,
+    the good and bad things), in `find_sites` and `build_structure`'s retries, stay at least 6
+    tiles from the keep, its doors and its campfire courtyard, where the peasants come from.
+    Ranked nearest the view centre, which a game starts on the keep, they had come packed
+    around the campfire. `place_near` beside the keep still puts them flush against it.
+  - The stats show `open_jobs` beside the idle peasants: the places in the player's buildings no
+    worker has taken, which the reader sums from the building records (workers needed, there
+    and open, as each building's panel shows them). Claude Haiku 5.5 asked for idle workers and
+    jobs together in a 1.7.0 trial interview.
   - `inspect_building` takes a map tile, like `set_workshop` and `demolish_building`: three
     calls that round failed for want of a fresh screenshot. By tile it clicks the building's
     middle, then the back corner of its footprint and its roof, and says when only a

@@ -497,6 +497,8 @@ function simulatedGame(options: {
   storage?: Record<string, unknown>;
   /** The map tile the game picks under the pointer at a window pixel (observation.mouse_tile); without it the reader has no such field. */
   cursor?: (x: number, y: number, state: SimState) => { x: number; y: number };
+  /** A screenshot's age in game seconds (GameDevice.frameAge); 0 by default. */
+  frameAge?: () => number;
 } = {}) {
   const events = new GameEvents();
   const actions: any[] = [];
@@ -633,8 +635,8 @@ function simulatedGame(options: {
     // A live stream's unavailable sample still carries its capture time.
     currentStats: () => (options.unavailableReads?.includes(++reads) ? { status: "unavailable", captured_unix_ms: Date.now(), observation: null }
       : Date.now() < staleUntil ? stale : stats()),
-    // Frames do not age in these tests (GameDevice.frameAge).
-    frameAge: () => 0,
+    // Frames do not age in these tests unless asked (GameDevice.frameAge).
+    frameAge: () => options.frameAge?.() ?? 0,
   } as unknown as GameDevice;
   let reads = 0;
   let stale: unknown = null;
@@ -791,11 +793,13 @@ test("an unavailable sample at observe time still records the camera for retries
 
 test("build_structure caps nearby retries per call", async () => {
   const game = simulatedGame({ blocked: () => true });
+  // 6 a placement and 24 a call: four blocked hovels take them all, the fifth is clicked once.
   const report = await game.build([
     { name: "Hovel", x: 400, y: 300 }, { name: "Hovel", x: 1200, y: 300 }, { name: "Hovel", x: 800, y: 700 },
+    { name: "Hovel", x: 400, y: 600 }, { name: "Hovel", x: 1200, y: 600 },
   ]);
-  assert.deepEqual(report.placements.map((p: any) => p.retries), [6, 6, undefined]);
-  assert.equal(worldClicks(game.actions).length, 15);
+  assert.deepEqual(report.placements.map((p: any) => p.retries), [6, 6, 6, 6, undefined]);
+  assert.equal(worldClicks(game.actions).length, 29);
 });
 
 test("center_on uses the game's select-then-centre hotkey and closes the panel", async () => {
@@ -1614,6 +1618,21 @@ test("build_structure leaves placement mode before moving the camera to a later 
   assert.deepEqual(report.placements.map((p: any) => [p.status, p.view]), [["placed", undefined], ["placed", "moved_to_tile"]], JSON.stringify(report));
   const minimap = game.actions.findIndex((a) => a.x >= 1605 && a.y >= 892 && a.button === 1);
   assert.equal(game.actions[minimap - 1].button, 3, "a right-click left placement mode first");
+});
+
+test("build_structure takes 8 placements in one call, and skips pixel targets once their screenshot is too old for another", async () => {
+  // GLM 5.3 Flash asked twice for more than 4 per call (2026-10-14, 15).
+  const many = simulatedGame({ tiles: () => {} });
+  const tiles = Array.from({ length: 8 }, (_, i) => ({ name: "Woodcutter", tile_x: 96 + 2 * (i % 4), tile_y: 96 + 3 * Math.floor(i / 4) }));
+  const report = await many.build(tiles);
+  assert.equal(report.placements.length, 8, JSON.stringify(report));
+  assert.ok(report.placements.every((p: any) => p.status === "placed"), JSON.stringify(report.placements.map((p: any) => p.status)));
+  // A screenshot 31 game seconds old leaves less than a placement's time before its 40: the pixel
+  // target is skipped with a remedy, nothing is clicked for it, and the tile target still builds.
+  const old = simulatedGame({ tiles: () => {}, frameAge: () => 31 });
+  const mixed = await old.build([{ name: "Hovel", x: 500, y: 400 }, { name: "Hovel", tile_x: 100, tile_y: 100 }]);
+  assert.deepEqual(mixed.placements.map((p: any) => p.status), ["screenshot_expired", "placed"], JSON.stringify(mixed));
+  assert.match(mixed.placements[0].remedy, /tile_x\/tile_y/);
 });
 
 test("build_structure rejects a placement that gives neither or both coordinate pairs", async () => {

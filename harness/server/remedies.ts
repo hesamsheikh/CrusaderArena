@@ -78,6 +78,8 @@ export function placementRemedy(result: Record<string, unknown>) {
       return "The construction menu did not select it: right-click open ground with game_action to close any open panel, observe, then place it again.";
     case "camera_moved":
       return "Observe, then target it by pixel from the new screenshot, or by tile_x/tile_y.";
+    case "screenshot_expired":
+      return "The screenshot got too old for this many pixel targets in one call: target it by tile_x/tile_y (no screenshot needed), or observe and target it again.";
     case "already_built":
       return alreadyBuiltRemedy(building);
     case "invalid_target":

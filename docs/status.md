@@ -349,6 +349,18 @@ between September and October 2026.
   missed its tile. The start lists no starting goods, and the list read empty in all 34
   samples, the game after a desert game that ended with pitch and ale still listed. Its
   observations carried production from the woodcutters' first 0 to 16 to 24 wood a minute.
+- Open jobs, 8 placements a call and hovels kept off the keep, on 2026-10-15 with the stand-in:
+  - The workers fields of the building records, found on Claude Haiku 5.5's Sinkhole save and the
+    desert start against `inspect_building`: 0xc6 needed, 0xc8 there, 0xca open. Every full
+    woodcutter, orchard, dairy farm and iron mine matched its panel, and a new woodcutter on the
+    desert start with nobody idle read 1, 0 and 1 in both. With four iron mines and four
+    woodcutters there, the stats showed population 10 of housing 10, idle peasants 0 and
+    `open_jobs` 2 (the reader's jobs: 12 needed, 10 filled), the two woodcutters with no worker.
+  - One `build_structure` call placed four woodcutters and four hovels by tile on Oasis by the
+    Sea's start, 8 of 8, none off its tile.
+  - `find_sites` for hovels with no tile on that start, nearest the view centre on the keep, had
+    listed spots flush against the campfire courtyard; now its four spots stood in a row 6 tiles
+    from the keep and courtyard, as the tile map read after showed.
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
@@ -597,6 +609,10 @@ between September and October 2026.
     most the list showed of it going to its makers.
   - A model request whose stream ended before its last event retried like the other provider
     failures (`controller.test.ts`); no such error has come up since.
+  - A pixel target in a long `build_structure` batch skipped as `screenshot_expired` once its
+    screenshot has under 10 game seconds left, with the later pixel targets, while tile targets
+    still run, and 24 retries a call (`model-observation.test.ts`); a record whose workers
+    words do not read as workers left out of `jobs` (reader code only).
   - Of the raised-tile changes (`model-observation.test.ts`, `placement.test.ts`, on a
     simulated plateau; the test of `build_structure` fails on the code before), what the live
     check did not reach: the second camera move when only the map read after the first shows

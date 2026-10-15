@@ -17,9 +17,14 @@ type Settlement = NonNullable<Observation["settlement"]>;
 
 /** The game's date, as "September 1200" (month 0 is January). */
 export const dateOf = (s: Pick<Settlement, "month" | "year">) => `${months[s.month] ?? `month ${s.month}`} ${s.year}`;
+/**
+ * Population, housing, idle peasants and, beside them, the open jobs: places in the player's
+ * buildings no worker has taken (Claude Haiku 5.5 asked for idle workers and jobs together, 2026-10-15).
+ */
 const populationOf = (o: Observation) => ({
   current: o.population,
   ...(o.settlement ? { housing: o.settlement.housing_cap, idle_peasants: o.settlement.peasants_available } : {}),
+  ...(o.jobs ? { open_jobs: o.jobs.open } : {}),
 });
 const popularityOf = (o: Observation) => {
   const s = o.settlement;

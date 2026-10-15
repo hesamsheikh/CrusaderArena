@@ -109,7 +109,7 @@ The `stats` summary contains:
 | --- | --- |
 | `date` | In-game month and year, such as "July 1194" |
 | `gold` | Gold |
-| `population` | Current population, housing and idle peasants |
+| `population` | Current population, housing, idle peasants and `open_jobs`: the places in the player's buildings no worker has taken, summed from the reader's [`jobs`](reader.md#what-a-sample-contains) (Claude Haiku 5.5 asked for idle workers and jobs together, 2026-10-15) |
 | `popularity` | Current popularity, the upcoming change, and the nonzero monthly factors behind it, in the game's own popularity points, as the game's Popularity report lists them: food counted once, religion including the church and cathedral bonus. They add up to the upcoming change. Religion and the inn also show at 0 once the player has a chapel, church or cathedral, or an inn (the reader's building counts), so a building that gives nothing shows as a zero rather than a missing line |
 | `worker_efficiency_percent` | Worker efficiency from the fear factor, as the game's Fear Factor report shows it; absent before the game reckons it, early in a game |
 | `tax_level` | 0 (largest bribe) to 11, with 3 meaning no tax; the same scale as `set_tax` |

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { STRUCTURE_TYPES, TileMap, footprintRect } from "./tile-map.js";
+import { KEEP_CLEARANCE, STRUCTURE_TYPES, TileMap, footprintRect } from "./tile-map.js";
 import { anchorRectOf } from "./anchors.js";
 import type { TileRegion } from "./device.js";
 
@@ -255,6 +255,33 @@ test("storage anchors on the stockpile, not the keep beside it at the camera cen
     const touches = f.x1 <= square.x2 + 1 && square.x1 <= f.x2 + 1 && f.y1 <= square.y2 + 1 && square.y1 <= f.y2 + 1;
     assert.ok(touches && !(f.x1 <= square.x2 && square.x1 <= f.x2 && f.y1 <= square.y2 && square.y1 <= f.y2), `${side} touches without overlapping`);
   }
+});
+
+test("spots the harness picks for buildings nobody walks to keep clear of the keep and its courtyard; others and anchors do not", () => {
+  // Nearest the view centre, which a game starts on the keep, find_sites packed hovels around the
+  // campfire, in the way of the peasants coming from it (2026-10-15).
+  const keep = { x1: 94, y1: 97, x2: 100, y2: 103 }, courtyard = { x1: 101, y1: 97, x2: 107, y2: 103 };
+  const map = new TileMap({
+    ...region((set) => { fill(set, "structure", keep.x1, keep.y1, keep.x2, keep.y2, 20); fill(set, "structure", courtyard.x1, courtyard.y1, courtyard.x2, courtyard.y2, 21); }),
+    structure_types: { "20": STRUCTURE_TYPES.keep, "21": STRUCTURE_TYPES.courtyard },
+  }, camera, frame);
+  // Tiles between a footprint and a rect, along the farther axis (0 when they touch or overlap).
+  const gap = (f: { x1: number; y1: number; x2: number; y2: number }, r: typeof keep) =>
+    Math.max(r.x1 - f.x2 - 1, f.x1 - r.x2 - 1, r.y1 - f.y2 - 1, f.y1 - r.y2 - 1, 0);
+  const hovels = map.sitesNear("Hovel", { x: 100, y: 100 }, 4);
+  assert.equal(hovels.length, 4);
+  for (const s of hovels) {
+    const f = footprintRect(s.tile, 4);
+    assert.ok(gap(f, keep) >= KEEP_CLEARANCE && gap(f, courtyard) >= KEEP_CLEARANCE, `hovel at ${JSON.stringify(s.tile)}`);
+  }
+  assert.ok(Object.values(map.sitesByGround("Marketplace", { x: 100, y: 100 }, 2)).flat()
+    .every((s) => gap(footprintRect(s.tile, 5), keep) >= KEEP_CLEARANCE && gap(footprintRect(s.tile, 5), courtyard) >= KEEP_CLEARANCE));
+  // A workshop's workers walk there anyway: it may stand close.
+  const [bakery] = map.sitesNear("Bakery", { x: 100, y: 100 }, 1);
+  assert.ok(gap(footprintRect(bakery.tile, 4), keep) < KEEP_CLEARANCE || gap(footprintRect(bakery.tile, 4), courtyard) < KEEP_CLEARANCE);
+  // Beside an anchor the model names (place_near), a hovel still goes flush against the keep.
+  const [beside] = map.sitesBeside("Hovel", keep, 1, "up-left");
+  assert.equal(gap(footprintRect(beside.tile, 4), keep), 0);
 });
 
 test("a building with workers keeps one whole side of open ground; houses need none", () => {

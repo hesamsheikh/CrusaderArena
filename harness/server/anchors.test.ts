@@ -167,6 +167,20 @@ test("religion and the inn show at 0 once a chapel or an inn stands, and status 
   assert.deepEqual(stats.status === "ok" ? stats.popularity.factors : null, { religion: 0 });
 });
 
+test("population shows the open jobs beside the idle peasants, from the reader's jobs, in the stats and status", () => {
+  // Claude Haiku 5.5 asked for idle workers and jobs together (2026-10-15).
+  const settlement = { month: 1, year: 1173, housing_cap: 10, peasants_available: 0, total_food: 50, months_of_food: 4, rationing: 2,
+    food_types_eaten: 1, food_types_available: 1, efficiency: 100, upcoming_popularity: 0, popularity_factors: {} };
+  const reading = sample({ gold: 5000, population: 10, popularity: 100, settlement, jobs: { needed: 14, filled: 10, open: 4 } });
+  const stats = observationStats(reading);
+  assert.deepEqual(stats.status === "ok" ? stats.population : null, { current: 10, housing: 10, idle_peasants: 0, open_jobs: 4 });
+  const report = statusReport(reading);
+  assert.deepEqual(report.status === "ok" ? report.population : null, { current: 10, housing: 10, idle_peasants: 0, open_jobs: 4 });
+  // A reader without the field gives none.
+  const before = observationStats(sample({ gold: 5000, population: 10, popularity: 100, settlement }));
+  assert.ok(before.status === "ok" && !("open_jobs" in before.population));
+});
+
 test("building description separates staffed buildings from storage", () => {
   const base = { hp: 0, max_hp: 0, no_resources: 0, turned_off: 0 };
   assert.deepEqual(describeBuilding({ ...base, id: 15, type: 3, have_stats: 1, workers_have: 1, job_vacancies: 0, workers_needed: 1, working: 1, keep_access: 1 }), {

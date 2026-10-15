@@ -248,6 +248,22 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
         s<<'}';
         return s.str();
     });
+    // The local player's jobs: over its buildings with workers (needed above 0), the workers needed
+    // (+0xc6), there (+0xc8) and the places open (+0xca), as each building's panel shows them (a new
+    // woodcutter on Large Barren Desert's start with nobody idle read 1, 0 and 1 there and on its
+    // panel, live 2026-10-15). Optional.
+    const auto jobs=optional([&]()->std::string {
+        const auto [limit,at]=building_records();
+        int needed=0,filled=0,open=0;
+        for(int id=1;id<=limit;++id) {
+            if(at(id,0)<=0 || at(id,0x04)!=player)continue;
+            const int n=at(id,0xc6),have=at(id,0xc8),vacant=at(id,0xca);
+            // A record whose words do not read as workers (a type that uses them otherwise) is left out.
+            if(n<=0 || n>64 || have<0 || have>n || vacant<0 || vacant>n)continue;
+            needed+=n;filled+=have;open+=vacant;
+        }
+        return "{\"needed\":"+std::to_string(needed)+",\"filled\":"+std::to_string(filled)+",\"open\":"+std::to_string(open)+"}";
+    });
     // What the open panel's workshop makes, for the fletcher (12), blacksmith (13) and poleturner
     // (14), whose panels choose between two products: goods numbers (as in resources) in its
     // building record, the one in progress at +0x1bc and the next at +0x1be, which the panel's two
@@ -298,7 +314,7 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
     out<<"],\"own_troops\":{\"total\":"<<total<<",\"by_type_1_to_34\":["<<counts.str()<<"]}"
        <<",\"structures\":"<<structures<<",\"placement\":"<<placement<<",\"camera\":"<<camera<<",\"mouse_tile\":"<<mouse_tile<<",\"managed_heap\":"<<managed_heap
        <<",\"settlement\":"<<settlement<<",\"selected_building\":"<<selected_building<<",\"storage\":"<<storage
-       <<",\"buildings\":"<<buildings<<",\"selected_workshop\":"<<selected_workshop<<",\"starting_goods\":"<<starting_goods
+       <<",\"buildings\":"<<buildings<<",\"jobs\":"<<jobs<<",\"selected_workshop\":"<<selected_workshop<<",\"starting_goods\":"<<starting_goods
        <<",\"visible_messages\":[";
     bool comma=false;
     for(const char* channel:{"Keep_Message","Message_Bar","Feedback_1"}) {

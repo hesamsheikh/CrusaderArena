@@ -35,7 +35,7 @@ test("the game's refusals map to the tool that addresses them", () => {
 });
 
 test("every failed placement status has a remedy, and a placed one has none", () => {
-  for (const status of ["not_on_screen", "not_selected", "camera_moved", "invalid_target", "rejected", "possibly_rejected", "unverified", "not_placed", "already_built"])
+  for (const status of ["not_on_screen", "not_selected", "camera_moved", "screenshot_expired", "invalid_target", "rejected", "possibly_rejected", "unverified", "not_placed", "already_built"])
     assert.ok(placementRemedy({ building: "Hovel", status, feedback: [] }), status);
   assert.equal(placementRemedy({ building: "Hovel", status: "placed" }), undefined);
   // build_structure already moved the camera, so go_to_tile would fail the same way.

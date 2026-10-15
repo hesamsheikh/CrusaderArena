@@ -165,6 +165,12 @@ export type Stats = {
      * doors); null when unavailable, absent from readers before it.
      */
     buildings?: Record<string, number> | null;
+    /**
+     * The local player's jobs over its buildings with workers: workers needed, there, and places
+     * open (as each building's panel counts its vacancies); null when unavailable, absent from
+     * readers before it.
+     */
+    jobs?: { needed: number; filled: number; open: number } | null;
     /** The building whose panel is open; null when none. */
     selected_building?: {
       id: number;
