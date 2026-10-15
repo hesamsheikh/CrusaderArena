@@ -167,6 +167,9 @@ export interface AgentRuntime {
   pausedMilliseconds?: () => number;
   /** Messages that open every request unchanged (the preparation guide). */
   pinned?: () => ReadonlySet<AgentMessage>;
+  /** The provider OpenRouter routed the run's last request to (e.g. "SiliconFlow"), when it reported
+   * one; that provider goes first for the next request (preferProvider). */
+  upstream?: () => string | undefined;
   /** What one request cost: billed by OpenRouter, or its tokens at the profile's prices. `upstream`
    * is the provider OpenRouter routed it to (e.g. "DeepInfra"), when it reported one. */
   cost?: (
@@ -302,7 +305,11 @@ function payloadHook(
   onPayload?: (params: unknown, model: Model<any>) => unknown,
 ) {
   return async (params: unknown, model: Model<any>) => {
-    if (isOpenRouter(profile.baseUrl)) (params as { usage?: unknown }).usage = { include: true };
+    if (isOpenRouter(profile.baseUrl)) {
+      (params as { usage?: unknown }).usage = { include: true };
+      const served = runtime?.upstream?.();
+      if (served) preferProvider(params as { provider?: unknown }, served);
+    }
     const pinned = runtime?.pinned?.() ?? new Set();
     let count = 0;
     while (count < messages.length && pinned.has(messages[count] as AgentMessage)) count++;
@@ -313,6 +320,26 @@ function payloadHook(
     return onPayload?.(params, model);
   };
 }
+/**
+ * Puts the provider that served the run's last request first in the request's provider order, the
+ * others behind it in their order. OpenRouter tries the profile's providers in order and passes a
+ * request on when one refuses it, and each provider keeps its own prompt cache: on 2026-10-15
+ * Z.AI's rate limits (429) sent 29 of a GLM 5.3 Flash game's 81 requests to SiliconFlow, the run
+ * switched 28 times, and each switch re-read the conversation since that provider last served it
+ * (about 97,000 tokens in all). Led by the last provider, a run stays where a fallback put it.
+ * Pi assigns the profile's own routing object to `params.provider`, so it is replaced, never
+ * changed in place.
+ */
+export function preferProvider(params: { provider?: unknown }, upstream: string) {
+  const routing = params.provider as { order?: unknown } | undefined;
+  if (!routing || !Array.isArray(routing.order)) return;
+  const order = routing.order as unknown[];
+  const index = order.findIndex((slug) => typeof slug === "string" && providerKey(slug) === providerKey(upstream));
+  if (index <= 0) return;
+  params.provider = { ...routing, order: [order[index], ...order.slice(0, index), ...order.slice(index + 1)] };
+}
+/** One key for a provider slug ("z-ai/fp8") and the name OpenRouter reports for it ("Z.AI"). */
+const providerKey = (name: string) => name.split("/")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
 /**
  * OpenRouter reports what it billed for a request in the stream's last usage chunk, which Pi
  * does not keep. This fetch hands Pi the response unchanged and reads the amount from a copy.

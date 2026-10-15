@@ -4,7 +4,7 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { streamSimple as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages";
 import type { AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { modelConfig, prepareModel, requestOptions } from "./model.js";
+import { interviewReply, modelConfig, preferProvider, prepareModel, requestOptions, type AgentRuntime } from "./model.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import type { ModelProfile } from "../shared/protocol.js";
 
@@ -249,6 +249,62 @@ test("the upstream provider OpenRouter routed the request to is read from the sa
   assert.deepEqual(costs, [0.00123]);
   assert.deepEqual(sources, ["billed"]);
   assert.deepEqual(upstreams, ["DeepInfra"]);
+});
+
+test("the provider that served the last request goes first, the others keep their order behind it", () => {
+  const routing = { order: ["z-ai/fp8", "siliconflow/fp8", "deepinfra/fp4"], allow_fallbacks: false };
+  const params: { provider?: unknown } = { provider: routing };
+  preferProvider(params, "SiliconFlow");
+  assert.deepEqual(params.provider, { order: ["siliconflow/fp8", "z-ai/fp8", "deepinfra/fp4"], allow_fallbacks: false });
+  // Pi hands over the profile's own routing object: it is replaced, not changed.
+  assert.deepEqual(routing.order, ["z-ai/fp8", "siliconflow/fp8", "deepinfra/fp4"]);
+  preferProvider(params, "Z.AI");
+  assert.deepEqual((params.provider as typeof routing).order, ["z-ai/fp8", "siliconflow/fp8", "deepinfra/fp4"]);
+  for (const upstream of ["Novita", "DeepInfra"]) {
+    const unchanged = { provider: { order: ["deepinfra/fp4"] } };
+    const before = unchanged.provider;
+    preferProvider(unchanged, upstream);
+    assert.equal(unchanged.provider, before, `${upstream}: not in the order, or already first`);
+  }
+  const unpinned: { provider?: unknown } = {};
+  preferProvider(unpinned, "Z.AI");
+  assert.equal(unpinned.provider, undefined);
+});
+
+test("after a fallback the run's next requests ask first for the provider that answered", async () => {
+  const glm: ModelProfile = { ...openRouter, providers: ["z-ai/fp8", "siliconflow/fp8"], allowFallbacks: false };
+  let served: string | undefined;
+  let answering = "SiliconFlow";
+  const runtime = { runId: "run-1", config: { contextBudget: 120000 }, upstream: () => served } as unknown as AgentRuntime;
+  const routings: unknown[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => {
+    routings.push(JSON.parse(String(init?.body)).provider);
+    const chunks = [
+      { id: "gen-1", provider: answering, choices: [{ index: 0, delta: { content: "Answer." }, finish_reason: null }] },
+      { id: "gen-1", provider: answering, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      { id: "gen-1", provider: answering, choices: [], usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, cost: 0.001 } },
+    ];
+    const stream = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+    return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+  };
+  try {
+    const ask = async () => {
+      await interviewReply(glm, "test", [{ role: "user", content: "Question?", timestamp: 0 }], "Rules.", [], runtime,
+        (_dollars, _source, upstream) => { if (upstream) served = upstream; }, AbortSignal.timeout(5000));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    };
+    await ask();
+    await ask();
+    answering = "Z.AI";
+    await ask();
+    await ask();
+  } finally {
+    globalThis.fetch = original;
+  }
+  const zai = { order: ["z-ai/fp8", "siliconflow/fp8"], allow_fallbacks: false };
+  const silicon = { order: ["siliconflow/fp8", "z-ai/fp8"], allow_fallbacks: false };
+  assert.deepEqual(routings, [zai, silicon, silicon, zai]);
 });
 
 test("a cost chunk without a provider field reports no upstream", async () => {

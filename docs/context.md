@@ -281,6 +281,18 @@ separate from provider pinning (the "Providers, allow fallbacks" model setting, 
 upstream providers; session affinity additionally favors the same connection among
 whichever providers are allowed.
 
+OpenRouter tries a profile's providers in their order and passes a request on to the next
+when one refuses it, and each provider keeps its own prompt cache. So every request after
+the first asks first for the provider that served the run's last request (the `upstream`
+its cost reported), with the others behind it in the profile's order: a run that falls back
+stays with the provider that answered instead of going back and forth. In a GLM 5.3 Flash
+game on 2026-10-15, before this, Z.AI refused 29 of 81 requests with 429 (rate limited),
+OpenRouter sent each to SiliconFlow, and the run changed provider 28 times; each change
+re-read the conversation since that provider last served it, about 97,000 tokens in all,
+and 93.1% of input came from the cache instead of about 95.9%. OpenRouter's generation
+record for a request (`GET /api/v1/generation?id=<id>`, the id of the reply) lists each
+provider it tried and the status it got.
+
 Meta's models (model IDs starting `meta/`, such as Muse Wonder) need more: Meta keeps
 the prompt cache on each of its server replicas and sends requests that share a
 `prompt_cache_key` to the same replica, and without one a run's requests spread over

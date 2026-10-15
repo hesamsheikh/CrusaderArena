@@ -234,6 +234,12 @@
       "fingerprint": "6ee823bf5cb0f288ce08c252482fd14436b1d3aba129e026eb147b35381d5805",
       "date": "2026-10-15",
       "note": "The reader's two reads of each sample share one reading of the managed heap's totals, which move with the game's allocations every frame, even while paused, and made about one sample in nine unavailable"
+    },
+    {
+      "version": "1.7.1",
+      "fingerprint": "eb29d6aa264dfa906a1fae45a18eed6758c10e5c7ea599228fd41b4cb7938d48",
+      "date": "2026-10-15",
+      "note": "On OpenRouter a run's requests ask first for the provider that served its last one, so a fallback no longer sends the run back and forth between providers and their prompt caches; what the model plays is unchanged"
     }
   ]
 }

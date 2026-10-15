@@ -1795,6 +1795,18 @@ test("each request's cost is kept with its source and summed in run.json", () =>
   assert.match(events, /"type":"request_cost","kind":"compaction","dollars":0.003,"source":"prices"\}/);
 });
 
+test("the provider that served the run's last request is the one its next request asks for first", () => {
+  const f = fixture(1);
+  assert.equal(f.controller.runtime.upstream?.(), undefined);
+  f.controller.runtime.cost?.("gameplay", 0.001, "billed", "SiliconFlow");
+  assert.equal(f.controller.runtime.upstream?.(), "SiliconFlow");
+  // A request that reported none leaves the last one in place.
+  f.controller.runtime.cost?.("compaction", 0.001, "prices");
+  assert.equal(f.controller.runtime.upstream?.(), "SiliconFlow");
+  f.controller.runtime.cost?.("gameplay", 0.001, "billed", "Z.AI");
+  assert.equal(f.controller.runtime.upstream?.(), "Z.AI");
+});
+
 test("after a scored episode the agent is interviewed in the conversation it played in, apart from the run's record", async () => {
   const f = fixture(1);
   await f.controller.prepare();

@@ -102,6 +102,8 @@ export class RunController {
   private operatorStopped = false;
   private requestStartedAt?: number;
   private firstDeltaMs?: number;
+  /** The provider OpenRouter routed the run's last request to; the next request asks for it first. */
+  private upstream?: string;
   private contextBudget = new ContextBudget();
   private initialGuideSent = false;
   private prepared = false;
@@ -240,6 +242,7 @@ export class RunController {
       isPaused: () => this.pauseStartedAt !== undefined,
       pausedMilliseconds: () => this.pausedMilliseconds(),
       pinned: () => this.pinned(),
+      upstream: () => this.upstream,
       cost: (kind, dollars, source, upstream) => this.recordCost(kind, dollars, source, upstream),
       requestStarted: () => {
         this.requestStartedAt = performance.now();
@@ -415,6 +418,7 @@ export class RunController {
     source: CostSource,
     upstream?: string,
   ) {
+    if (upstream) this.upstream = upstream;
     this.store.event(this.run.id, { type: "request_cost", kind, dollars, source, ...(upstream ? { upstream } : {}) });
     this.store.update(this.run.id, { cost: (this.run.cost ?? 0) + dollars });
   }

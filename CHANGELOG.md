@@ -17,6 +17,20 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- On OpenRouter, every request after a run's first asks first for the provider that served
+  its last one, the profile's other providers behind it in their order, so a run that falls
+  back stays with the provider that answered and keeps its prompt cache. Since the afternoon
+  of 2026-10-14 Z.AI has refused some of GLM 5.3 Flash's requests with 429 (rate limited):
+  in its 1.7.1 game on The Sinkhole, OpenRouter sent 29 of 81 to SiliconFlow and the run
+  changed provider 28 times, each change re-reading the conversation since that provider last
+  served it. That cost about 97,000 tokens of cache, 93.1% of input cached instead of about
+  95.9%, and about $0.012 of the game's $0.142. Both serve the same model build at fp8 and
+  price; the model's play is unchanged.
+
 ## [1.7.1] - 2026-10-15
 
 The reader no longer throws away about one sample in nine. A patch: what the reader reports is
