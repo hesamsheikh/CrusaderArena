@@ -344,6 +344,11 @@ between September and October 2026.
   ale. On "Oasis by the Sea benchmark start", loaded right after a desert game, it was empty once
   that map's package was in. With Luna's early iron mine standing as the 15 iron came in, the
   readout showed the iron under `other_rises` and the mine at 0 until its own first iron at 3:53.
+- Claude Haiku 5.5 on The Sinkhole, on 2026-10-15 after those fixes (1954444), 10 game minutes,
+  interviewed after: valid, net worth 2,450, about $0.02. All 20 placements went through, none
+  missed its tile. The start lists no starting goods, and the list read empty in all 34
+  samples, the game after a desert game that ended with pitch and ale still listed. Its
+  observations carried production from the woodcutters' first 0 to 16 to 24 wood a minute.
 - `status`'s production readout, on 2026-10-14 (stand-in on "Oasis by the Sea benchmark start",
   5 game minutes): three woodcutters and a marketplace built by tile, 20 wood bought, then
   waits. At 50 game seconds the woodcutters showed 0 delivered and the starting bread still
