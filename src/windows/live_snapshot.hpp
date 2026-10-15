@@ -70,7 +70,9 @@ struct LiveAccess {
     }
 };
 
-std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
+// heap_totals: the managed heap's totals and the collector watchdog, read on the first call that gets an
+// empty string and reused by the next, so two reads compared for coherence compare game state only.
+std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain,std::string& heap_totals) {
     namespace m=crusader::managed;
     LiveAccess a(runtime,domain,runtime_api.game_image);
     m::Root game(a.api,a.singleton("GameData"));
@@ -294,13 +296,14 @@ std::string live_snapshot(HMODULE runtime,Api& runtime_api,Domain* domain) {
         s<<']';
         return s.str();
     });
-    const std::string managed_heap=a.gc_heap_size
+    if(heap_totals.empty())heap_totals=a.gc_heap_size
         ? "{\"heap_bytes\":"+std::to_string(a.gc_heap_size())+",\"used_bytes\":"+std::to_string(a.gc_used_size())+
           (a.gc_collections ? ",\"collections\":"+std::to_string(a.gc_collections(0))+
              ",\"finalizers_pending\":"+(a.gc_pending_finalizers()?std::string("true"):std::string("false")) : std::string())+
           (a.gc_disabled ? ",\"gc_disabled\":"+(a.gc_disabled()?std::string("true"):std::string("false")) : std::string())+
           ",\"watchdog\":"+collector_watch_json()+"}"
         : "null";
+    const std::string& managed_heap=heap_totals;
     std::ostringstream out;
     out<<"{\"schema\":2,\"coherence\":\"double_read_only\",\"atomic\":false,\"local_player_id\":"<<player
        <<",\"map_token\":\""<<reinterpret_cast<std::uintptr_t>(map_data.get())<<"\",\"map_name\":"

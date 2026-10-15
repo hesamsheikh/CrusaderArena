@@ -296,8 +296,11 @@ extern "C" __declspec(dllexport) DWORD WINAPI CrusaderInspect(void* data) {
     Context c{&api,r};api.domains(domain_callback,&c);api.assemblies(assembly_callback,&c);
     if(r->mode==3) {
         try {
-            const auto first=live_snapshot(m,api,root);
-            const auto second=live_snapshot(m,api,root);
+            // The heap's totals move with every allocation, also while the game is paused: both reads
+            // share one reading of them, which compared failed about one sample in nine.
+            std::string heap_totals;
+            const auto first=live_snapshot(m,api,root,heap_totals);
+            const auto second=live_snapshot(m,api,root,heap_totals);
             if(first!=second)throw std::runtime_error("state changed between reads");
             if(second.size()>=sizeof(r->text))throw std::runtime_error("observation exceeds transport limit");
             std::memcpy(r->text,second.c_str(),second.size()+1);r->used=static_cast<std::uint32_t>(second.size());

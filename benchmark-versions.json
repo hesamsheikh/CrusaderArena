@@ -1,5 +1,5 @@
 {
-  "current": "1.7.0",
+  "current": "1.7.1",
   "history": [
     {
       "version": "1.0.0",
@@ -226,8 +226,14 @@
     {
       "version": "1.7.0",
       "fingerprint": "7c48430d005403c16ddf9485f054c65b8d7410dd4a988957b1d5a7feb968c054",
-      "date": "2026-10-15",
+      "date": "2026-10-14",
       "note": "Fast waits play the game time a run only waits for at the game's top speed, back at 40 before each wait ends; a screenshot's age counts in game seconds; flat_view takes its images with the game running; stockpiles keep a tile of open ground and a spot to grow; spots keep a way to walk from the keep to the new building and every building with one; build_structure waits for placement mode to end; warnings for popularity 10 below the last observation, food under two game months and gold under 500 end wait_and_observe early; religion and the inn show at 0 once one stands, status counts buildings, observations and status report what producing buildings delivered (the starting goods still to come, now read, as arriving), inspect_building takes a map tile, find_sites says when no woodcutter spot has trees, and expand_storage and place_near go back to the anchor's view after choosing storage moved it; clicks at a map tile are aimed by the tile the game picks under the pointer, the camera moved first to a raised tile drawn off screen; the stats show open jobs beside idle peasants; build_structure takes 8 placements a call; spots the harness picks for hovels and other buildings nobody walks to keep 6 tiles from the keep; spots the harness picks come in blocks of up to four, two across, with a walkway around each; the game machine's reader is rebuilt unless it was built from the version's sources"
+    },
+    {
+      "version": "1.7.1",
+      "fingerprint": "6ee823bf5cb0f288ce08c252482fd14436b1d3aba129e026eb147b35381d5805",
+      "date": "2026-10-15",
+      "note": "The reader's two reads of each sample share one reading of the managed heap's totals, which move with the game's allocations every frame, even while paused, and made about one sample in nine unavailable"
     }
   ]
 }

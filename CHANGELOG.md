@@ -17,7 +17,25 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [1.7.0] - 2026-10-15
+## [1.7.1] - 2026-10-15
+
+The reader no longer throws away about one sample in nine. A patch: what the reader reports is
+unchanged, but its readings come through more often.
+
+### Benchmark
+
+- The reader reads the game twice for each sample and reports `unavailable` when the two reads
+  differ. Each read also carried the managed heap's totals, kept for the memory watchdog,
+  whose used bytes move with the game's allocations every frame, even while it is paused:
+  37 of 340 samples during a 1.7.0 game on The Sinkhole failed, 12% while paused and 10%
+  while running, and between good samples with no game tick between them nothing else
+  changed. Both reads now share one reading of the totals: in a live test, 1 of 638 samples
+  failed, in a wait played fast. A tool that read the game at such a moment went without:
+  `status` answered "No fresh reader sample" to 11 of 177 calls in the saved runs, GLM 5.3
+  Flash's first call of that game among them, and the camera, placement-mode and cost checks
+  inside other tools lost their reading the same way.
+
+## [1.7.0] - 2026-10-14
 
 Runs take less real time. Waits are played at the game's top speed and every tick is the same
 game at any speed, so a run's game should be the same as on 1.6; that a tick is the same game

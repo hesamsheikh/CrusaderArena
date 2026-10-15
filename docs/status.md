@@ -57,6 +57,13 @@ between September and October 2026.
   all. The collector variables it recorded were sensible: a 23 MiB threshold (the game
   allocates about 24 MiB between collections), 162 KiB of thread stacks, and manual
   mode on.
+- Samples thrown away, on 2026-10-15 on The Sinkhole, counted from the host's stream: with
+  1.7.0's reader, 37 of 340 samples during GLM 5.3 Flash's game were `unavailable`, 12%
+  while paused and 10% at speed 40, and between good samples with no tick between them only
+  `managed_heap`'s used bytes (109 of 109 pairs) and now and then its collection count
+  changed. With both reads sharing one reading of the heap (1.7.1), a stand-in that thought
+  15 s a turn saw 1 of 638 (0 of 323 paused, 0 of 179 at 40, 1 of 56 in fast waits), all
+  17 `status` and 17 `get_inventory` calls answered, and `managed_heap` kept updating.
 
 **Control**
 - Clicks, right clicks, drags (selecting units), mouse-wheel list scrolling, keys,

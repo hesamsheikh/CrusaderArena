@@ -74,8 +74,11 @@ last good sample as current.
 
 The `generation` changes when the map, map name or local player changes, when game
 time goes backwards (a reload), and after any rejected sample. Polling can miss a very
-short change. Samples are not atomic snapshots: the double read catches most
-concurrent changes, not all.
+short change. Samples are not atomic snapshots: the reader reads the game twice per
+sample and reports `unavailable` when the two reads differ ("state changed between
+reads"), which catches most concurrent changes, not all. Both reads share one reading
+of `managed_heap`, whose used bytes move with the game's allocations every frame, also
+while it is paused; compared, they would fail about one sample in nine, paused or not.
 
 ## What a sample contains
 
