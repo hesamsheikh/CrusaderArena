@@ -385,13 +385,52 @@ async function readCost(stream: ReadableStream<Uint8Array>, onCost: (dollars: nu
     // An aborted or failed request has no cost to read.
   }
 }
+/** How long a reply may send nothing before it counts as stalled (stallGuard). */
+export const STREAM_IDLE_MS = 120_000;
+/**
+ * A fetch whose response body fails ("Stream stalled …", which isTransientProviderError retries)
+ * when no bytes arrive for `idleMs`. The request timeout covers only the wait for the response
+ * to start: on 2026-10-15 SiliconFlow sent GLM 5.3 Flash one reasoning token and then nothing
+ * until the connection closed 300 s later ("Network connection lost."), which ended the game at
+ * 34 of its 45 game minutes. Across about 4,800 requests of 11 models on 2026-10-11 to 15, the
+ * longest silence was 80 s before the first token (Muse Wonder) and 17 s between tokens (Gemini
+ * 4 Argon). Only time spent waiting on the network counts: the body is read when its reader asks.
+ */
+export function stallGuard(inner: typeof fetch = fetch, idleMs = STREAM_IDLE_MS): typeof fetch {
+  return async (input, init) => {
+    const response = await inner(input, init);
+    if (!response.body) return response;
+    const reader = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const stalled = new Promise<"stalled">((resolve) => { timer = setTimeout(() => resolve("stalled"), idleMs); });
+        try {
+          const next = await Promise.race([reader.read(), stalled]);
+          if (next === "stalled") {
+            controller.error(new Error(`Stream stalled: no data for ${Math.round(idleMs / 1000)} s.`));
+            void reader.cancel().catch(() => {});
+          } else if (next.done) controller.close();
+          else controller.enqueue(next.value);
+        } catch (error) {
+          controller.error(error);
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      cancel: (reason) => reader.cancel(reason),
+    });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+}
 /** "billed": the amount OpenRouter reported; "prices": the request's tokens at the profile's prices. */
 export type CostSource = "billed" | "prices";
 /**
  * How a request's cost is recorded. On OpenRouter `options` reads the billed amount from the
  * stream. Elsewhere Pi prices the reply's usage with the profile's prices (modelCost), and
  * `settle` records it once the reply is complete, failed and cut-off replies included, as their
- * tokens are counted too.
+ * tokens are counted too. Either way the request's fetch fails a reply that stops sending
+ * (stallGuard), so every model request carries these options.
  */
 function costTracking(
   profile: ModelProfile,
@@ -399,11 +438,11 @@ function costTracking(
 ) {
   if (isOpenRouter(profile.baseUrl))
     return {
-      options: { fetch: costReader((dollars, upstream) => onCost?.(dollars, "billed", upstream)) },
+      options: { fetch: costReader((dollars, upstream) => onCost?.(dollars, "billed", upstream), stallGuard()) },
       settle: () => {},
     };
   return {
-    options: {},
+    options: { fetch: stallGuard() },
     settle: (usage: Usage) => {
       if (profile.prices && usedTokens(usage)) onCost?.(usage.cost.total, "prices");
     },

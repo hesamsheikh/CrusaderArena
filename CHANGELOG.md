@@ -30,6 +30,14 @@ this file lists every version in `benchmark-versions.json`, with its date.
   served it. That cost about 97,000 tokens of cache, 93.1% of input cached instead of about
   95.9%, and about $0.012 of the game's $0.142. Both serve the same model build at fp8 and
   price; the model's play is unchanged.
+- A model reply that stops sending fails after 2 minutes with nothing received ("Stream
+  stalled"), and that error and "Network connection lost." are retried like the other
+  provider errors, with the game paused. The request timeout covered only the wait for a
+  reply to start: on 2026-10-15 SiliconFlow sent GLM 5.3 Flash one reasoning token and then
+  nothing until the connection closed 300 seconds later, an error the host did not retry, and
+  the game ended at 34 of its 45 game minutes and was played again from the start. The longest
+  silence in about 4,800 replies of 11 models from 2026-10-11 to 15 was 80 seconds, before
+  Muse Wonder's first token; between tokens it was 17 seconds.
 
 ## [1.7.1] - 2026-10-15
 

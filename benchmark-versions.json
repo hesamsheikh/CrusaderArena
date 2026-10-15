@@ -240,6 +240,12 @@
       "fingerprint": "eb29d6aa264dfa906a1fae45a18eed6758c10e5c7ea599228fd41b4cb7938d48",
       "date": "2026-10-15",
       "note": "On OpenRouter a run's requests ask first for the provider that served its last one, so a fallback no longer sends the run back and forth between providers and their prompt caches; what the model plays is unchanged"
+    },
+    {
+      "version": "1.7.1",
+      "fingerprint": "63921aad76e55103755ad8aaae57a69d1c3f5800dc991a8c6f3047d3c68ea79e",
+      "date": "2026-10-15",
+      "note": "A model reply that sends nothing for 2 minutes fails as stalled, and stalled replies and lost connections are retried like other provider errors; what the model plays is unchanged"
     }
   ]
 }

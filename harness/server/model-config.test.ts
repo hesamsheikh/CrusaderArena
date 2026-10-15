@@ -4,7 +4,8 @@ import { streamSimple } from "@earendil-works/pi-ai/api/openai-completions";
 import { streamSimple as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages";
 import type { AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { interviewReply, modelConfig, preferProvider, prepareModel, requestOptions, type AgentRuntime } from "./model.js";
+import { interviewReply, modelConfig, preferProvider, prepareModel, requestOptions, stallGuard, type AgentRuntime } from "./model.js";
+import { isTransientProviderError } from "./controller.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import type { ModelProfile } from "../shared/protocol.js";
 
@@ -346,6 +347,38 @@ function anthropicReply(usage: { input_tokens: number; cache_read_input_tokens: 
   ];
   return events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
 }
+
+/** A network that answers with `first` and then sends nothing more, never closing the stream. */
+const hanging = (first: string) => (async () => new Response(new ReadableStream({
+  start(controller) { controller.enqueue(new TextEncoder().encode(first)); },
+}), { status: 200, headers: { "content-type": "text/event-stream" } })) as unknown as typeof fetch;
+
+test("a reply that stops sending fails as stalled, an error the run retries", async () => {
+  const thinking = { id: "gen-1", choices: [{ index: 0, delta: { reasoning: "!" }, finish_reason: null }] };
+  const openai = await streamSimple(modelConfig(openRouter) as Model<"openai-completions">, { messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+    { ...requestOptions(openRouter), apiKey: "test", maxRetries: 0, fetch: stallGuard(hanging(`data: ${JSON.stringify(thinking)}\n\n`), 50) }).result();
+  const start = { type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "claude-haiku-5-5", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 1 } } };
+  const claude = await anthropicStream(modelConfig(haiku) as Model<"anthropic-messages">, { messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+    { ...requestOptions(haiku), apiKey: "test", maxRetries: 0, fetch: stallGuard(hanging(`event: message_start\ndata: ${JSON.stringify(start)}\n\n`), 50) }).result();
+  for (const reply of [openai, claude]) {
+    assert.equal(reply.stopReason, "error");
+    assert.match(reply.errorMessage ?? "", /Stream stalled: no data for 0 s/);
+    assert.ok(isTransientProviderError(reply.errorMessage));
+  }
+});
+
+test("only waiting on the network counts toward a stall, not a reader that takes its time", async () => {
+  const chunks = ["one", "two"];
+  const network = (async () => new Response(new ReadableStream({
+    start(controller) { for (const c of chunks) controller.enqueue(new TextEncoder().encode(c)); controller.close(); },
+  }))) as unknown as typeof fetch;
+  const reader = (await stallGuard(network, 20)("https://example.test")).body!.getReader();
+  const decode = (v?: Uint8Array) => new TextDecoder().decode(v);
+  assert.equal(decode((await reader.read()).value), "one");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(decode((await reader.read()).value), "two");
+  assert.equal((await reader.read()).done, true);
+});
 
 test("Anthropic reports no cost, so each request is priced from its tokens, long prompts at their own rates", async () => {
   const prices = {

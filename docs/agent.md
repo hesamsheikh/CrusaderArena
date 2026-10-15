@@ -145,9 +145,10 @@ turn. The dashboard shows both to the operator live.
 
 ## When things go wrong
 
-- **Provider errors.** Timeouts, rate limits, overloads, server errors, empty replies
-  and streams the provider broke off (an error injected into the stream, or the stream
-  ending before its last event) are retried up to 5 times, waiting 2, 4, 8, 16 and
+- **Provider errors.** Timeouts, rate limits, overloads, server errors, empty replies,
+  streams the provider broke off (an error injected into the stream, the stream ending
+  before its last event, or the connection lost) and replies that send nothing for 2
+  minutes are retried up to 5 times, waiting 2, 4, 8, 16 and
   30 seconds, with the game paused. This holds for gameplay, preparation, compaction and the playbook request
   after an episode. Other errors end the run.
 - **Cut-off replies.** A reply that hits the profile's output limit (8,192 tokens by
@@ -183,5 +184,7 @@ default profile is Moonshot's Kimi K3. Moonshot and OpenRouter endpoints are tes
 other OpenAI-compatible endpoints are handled like Moonshot's and are untested. Each
 profile sets its reasoning level, its output limit per reply (8,192 tokens by
 default) and, on OpenRouter, which upstream providers may serve it; every run records
-these. Requests time out after 90 seconds. See
+these. A request times out when its reply has not started after 90 seconds, or when
+it has started and then sends nothing for 2 minutes (the longest silence in about 4,800
+replies of 11 models was 80 seconds before a first token). See
 [the harness](harness.md#model-profiles) for adding and configuring models.
