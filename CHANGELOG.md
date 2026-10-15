@@ -17,7 +17,7 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [1.7.0] - 2026-10-14
+## [1.7.0] - 2026-10-15
 
 Runs take less real time. Waits are played at the game's top speed and every tick is the same
 game at any speed, so a run's game should be the same as on 1.6; that a tick is the same game
@@ -171,6 +171,10 @@ warnings can end the model's waits.
 - The end-of-run save, and the load before a run, type the save's name in one request to the
   game machine's window bridge instead of one capture and one request a key: about 100 keys
   made saving take 1.5 to 3.5 minutes, and 0.71 seconds a key still with one capture.
+- The host times each request to the window bridge from when the bridge gets to it, since the
+  bridge answers one at a time: the host's status request every second waited behind a save's
+  run of about 100 keys past its own 12 seconds, and the timeout disconnected the game in the
+  middle of GLM 5.3 Flash's and GPT-6 Luna's saves in the 1.7.0 trials.
 - The dashboard's new-run dialog has a Fast waits switch.
 - The run overlay shows the game's speed setting beside the phase ("speed 90" while a wait
   is played fast), or "paused" while the game is paused.

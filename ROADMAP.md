@@ -27,8 +27,6 @@ two. The project website shows this file, so keep that shape.
 - **Tool fixes from the 1.6.2 runs.** `set_workshop` still opened a building drawn in
   front of the workshop four times on The Sinkhole (three times a tall Armory), after
   trying the footprint's back corner and roof: try its side corners too.
-  `demolish_building` by tile may hit a building in front of its target the same way,
-  which needs a live test first.
 - **Version only the benchmark.** Split what a run plays and scores (the prompt, the
   tools and what they do, the run rules, scoring and what the reader observes) from the
   harness that carries it (model requests and caching, cost, the host and dashboard,
