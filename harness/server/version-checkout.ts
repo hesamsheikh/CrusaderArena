@@ -8,11 +8,11 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import net from "node:net";
-import { existsSync, lstatSync, mkdirSync, openSync, readFileSync, symlinkSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, symlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { gameHost, quote } from "./device.js";
-import type { Round } from "./rounds.js";
+import { ROUNDS_FILE, type Round } from "./rounds.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -73,12 +73,23 @@ export async function prepareWorktree(round: Round, log: (line: string) => void)
     if (!existsSync(target)) continue;
     if (!existsSync(link) && !isLink(link)) symlinkSync(target, link);
   }
+  shareRounds(dir);
   if (!existsSync(path.join(dir, "node_modules"))) {
     log(`Installing ${round.version}'s dependencies (npm ci)`);
     const code = await run("npm", ["ci", "--no-audit", "--no-fund"], dir, log);
     if (code !== 0) throw new Error(`npm ci failed in ${path.relative(root, dir)} (exit ${code}).`);
   }
   return dir;
+}
+
+/**
+ * Gives the worktree this checkout's benchmark-rounds.json. The round's runner decides from its own
+ * copy where to play, and its commit's copy never lists the round itself (a round is recorded in a
+ * later commit), so it would hand the run on to the round before. This checkout's file names the
+ * worktree's own version, and is outside the fingerprint, so the worktree's code stays unchanged.
+ */
+export function shareRounds(dir: string, file = ROUNDS_FILE) {
+  if (existsSync(file)) copyFileSync(file, path.join(dir, "benchmark-rounds.json"));
 }
 
 function isLink(file: string) {

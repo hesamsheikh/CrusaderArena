@@ -140,8 +140,10 @@ moving a round changes no version.
 - **Same version.** A run whose round is the checkout's version plays here, as before.
 - **An earlier version.** `npm run episodes` plays the run from the round's commit: it
   makes a git worktree under `.versions/<version>-<commit>` (ignored by git) on first use,
-  links this checkout's `.env`, `harness/runtime/` and `.internal/` into it and installs
-  its dependencies; copies that version's game-machine files over (above); starts that
+  links this checkout's `.env`, `harness/runtime/` and `.internal/` into it, gives it this
+  checkout's `benchmark-rounds.json` (the commit's own copy predates the round, so that
+  version's runner would hand the run on to the round before) and installs its
+  dependencies; copies that version's game-machine files over (above); starts that
   version's host on the first free port after `--port` (its log in the worktree's `host.log`);
   and runs that version's own runner with the same arguments. Runs, series and saves
   land in this checkout's `harness/runtime/` as usual. This checkout's host stays up but

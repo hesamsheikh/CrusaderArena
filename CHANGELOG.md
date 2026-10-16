@@ -75,6 +75,13 @@ for the stockpile, as 1.7.0 meant it to.
   the game ended at 34 of its 45 game minutes and was played again from the start. The longest
   silence in about 4,800 replies of 11 models from 2026-10-11 to 15 was 80 seconds, before
   Muse Wonder's first token; between tokens it was 17 seconds.
+- A run on an earlier round's version plays that version. The round's runner reads
+  `benchmark-rounds.json` to decide where to play, and its own commit's copy predates the
+  round (a round is recorded in a later commit), so it handed the run on to the round before:
+  from 1.7.2, The Sinkhole would have played 1.6.2 instead of 1.7.1, Oasis by the Sea 1.5.1 and
+  Large Barren Desert 1.5.6 instead of 1.6.3. The round's worktree now gets this checkout's
+  file. Found in a trial with a stand-in model on 2026-10-16; no counted game was affected,
+  since every one played on its checkout's own version.
 - Run videos play the game at twice real speed around the model's clicks and keys, where
   they played it at real speed (`npm run video -- <run> --speed 1` renders one as before).
   Rendered both ways, GLM 5.3 Flash's 1.7.1 game on The Sinkhole went from 20:06 and 142 MB

@@ -1,8 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { quote } from "./device.js";
-import { freePort, gameMachineFiles, READER_STAMP, readerDigest, readerSources, syncGameMachine, worktreeDir, type GameShell } from "./version-checkout.js";
+import { readRounds, roundPlan } from "./rounds.js";
+import { freePort, gameMachineFiles, READER_STAMP, readerDigest, readerSources, shareRounds, syncGameMachine, worktreeDir, type GameShell } from "./version-checkout.js";
 
 process.env.GAME_SSH_HOST = "game-machine";
 process.env.GAME_REMOTE_ROOT = "/home/player/CrusaderBench";
@@ -36,6 +40,22 @@ const builds = (commands: string[]) => commands.filter((c) => c.includes("cmake 
 test("a round's worktree is named by its version and commit", () => {
   assert.equal(worktreeDir({ version: "1.5.1", fingerprint: "e5d9", commit: "fe9754670075909d", since: "2026-10-11" }, "/repo"),
     "/repo/.versions/1.5.1-fe97546");
+});
+
+test("the round's runner gets this checkout's rounds, so it plays the run itself instead of handing it on", () => {
+  const round = (version: string, commit: string) => ({ version, fingerprint: "f".repeat(64), commit, since: "2026-10-15" });
+  const here = mkdtempSync(path.join(os.tmpdir(), "rounds-here-"));
+  const worktree = mkdtempSync(path.join(os.tmpdir(), "rounds-worktree-"));
+  // The Sinkhole moved to 1.7.1 in a commit after 1.7.1's own, whose file still names 1.6.2.
+  writeFileSync(path.join(here, "benchmark-rounds.json"), JSON.stringify({ rounds: { "The Sinkhole construction": round("1.7.1", "07f2b7a") } }));
+  writeFileSync(path.join(worktree, "benchmark-rounds.json"), JSON.stringify({ rounds: { "The Sinkhole construction": round("1.6.2", "1e52aca") } }));
+  const roundRunner = { version: "1.7.1", fingerprint: "f".repeat(64), commit: "07f2b7a" };
+  assert.equal(roundPlan(readRounds(path.join(worktree, "benchmark-rounds.json")), "The Sinkhole construction", roundRunner, false).kind, "elsewhere");
+  shareRounds(worktree, path.join(here, "benchmark-rounds.json"));
+  assert.equal(readFileSync(path.join(worktree, "benchmark-rounds.json"), "utf8"), readFileSync(path.join(here, "benchmark-rounds.json"), "utf8"));
+  assert.deepEqual(roundPlan(readRounds(path.join(worktree, "benchmark-rounds.json")), "The Sinkhole construction", roundRunner, false), {
+    kind: "here", startsRound: false, round: round("1.7.1", "07f2b7a"),
+  });
 });
 
 test("the game machine's files are its helpers and the reader's sources, without their tests", () => {
