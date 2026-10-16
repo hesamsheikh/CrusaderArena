@@ -185,13 +185,15 @@ logs it and goes on. A wait played fast shows in the video as faster idle play.
   1440 × 810 took 370 MB; at 1600 × 900, measured offline, a 25-game-minute run writes
   about 7,300–8,600 JPEGs (roughly 400 KB each) for about 3 GB.
 - **The video** (`<run>/video.mp4`, 1920 × 1080 H.264 with no audio track, one chapter
-  per turn) plays actions at real speed with a drawn pointer, click rings, building
-  names and key badges; fast-forwards idle stretches; cuts paused frames; and shows
-  each thinking pause briefly, the paused game beside the model's reasoning as it
-  types out. The game fills 1600 × 900; beside it are the plan and the turn's tool
+  per turn) plays actions at twice real speed (`--speed 1` for real time) with a drawn
+  pointer, click rings, building names and key badges; fast-forwards idle stretches;
+  cuts paused frames; and shows each thinking pause briefly, the paused game beside the
+  model's reasoning as it types out. The game fills 1600 × 900; beside it are the plan and the turn's tool
   calls, below it game time and the main stats. It ends on the result: the final
-  overview beside the score. A 2-game-minute run renders to about 1:40 and 11 MB. The
-  dataset's copy is scaled to 720p ([Publishing](publishing.md#smaller-than-the-run)).
+  overview beside the score. GLM 5.3 Flash's 45-game-minute game on The Sinkhole (1.7.1)
+  renders to 12:08 and 100 MB, against 20:06 and 142 MB at real speed: shorter by 40%
+  but smaller by only 30%, since every recorded frame is still shown. The dataset's copy
+  is scaled to 720p ([Publishing](publishing.md#smaller-than-the-run)).
 - **Compaction.** Once a render succeeds, the host queues
   `tools/video/compact-recording.py` on the same run, right after it, still serialised
   (compaction is CPU-heavy): it re-encodes `recording/frames/*.jpg`, in `frames.jsonl`
@@ -212,6 +214,7 @@ Re-render or change the edit by hand (needs Pillow, ffmpeg with libx264, and ffp
 npm run video -- <run folder>                        # writes <run>/video.mp4
 npm run video -- <run> --idle-speed 16 --max-idle 2  # compress idle play harder
 npm run video -- <run> --max-think 0 --outro 0       # no thinking pauses, no result
+npm run video -- <run> --speed 1                     # actions at real speed
 ```
 
 Other options: `--speed`, `--min-think`, `--think-rate`, `--fps`, `--max-seconds`

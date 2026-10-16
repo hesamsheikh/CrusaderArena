@@ -38,6 +38,10 @@ this file lists every version in `benchmark-versions.json`, with its date.
   the game ended at 34 of its 45 game minutes and was played again from the start. The longest
   silence in about 4,800 replies of 11 models from 2026-10-11 to 15 was 80 seconds, before
   Muse Wonder's first token; between tokens it was 17 seconds.
+- Run videos play the game at twice real speed around the model's clicks and keys, where
+  they played it at real speed (`npm run video -- <run> --speed 1` renders one as before).
+  Rendered both ways, GLM 5.3 Flash's 1.7.1 game on The Sinkhole went from 20:06 and 142 MB
+  to 12:08 and 100 MB. Runs already published keep their videos.
 
 ## [1.7.1] - 2026-10-15
 

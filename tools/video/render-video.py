@@ -6,9 +6,9 @@
 Needs a run recorded with Record video (run config recordVideo): recording/frames.jsonl
 with its frames and recording/inputs.jsonl, plus run.json and events.jsonl. The footage is
 edited, not shown as it passed: each paused thinking period becomes a short card that
-types out the reasoning; the game plays at real speed around every click and key the
-harness sent; idle play between actions is fast-forwarded; paused footage with nothing
-happening is cut.
+types out the reasoning; the game plays at twice real speed around every click and key the
+harness sent (--speed 1 for real time); idle play between actions is fast-forwarded; paused
+footage with nothing happening is cut.
 
 Needs Pillow and ffmpeg with libx264 on PATH. Reads the run folder; writes only the output.
 """
@@ -1285,7 +1285,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('run', help='run folder (harness/runtime/runs/<folder>), or a folder name under it')
     parser.add_argument('-o', '--output', help='default: <run>/video.mp4')
-    parser.add_argument('--speed', type=float, default=1.0, help='speed around clicks and keys (default 1, real time)')
+    parser.add_argument('--speed', type=float, default=2.0, help='speed around clicks and keys (default 2; 1 is real time)')
     parser.add_argument('--idle-speed', type=float, default=8.0, help='fast-forward for idle play (default 8)')
     parser.add_argument('--max-idle', type=float, default=4.0,
                         help='longest video seconds for one idle stretch; faster beyond (default 4, 0 = no limit)')

@@ -123,7 +123,8 @@ v1.0/                                     benchmark version, major.minor
           episode.parquet                 one row: score, game state, telemetry, final image
           timeline.parquet                one row per game minute: economy and telemetry so far
           final-overview.jpg              the settlement at the end, zoomed out
-          video.mp4                       the run, edited, 720p: actions at real speed, idle time fast
+          video.mp4                       the run, edited, 720p: actions at 2x (real speed before
+                                          2026-10-16), idle time fast
           run.json                        model, settings, harness version, budget, outcome
           inputs.json                     exactly what the model was given
           episode.json                    the scorecard
