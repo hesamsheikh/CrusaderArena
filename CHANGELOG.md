@@ -17,11 +17,11 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [1.8.0] - 2026-10-16
+## [1.7.2] - 2026-10-16
 
 Placements stay near where the model asked, and the stockpile keeps room to grow as
-`expand_storage` sees it. A minor version because `build_structure` moves, refuses and reports
-placements differently, which changes what models build where.
+`expand_storage` sees it. A patch: fixes to how the harness retries placements and keeps room
+for the stockpile, as 1.7.0 meant it to.
 
 ### Benchmark
 

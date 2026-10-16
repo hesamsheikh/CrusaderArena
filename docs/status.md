@@ -561,7 +561,7 @@ between September and October 2026.
 
 ## Tested in code only
 
-- The 1.8.0 changes, not yet tried in the live game:
+- The 1.7.2 changes, not yet tried in the live game:
   - The stockpile's last spot (`blocks_stockpile`) counted only where `expand_storage`
     could place one (`tile-map.test.ts`): a free spot people cannot walk to is no room, a
     building that touches the last spot and so closes it is refused while one beside it
