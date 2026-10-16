@@ -3,7 +3,7 @@
 [← Documentation](README.md)
 
 The agent is a language model with image input and tool calling, plus the system
-prompt and the 26 tools the harness gives it (29 in a learning series's episodes).
+prompt and the 27 tools the harness gives it (30 in a learning series's episodes).
 It runs on the
 [Pi](https://github.com/earendil-works/pi) agent runtime inside the host server
 (`harness/server/model.ts`). This page explains how it plays. [Context](context.md)

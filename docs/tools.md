@@ -2,7 +2,7 @@
 
 [← Documentation](README.md)
 
-These are the 26 tools the model can call during timed play (29 in a learning
+These are the 27 tools the model can call during timed play (30 in a learning
 series's episodes, with the three playbook tools below). During preparation it
 has none. All are defined in `harness/server/model.ts`. Tool calls run one at a time.
 
