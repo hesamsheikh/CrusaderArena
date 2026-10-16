@@ -85,7 +85,9 @@ for the stockpile, as 1.7.0 meant it to.
 - Run videos play the game at twice real speed around the model's clicks and keys, where
   they played it at real speed (`npm run video -- <run> --speed 1` renders one as before).
   Rendered both ways, GLM 5.3 Flash's 1.7.1 game on The Sinkhole went from 20:06 and 142 MB
-  to 12:08 and 100 MB. Runs already published keep their videos.
+  to 12:08 and 100 MB. Runs already published keep their videos. A run played on an earlier
+  round's version renders with this checkout's renderer too, so The Sinkhole's 1.7.1 games
+  get twice-speed videos as well: its own renderer made a stand-in trial's 4:00 at real speed.
 
 ## [1.7.1] - 2026-10-15
 

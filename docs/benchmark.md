@@ -140,18 +140,23 @@ moving a round changes no version.
 - **Same version.** A run whose round is the checkout's version plays here, as before.
 - **An earlier version.** `npm run episodes` plays the run from the round's commit: it
   makes a git worktree under `.versions/<version>-<commit>` (ignored by git) on first use,
-  links this checkout's `.env`, `harness/runtime/` and `.internal/` into it, gives it this
-  checkout's `benchmark-rounds.json` (the commit's own copy predates the round, so that
-  version's runner would hand the run on to the round before) and installs its
-  dependencies; copies that version's game-machine files over (above); starts that
-  version's host on the first free port after `--port` (its log in the worktree's `host.log`);
-  and runs that version's own runner with the same arguments. Runs, series and saves
+  links this checkout's `.env`, `harness/runtime/` and `.internal/` into it, copies two of
+  this checkout's files over the worktree's own (below) and installs its dependencies;
+  copies that version's game-machine files over (above); starts that version's host on the
+  first free port after `--port` (its log in the worktree's `host.log`); and runs that
+  version's own runner with the same arguments. Runs, series and saves
   land in this checkout's `harness/runtime/` as usual. This checkout's host stays up but
   does not list the run until it restarts; do not restart a host while the other one has
   a run going, since a starting host marks unfinished runs interrupted.
 - **What an earlier version gets from this checkout.** The round's code plays as its
-  version recorded it, with two additions that change how a run is carried, not what it
+  version recorded it, with these additions that change how a run is carried, not what it
   plays or scores:
+  - This checkout's `benchmark-rounds.json`. The round's runner decides from it where to
+    play, and the commit's own copy predates the round (a round is recorded in a later
+    commit), so that runner would hand the run on to the round before.
+  - This checkout's video renderer (`tools/video/`), so the round's runs render as this
+    checkout's do ([Run videos](harness.md#run-videos)). Neither is in the
+    fingerprint.
   - Its host starts with [`round-preload.ts`](../harness/server/round-preload.ts), which
     adds the [prompt cache key](context.md#tokens-and-caching) to its requests for models
     that need one. The key is part of the request, not of what the model reads.

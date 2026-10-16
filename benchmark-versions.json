@@ -258,6 +258,12 @@
       "fingerprint": "cde564c5d74a853d6e18fd6d17a4e1a7dc7aef22b0e49fd55d9573661b4187d2",
       "date": "2026-10-16",
       "note": "A round's runner gets this checkout's benchmark-rounds.json, so it plays the run instead of handing it on to the round before"
+    },
+    {
+      "version": "1.7.2",
+      "fingerprint": "f3839fafc9ef0414b499a94723fc3205bcc2afcace2720d0380ef1e30b78d983",
+      "date": "2026-10-16",
+      "note": "A round's worktree also gets this checkout's video renderer, so its runs render as this checkout's do"
     }
   ]
 }
