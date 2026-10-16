@@ -24,6 +24,7 @@ import { testModel, modelConfig } from "./model.js";
 import { renderVideo } from "./video.js";
 import { RunController } from "./controller.js";
 import { netWorth } from "./market-prices.js";
+import { armsCounted } from "./benchmark-rules.js";
 import { benchmarkStamp, codeVersion } from "./version.js";
 import { atlasHtml, atlasPages, type AtlasPageId } from "./visual-atlas.js";
 const root = path.resolve(
@@ -654,7 +655,7 @@ const tick = setInterval(() => {
           troops: stats.own_troops?.total,
           paused: stats.paused,
           popularity: stats.popularity,
-          net_worth: typeof stats.gold === "number" ? Math.round(netWorth(stats.gold, stats.resources_by_name ?? {}).netWorth) : undefined,
+          net_worth: typeof stats.gold === "number" ? Math.round(netWorth(stats.gold, stats.resources_by_name ?? {}, { arms: armsCounted(run?.benchmarkType) }).netWorth) : undefined,
         }
       : {},
   });

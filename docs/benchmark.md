@@ -34,13 +34,17 @@ game accepts, keep workers fed and housed, and grow.
 A run's **benchmark name** selects its rules: the host lowercases it, turns other
 characters into `-`, and loads `prompt/benchmarks/<name>.md` if it exists. "Oasis by
 the Sea construction" loads `oasis-by-the-sea-construction.md`. Without a rules file,
-the operator's instruction alone defines the task.
+the operator's instruction alone defines the task. A rules file can take its text from
+another's (`rules: <name>` in its front matter): each scored map's "(no arms)" benchmark
+does, with weapons and armour left out of net worth
+([Without weapons and armour](#without-weapons-and-armour)).
 
 | Benchmark | Save | Task | Scored |
 | --- | --- | --- | --- |
 | Oasis by the Sea construction | `Oasis by the Sea-1` | Grow the economy as far as possible | Yes: net worth |
 | Large Barren Desert construction | `Large Barren Desert benchmark start` | Grow the economy as far as possible, on a map with no farmland | Yes: net worth |
 | The Sinkhole construction | `The Sinkhole start` | Grow the economy as far as possible, for 45 game minutes | Yes: net worth |
+| Oasis by the Sea, Large Barren Desert and The Sinkhole construction (no arms) | The map's own | The same as the map's benchmark | Yes: net worth without weapons and armour |
 | Cactus Valley construction | `Cactus Valley-1` | Build a basic working settlement: granary, stockpile, wood, housing, food | No (diagnostic) |
 | Free build construction | `A Mightier Oasis-1` | Make visible construction progress | No (diagnostic) |
 
@@ -257,7 +261,27 @@ growth + 0.1 × population growth + 0.1 × popularity ÷ 100), each growth measu
 run's map from doing nothing (0) to the reference game (1). The harness's own reports
 rank runs by net worth, and the scorecard records population and popularity beside it.
 Buying at the marketplace lowers net worth (the buy price is higher than the sell price);
-selling leaves it unchanged.
+selling leaves it unchanged, except for weapons and armour where they count nothing in
+store (below).
+
+### Without weapons and armour
+
+Each scored map has a second benchmark, "<map> construction (no arms)" (since 1.7.3), whose
+rules file holds only front matter: `arms: false` and `rules:` the map's own rules file.
+It plays the same save with the same tools and the same rules, except that weapons and
+armour in store count nothing toward net worth: the rules leave out their prices and say
+so (the map's rules file marks the two texts with `<!-- arms -->` and `<!-- no-arms -->`
+blocks). A model can still build an armory and the weapon workshops, and weapons sold at
+a marketplace bring their gold, which counts: the rules say this too, and `market_trade`'s
+`netWorthChange` includes it. Until 1.5.6 no model built an armory, as the rules said
+weapons added nothing; from 1.6.0 most did. A map's two benchmarks compare the same
+models with and without weapons on one version. Being separate benchmarks, they have
+separate [rounds](#rounds).
+
+The scorecard and the results say `arms_counted: false` and value weapons and armour at
+0, and so do the dashboard, the run overlay, `npm run report` and the dataset's
+timeline. The do-nothing baselines hold no weapons; of the reference games only The
+Sinkhole's does, one sword (30), so they serve both benchmarks.
 
 ## Running episodes
 
@@ -430,7 +454,8 @@ attempt number. Runs started from the dashboard are never part of a series.
 `episode.json` holds:
 
 - `net_worth`, `goods_value`, and `net_worth_baseline` / `net_worth_growth` when a
-  baseline exists for the save and game minutes;
+  baseline exists for the save and game minutes; `arms_counted: false` when the
+  benchmark leaves weapons and armour out of net worth;
 - `gold`, `population`, `housing`, `popularity`, `total_food`, the nonzero goods,
   the map-wide structure count and own troops;
 - the map, date and game time;
@@ -460,7 +485,7 @@ the do-nothing baseline or a dry run ([`results.ts`](../harness/server/results.t
 | --- | --- |
 | The run | Its kind, who played (the model's name for an agent), map, save, benchmark and run, whether the reading is `final` or `last_observed`, and when the game was read |
 | `game` | The date in the game, the game clock in ticks, and the game seconds played and budgeted |
-| Net worth | `net_worth`, `gold`, `goods_value`, and `goods`: every good in store with its units and its value at the sell price |
+| Net worth | `net_worth`, `gold`, `goods_value`, and `goods`: every good in store with its units and its value at the sell price (0 for weapons and armour when `arms_counted` is `false`) |
 | People | `population`, `housing`, `idle_peasants` |
 | Popularity | `popularity`, `popularity_change` (the coming month's) and `popularity_factors` in the game's points, as `status` lists them |
 | Economy | `taxes` (level, name and gold a month), `food` (stored, rations, foods eaten and available, what rations and variety add to popularity), `worker_efficiency_percent` |
@@ -592,7 +617,10 @@ afterwards to see the costs in the dashboard, and package a published series aga
 ## Adding a benchmark
 
 Create `prompt/benchmarks/<name>.md`. Start it with front matter; `military: false`
-removes the troop, siege and fortification sections from the game reference:
+removes the troop, siege and fortification sections from the game reference, and
+`arms: false` leaves weapons and armour out of net worth and keeps the rules'
+`<!-- no-arms -->` blocks instead of their `<!-- arms -->` ones. `rules: <name>` takes
+the rules text from another benchmark's file, as the "(no arms)" benchmarks do:
 
 ```markdown
 ---

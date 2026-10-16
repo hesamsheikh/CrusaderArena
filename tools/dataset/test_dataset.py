@@ -632,6 +632,14 @@ class TimelineTest(unittest.TestCase):
         self.assertEqual(len(prices), 20)
         self.assertEqual((prices['wood_planks'], prices['stone'], prices['iron']), (1, 7, 23))
 
+    def test_weapons_count_nothing_when_the_benchmark_leaves_them_out(self):
+        prices = timeline.sell_prices()
+        self.assertEqual(timeline.arms_goods(), {'bows', 'crossbows', 'spears', 'pikes', 'maces', 'swords',
+                                                 'leather_armour', 'metal_armour'})
+        self.assertIs(timeline.scored_prices(prices, {'net_worth': 100}), prices)
+        scored = timeline.scored_prices(prices, {'arms_counted': False})
+        self.assertEqual((scored['swords'], scored['bows'], scored['iron']), (0, 0, 23))
+
 
 @unittest.skipUnless((package.ROOT / 'node_modules/.bin/tsx').exists(), 'needs npm install')
 class ReportContractTest(Fixture):

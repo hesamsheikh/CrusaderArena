@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { EMPTY_REPLY_LIMIT, GAME_SPEED, READING_ONLY_LIMIT, TICKS_PER_GAME_SECOND, type Run, type RunSeries, type Stats } from "../shared/protocol.js";
+import { benchmarkRules } from "./benchmark-rules.js";
 import { netWorth } from "./market-prices.js";
 import { observationStats } from "./status.js";
 import { atlasIndex, constructionAtlas, exampleSettlement } from "./visual-atlas.js";
@@ -14,18 +15,20 @@ export const gameMechanics = readFileSync(
 
 /**
  * Prompt Markdown as the agent sees it: HTML comments (maintainer notes) removed; when the
- * benchmark has no military play, the `<!-- military -->` … `<!-- /military -->` blocks too; and
+ * benchmark has no military play, the `<!-- military -->` … `<!-- /military -->` blocks too;
  * whichever of `<!-- when-needed -->` … `<!-- /when-needed -->` or `<!-- always -->` …
  * `<!-- /always -->` does not match the run's `fallbackObservation` setting (prompt/game-controls.md
- * uses these to describe the host's own fallback for the setting in force).
+ * uses these to describe the host's own fallback for the setting in force); and whichever of
+ * `<!-- arms -->` … `<!-- /arms -->` or `<!-- no-arms -->` … `<!-- /no-arms -->` does not match
+ * whether the benchmark counts weapons and armour (the maps' rules files, benchmark-rules.ts).
  */
 export function promptText(
   markdown: string,
-  { military = true, fallbackObservation = "when-needed" as "when-needed" | "always" } = {},
+  { military = true, fallbackObservation = "when-needed" as "when-needed" | "always", arms = true } = {},
 ) {
   let text = military ? markdown : markdown.replace(/<!-- military -->[\s\S]*?<!-- \/military -->\n?/g, "");
-  const other = fallbackObservation === "when-needed" ? "always" : "when-needed";
-  text = text.replace(new RegExp(`<!-- ${other} -->[\\s\\S]*?<!-- /${other} -->\\n?`, "g"), "");
+  for (const other of [fallbackObservation === "when-needed" ? "always" : "when-needed", arms ? "no-arms" : "arms"])
+    text = text.replace(new RegExp(`<!-- ${other} -->[\\s\\S]*?<!-- /${other} -->\\n?`, "g"), "");
   return text.replace(/<!--[\s\S]*?-->\n?/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -48,21 +51,10 @@ export function mechanicsPrompt(military = true) {
 }
 export const gameMechanicsPrompt = mechanicsPrompt();
 
-/** A benchmark's rules file (prompt/benchmarks/<slug>.md) with its front matter read. */
+/** A benchmark's rules as the agent reads them, with its front matter (benchmark-rules.ts). */
 export function benchmarkSpec(benchmarkType: string) {
-  const slug = benchmarkType
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!slug) return null;
-  const file = new URL(`../../prompt/benchmarks/${slug}.md`, import.meta.url);
-  if (!existsSync(file)) return null;
-  const source = readFileSync(file, "utf8");
-  const front = /^---\n([\s\S]*?)\n---\n/.exec(source);
-  return {
-    text: promptText(front ? source.slice(front[0].length) : source),
-    military: !/^military:\s*false\s*$/m.test(front?.[1] ?? ""),
-  };
+  const rules = benchmarkRules(benchmarkType);
+  return rules && { text: promptText(rules.body, { arms: rules.arms }), military: rules.military, arms: rules.arms };
 }
 
 export function benchmarkMarkdown(benchmarkType: string) {
@@ -175,10 +167,10 @@ export function playbookBriefing(series: RunSeries, text: string) {
 }
 
 /** The request after a learning episode: the final result, the playbook, and what to do with it. */
-export function reflectionInstruction(series: RunSeries, playbook: string, stats: Stats, military = true) {
+export function reflectionInstruction(series: RunSeries, playbook: string, stats: Stats, military = true, arms = true) {
   const o = stats.status === "ok" ? stats.observation : null;
   const result = o
-    ? `Final reading (the state the benchmark judges): net worth ${netWorth(o.gold, o.resources_by_name).netWorth}, that is gold plus every stored good at the marketplace sell price.\n${JSON.stringify(observationStats(stats, { military }))}`
+    ? `Final reading (the state the benchmark judges): net worth ${netWorth(o.gold, o.resources_by_name, { arms }).netWorth}, that is gold plus every stored good at the marketplace sell price${arms ? "" : ", but not weapons and armour"}.\n${JSON.stringify(observationStats(stats, { military }))}`
     : "The final reading is unavailable: the game was not readable when the episode ended.";
   const next = series.episode < series.episodes
     ? `Episode ${series.episode + 1} starts the same scenario from the beginning, and only your playbook carries over.`

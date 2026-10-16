@@ -89,8 +89,8 @@ function fakeMarket(
   } = {},
 ) {
   const game = { goods: { ...goods }, gold, panel: null as { id: number; type: number } | null, good: null as string | null };
-  const prices: Record<string, { buy: number; sell: number }> = { wood_planks: { buy: 4, sell: 1 }, apples: { buy: 8, sell: 4 } };
-  const buttons: Record<string, string> = { "1040,970": "wood_planks", "1085,975": "apples" };
+  const prices: Record<string, { buy: number; sell: number }> = { wood_planks: { buy: 4, sell: 1 }, apples: { buy: 8, sell: 4 }, swords: { buy: 58, sell: 30 } };
+  const buttons: Record<string, string> = { "1040,970": "wood_planks", "1085,975": "apples", "1300,975": "swords" };
   let trades = 0, polls = 0;
   const pending: { at: number; land: () => void }[] = [];
   const stats = () => {
@@ -166,6 +166,13 @@ test("market_trade sells in the game's steps and never more than asked", async (
   const rest = await marketTrade(low.ctx, "wood_planks", "sell", 5) as any;
   assert.deepEqual([rest.status, rest.units, low.game.goods.wood_planks], ["partly_traded", -12, 0]);
   assert.match(rest.note, /no more of this good/);
+});
+
+test("a weapon sale adds its gold to net worth only when the benchmark leaves weapons out", async () => {
+  const counted = await marketTrade(fakeMarket({ swords: 10 }, 0).ctx, "swords", "sell", 1) as any;
+  assert.deepEqual([counted.status, counted.goldChange, counted.netWorthChange], ["traded", 150, 0]);
+  const left = await marketTrade(fakeMarket({ swords: 10 }, 0).ctx, "swords", "sell", 1, { arms: false }) as any;
+  assert.deepEqual([left.status, left.goldChange, left.netWorthChange], ["traded", 150, 150]);
 });
 
 test("market_trade counts a click only when the reader shows that trade", async () => {

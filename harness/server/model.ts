@@ -170,6 +170,8 @@ export interface AgentRuntime {
   config: RunConfig;
   /** Whether the benchmark includes military play; troop counts appear in observations only then. */
   military?: boolean;
+  /** Whether weapons and armour count toward the benchmark's net worth (market_trade's net worth change). */
+  arms?: boolean;
   phase: (phase: string) => void;
   changed: () => void;
   beforeInference?: () => Promise<void>;
@@ -1747,7 +1749,7 @@ export function makeAgent(
         // A purchase is not a delivery: the good's rises are held from the ledger meanwhile.
         const release = runtime?.production?.hold([args.good]);
         try {
-          const result = await marketTrade(anchorContext(signal), args.good, args.action, args.lots ?? 1);
+          const result = await marketTrade(anchorContext(signal), args.good, args.action, args.lots ?? 1, { arms: runtime?.arms ?? true });
           return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
         } finally {
           release?.();

@@ -12,6 +12,7 @@ import path from "node:path";
 import { TICKS_PER_GAME_SECOND } from "../shared/protocol.js";
 import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
+import { armsCounted } from "./benchmark-rules.js";
 
 /** One line for overlay.py --feed: the fields its panel shows, as the current host's status updates carry them. */
 export type OverlayStatus = {
@@ -63,7 +64,7 @@ export class OverlayStatusReader {
             gold,
             population: int(obs.population),
             popularity: int(obs.popularity),
-            net_worth: gold === undefined ? undefined : Math.round(netWorth(gold, obs.resources_by_name ?? {}).netWorth),
+            net_worth: gold === undefined ? undefined : Math.round(netWorth(gold, obs.resources_by_name ?? {}, { arms: armsCounted(run?.benchmarkType) }).netWorth),
           }
         : {},
     };

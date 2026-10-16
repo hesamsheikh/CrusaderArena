@@ -8,7 +8,7 @@ import type { Stats } from "../shared/protocol.js";
 import { FACTOR_UNITS_PER_POINT, foodPopularity, popularityFactors } from "../shared/popularity.js";
 import { namedBuildings } from "./building-types.js";
 import { rationLevels, taxLevels } from "./economy.js";
-import { netWorth, sellPrice } from "./market-prices.js";
+import { netWorth, scoredPrice } from "./market-prices.js";
 import { minutesSeconds } from "./session.js";
 import { dateOf } from "./status.js";
 
@@ -33,6 +33,8 @@ export type Results = {
   game: { date: string | null; ticks: number | null; played_seconds: number | null; budget_seconds: number };
   /** Gold plus every stored good at the marketplace sell price (market-prices.ts). */
   net_worth: number;
+  /** Present when the benchmark leaves weapons and armour out of net worth (benchmark-rules.ts): they are listed in goods at value 0. */
+  arms_counted?: false;
   gold: number | null;
   goods_value: number;
   /** Every good in store, most valuable first. */
@@ -68,6 +70,8 @@ export type ResultsContext = {
   player: string;
   save: string;
   benchmark?: string;
+  /** Whether weapons and armour count toward net worth (by default they do). */
+  arms?: boolean;
   run?: { id: string; folder: string };
   source: "final" | "last_observed";
   /** The reading's capture time in ms, when the reader gave one. */
@@ -79,11 +83,12 @@ export type ResultsContext = {
 export function runResults(o: Observation, context: ResultsContext): Results {
   const s = o.settlement ?? null;
   const stored = o.resources_by_name ?? {};
-  const worth = netWorth(o.gold, stored);
+  const arms = context.arms ?? true;
+  const worth = netWorth(o.gold, stored, { arms });
   const goods = Object.fromEntries(
     Object.entries(stored)
       .filter(([, units]) => units > 0)
-      .map(([good, units]) => [good, { units, value: (sellPrice[good] ?? 0) * units }] as const)
+      .map(([good, units]) => [good, { units, value: scoredPrice(good, { arms }) * units }] as const)
       .sort(([a, x], [b, y]) => y.value - x.value || a.localeCompare(b)),
   );
   const level = number(o.tax_index);
@@ -106,6 +111,7 @@ export function runResults(o: Observation, context: ResultsContext): Results {
       budget_seconds: context.budgetSeconds,
     },
     net_worth: worth.netWorth,
+    ...(arms ? {} : { arms_counted: false as const }),
     gold: number(o.gold),
     goods_value: worth.goodsValue,
     goods,
@@ -166,7 +172,7 @@ export function resultsMarkdown(r: Results) {
     ["Date in the game", r.game.date ?? "unknown"],
     ["Net worth", amount(r.net_worth)],
     ["Gold", amount(r.gold)],
-    ["Stored goods, at the sell price", amount(r.goods_value)],
+    [r.arms_counted === false ? "Stored goods, at the sell price (weapons and armour not counted)" : "Stored goods, at the sell price", amount(r.goods_value)],
     ["Population", amount(r.population)],
     ["Housing", amount(r.housing)],
     ["Idle peasants", amount(r.idle_peasants)],

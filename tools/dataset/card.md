@@ -50,11 +50,12 @@ its exact version and settings (`dataset_version`, `save`, `game_minutes_budget`
 - **Task.** In each scenario the model starts a Free Build game from a fixed save and grows the
   economy. Soldiers and defences are not allowed. *Oasis by the Sea construction* plays the map
   Oasis by the Sea; *Large Barren Desert construction* (from version 1.5.2) plays Large Barren
-  Desert, which has no farmland and starts with 5,000 gold.
+  Desert, which has no farmland and starts with 5,000 gold. A benchmark named "... (no arms)"
+  (from version 1.7.3) plays its map with weapons and armour left out of net worth.
 - **Score: net worth** when the run ends: gold plus every stored good at the game's marketplace
-  sell price. Buildings count only through what they produce. The model is told the settlement
-  is judged on its net worth, population and popularity, without weights; the score published
-  here is net worth.
+  sell price (weapons and armour at 0 in the "(no arms)" benchmarks). Buildings count only
+  through what they produce. The model is told the settlement is judged on its net worth,
+  population and popularity, without weights; the score published here is net worth.
 - **Time.** Each episode gets a fixed amount of game time at a fixed game speed of 40, counted
   in game ticks. The game is paused while the model thinks, so a slow model loses no game time;
   a real-time limit of 6 hours only stops runs that have gone badly wrong.

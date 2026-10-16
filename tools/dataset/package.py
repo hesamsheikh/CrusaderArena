@@ -565,7 +565,7 @@ def package(group: Group, *, out: Path, scrubber: Scrubber, git: Git,
             staged / 'events.jsonl',
             number(budget.get('gameSeconds')) or (number((run.get('config') or {}).get('gameMinutes')) or 0) * 60 or None,
             number(budget.get('usedGameSeconds')),
-            prices,
+            timeline.scored_prices(prices, episode),
             {k: row[k] for k in ('dataset_version', 'benchmark', 'model_id', 'series_id', 'run_id', 'episode')},
             episode,
         ) if (staged / 'events.jsonl').is_file() else []

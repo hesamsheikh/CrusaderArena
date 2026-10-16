@@ -17,6 +17,32 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [1.7.3] - 2026-10-16
+
+Each scored map gains a second benchmark that leaves weapons and armour out of net worth, so a
+map's models can be compared with and without them on one version. A patch: the maps' own
+benchmarks play exactly as in 1.7.2.
+
+### Benchmark
+
+- New benchmarks "Oasis by the Sea construction (no arms)", "Large Barren Desert construction
+  (no arms)" and "The Sinkhole construction (no arms)". Each plays its map's save, tools and
+  rules, except that weapons and armour in store count nothing toward net worth: the rules
+  leave out their prices and say that they count nothing in the armory and that sold at a
+  marketplace they bring their gold, which counts. Until 1.5.6 the rules said weapons added
+  nothing and no model built an armory; from 1.6.0, which offered the Armory and
+  `set_workshop`, most did: 8 of 10 games on Oasis by the Sea at 1.6.3 ended with weapons in
+  an armory, about 6% of their net worth (17% on Large Barren Desert), so a map's earlier and
+  later games differ in this as well as in the harness.
+- A rules file's front matter can say `arms: false`, and can take its text from another
+  benchmark's file (`rules: <name>`); the maps' rules mark the two texts with `<!-- arms -->`
+  and `<!-- no-arms -->` blocks. With weapons counted, the three maps' rules read byte for byte
+  as in 1.7.2.
+- With weapons left out, the scorecard and results say `arms_counted: false` and list weapons
+  and armour at 0, `market_trade`'s `netWorthChange` adds the gold of a weapon sale, and the
+  dashboard, run overlay, interview, `npm run report` and the dataset's timeline score the same
+  way.
+
 ## [1.7.2] - 2026-10-16
 
 Placements stay near where the model asked, and the stockpile keeps room to grow as

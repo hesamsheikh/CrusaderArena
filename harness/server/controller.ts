@@ -227,6 +227,7 @@ export class RunController {
       memory: this.memory,
       config: run.config,
       military: benchmarkSpec(run.benchmarkType || "")?.military ?? true,
+      arms: benchmarkSpec(run.benchmarkType || "")?.arms ?? true,
       phase: (phase) => {
         this.progress.phase = phase;
         this.publish();
@@ -1198,7 +1199,7 @@ export class RunController {
     const system = this.agent.state.systemPrompt;
     const instruction: AgentMessage = {
       role: "user",
-      content: reflectionInstruction(series, playbook.text, this.device.currentStats(), this.runtime.military),
+      content: reflectionInstruction(series, playbook.text, this.device.currentStats(), this.runtime.military, this.runtime.arms),
       timestamp: Date.now(),
     };
     const request = async (messages: AgentMessage[], tools: AgentTool<any>[]) => {

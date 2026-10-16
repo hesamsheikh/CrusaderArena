@@ -2,7 +2,7 @@ import type { Frame } from "../shared/protocol.js";
 import type { GameHotkey } from "./device.js";
 import { ackTime, dismiss, sampleAfter, type AnchorContext } from "./anchors.js";
 import { SAMPLE_POLL_SECONDS, type Observation } from "./placement.js";
-import { buyPrice, sellPrice } from "./market-prices.js";
+import { buyPrice, scoredPrice, sellPrice } from "./market-prices.js";
 import { inventoryGroups } from "./inventory.js";
 import { points } from "../shared/popularity.js";
 import { storageOf } from "./status.js";
@@ -216,7 +216,7 @@ function roomFor(o: Observation | null, good: string, units: number) {
  * game's own steps (unitsPerClick), and never more than asked. A click counts once the reader shows
  * that trade (tradeShown), so a delivery or a tax payment at the same moment is not taken for one.
  */
-export async function marketTrade(ctx: AnchorContext, good: string, action: "buy" | "sell", lots: number) {
+export async function marketTrade(ctx: AnchorContext, good: string, action: "buy" | "sell", lots: number, { arms: armsScored = true } = {}) {
   const button = goodsButtons[good];
   if (!button) return { status: "failed" as const, note: `Unknown good ${good}.`, remedy: `Use one of: ${tradeGoods.join(", ")}.` };
   const stock = (o: Observation | null) => ((o?.resources_by_name as Record<string, number> | undefined)?.[good] ?? null);
@@ -297,8 +297,9 @@ export async function marketTrade(ctx: AnchorContext, good: string, action: "buy
     ...(traded < wanted ? { asked: wanted } : {}),
     goldChange,
     // Stored goods count at the sell price, so a sale leaves net worth unchanged and a
-    // purchase lowers it by the buy/sell difference.
-    netWorthChange: goldChange + units * (sellPrice[good] ?? 0),
+    // purchase lowers it by the buy/sell difference; weapons and armour a benchmark leaves out
+    // count nothing in store, so their sale adds its gold.
+    netWorthChange: goldChange + units * scoredPrice(good, { arms: armsScored }),
     stock: last.stock, gold: last.gold,
     unitPrice: { buy: buyPrice[good], sell: sellPrice[good] },
     ...stopped,

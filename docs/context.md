@@ -37,7 +37,10 @@ When building it, the host:
 - replaces the building cost tables with a pointer to `building_info`, which returns
   one building's details on demand;
 - drops the military sections when the benchmark file says `military: false`, which
-  roughly halves the game reference.
+  roughly halves the game reference;
+- keeps the benchmark rules' `<!-- arms -->` blocks, or their `<!-- no-arms -->` blocks
+  when the benchmark leaves weapons and armour out of net worth (`arms: false`;
+  [Without weapons and armour](benchmark.md#without-weapons-and-armour)).
 
 The prompt is **identical, byte for byte, for the whole run**. Things that change
 (the game clock, the plan, the notebook) travel in observations and tool results

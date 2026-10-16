@@ -17,6 +17,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { netWorth } from "./market-prices.js";
+import { armsCounted } from "./benchmark-rules.js";
 import { idleBaseline } from "./baselines.js";
 import { settingsLabel, type RunSeries } from "../shared/protocol.js";
 
@@ -400,6 +401,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
 
   // Scorecard: episode.json when it carries a reading, else the last valid observation in the events.
   const observed = events?.lastObservation;
+  const arms = armsCounted(typeof run?.benchmarkType === "string" ? run.benchmarkType : typeof episode?.benchmark === "string" ? episode.benchmark : null);
   const useEpisode = num(episode?.population) !== null;
   const card: RunRow["scorecard"] = useEpisode
     ? {
@@ -409,7 +411,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
         housing: num(episode!.housing),
         popularity: num(episode!.popularity),
         gold: num(episode!.gold),
-        netWorth: num(episode!.net_worth) ?? (num(episode!.gold) !== null ? netWorth(num(episode!.gold), episode!.goods as Record<string, number>).netWorth : null),
+        netWorth: num(episode!.net_worth) ?? (num(episode!.gold) !== null ? netWorth(num(episode!.gold), episode!.goods as Record<string, number>, { arms }).netWorth : null),
         netWorthGrowth: null,
         netWorthBaseline: null,
         totalFood: num(episode!.total_food),
@@ -423,7 +425,7 @@ export async function summarizeRun(dir: string): Promise<RunRow> {
         housing: num(observed?.settlement?.housing_cap),
         popularity: num(observed?.popularity),
         gold: num(observed?.gold),
-        netWorth: num(observed?.gold) !== null ? netWorth(num(observed?.gold), observed?.resources_by_name).netWorth : null,
+        netWorth: num(observed?.gold) !== null ? netWorth(num(observed?.gold), observed?.resources_by_name, { arms }).netWorth : null,
         netWorthGrowth: null,
         netWorthBaseline: null,
         totalFood: num(observed?.settlement?.total_food),

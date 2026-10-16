@@ -58,6 +58,20 @@ test("the results record the whole state at the end: worth, goods, people, popul
   assert.equal(r.reading.map_name, "Oasis by the Sea");
 });
 
+test("a benchmark that leaves weapons and armour out lists them at no value and says so", () => {
+  const o = oasis();
+  o.resources_by_name = { ...o.resources_by_name, swords: 10, bows: 4 };
+  const counted = runResults(o, context);
+  assert.equal(counted.net_worth, 19513 + 300 + 60);
+  assert.equal(counted.arms_counted, undefined);
+  const left = runResults(o, { ...context, arms: false });
+  assert.equal(left.net_worth, 19513);
+  assert.equal(left.goods_value, 1209);
+  assert.equal(left.arms_counted, false);
+  assert.deepEqual(left.goods.swords, { units: 10, value: 0 });
+  assert.match(resultsMarkdown(left), /\| Stored goods, at the sell price \(weapons and armour not counted\) \| 1,209 \|/);
+});
+
 test("what the reader did not give stays null, never zero", () => {
   const bare = { ...oasis(), settlement: null, storage: null, buildings: undefined, tax_index: undefined };
   const r = runResults(bare, { ...context, playedSeconds: undefined });

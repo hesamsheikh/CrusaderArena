@@ -1,5 +1,5 @@
 {
-  "current": "1.7.2",
+  "current": "1.7.3",
   "history": [
     {
       "version": "1.0.0",
@@ -264,6 +264,12 @@
       "fingerprint": "f3839fafc9ef0414b499a94723fc3205bcc2afcace2720d0380ef1e30b78d983",
       "date": "2026-10-16",
       "note": "A round's worktree also gets this checkout's video renderer, so its runs render as this checkout's do"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "903c3c00f84ac54a3767caafc84db8407a9af555f5b18577bc980dc398b6b7a3",
+      "date": "2026-10-16",
+      "note": "Each scored map gains a \"(no arms)\" benchmark that plays its rules with weapons and armour left out of net worth (arms: false); the maps' own benchmarks are unchanged"
     }
   ]
 }

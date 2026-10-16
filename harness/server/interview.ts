@@ -73,6 +73,8 @@ export type InterviewCard = {
   valid?: boolean;
   invalid?: string[];
   net_worth?: number | null;
+  /** False when the benchmark leaves weapons and armour out of net worth. */
+  arms_counted?: boolean;
   net_worth_baseline?: number;
   gold?: number | null;
   goods_value?: number | null;
@@ -105,7 +107,7 @@ export function resultText(card: InterviewCard, reference: ReferenceGame, ended?
     row("Game time played", typeof played === "number" ? minutesSeconds(played) : "unknown", minutesSeconds(reference.gameSeconds)),
     row("Net worth", amount(card.net_worth), amount(reference.netWorth)),
     row("Gold", amount(card.gold), amount(reference.gold)),
-    row("Stored goods, at the sell price", amount(card.goods_value), amount(reference.goodsValue)),
+    row(card.arms_counted === false ? "Stored goods, at the sell price (weapons and armour not counted)" : "Stored goods, at the sell price", amount(card.goods_value), amount(reference.goodsValue)),
     row("Population", amount(card.population), amount(reference.population)),
     row("Housing", amount(card.housing), amount(reference.housing)),
     row("Popularity", amount(card.popularity), amount(reference.popularity)),

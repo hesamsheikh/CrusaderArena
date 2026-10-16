@@ -1,3 +1,5 @@
+import { inventoryGroups } from "./inventory.js";
+
 // Marketplace prices per SINGLE unit of each good, keyed by the harness goods names
 // (the names in inventory.ts / resources_by_name).
 //
@@ -63,11 +65,22 @@ export const buyPrice: Record<string, number> = {
   metal_armour: 58,
 };
 
+const armsGoods = new Set<string>(inventoryGroups.armory);
+
+/**
+ * What one stored unit adds to net worth: its sell price, or nothing for weapons and armour when
+ * the benchmark leaves them out (`arms: false` in its rules, benchmark-rules.ts).
+ */
+export function scoredPrice(good: string, { arms = true } = {}) {
+  return !arms && armsGoods.has(good) ? 0 : sellPrice[good] ?? 0;
+}
+
 /**
  * Net worth: gold plus every stored good at the marketplace sell price, i.e. the gold a
- * player would hold after selling everything. The benchmark's economy score.
+ * player would hold after selling everything. The benchmark's economy score. With `arms: false`
+ * weapons and armour in store count nothing (once sold, their gold counts).
  */
-export function netWorth(gold: number | null | undefined, goods: Record<string, number> | null | undefined) {
-  const goodsValue = Object.entries(goods ?? {}).reduce((sum, [name, n]) => sum + (sellPrice[name] ?? 0) * (n || 0), 0);
+export function netWorth(gold: number | null | undefined, goods: Record<string, number> | null | undefined, { arms = true } = {}) {
+  const goodsValue = Object.entries(goods ?? {}).reduce((sum, [name, n]) => sum + scoredPrice(name, { arms }) * (n || 0), 0);
   return { netWorth: (gold ?? 0) + goodsValue, goodsValue };
 }

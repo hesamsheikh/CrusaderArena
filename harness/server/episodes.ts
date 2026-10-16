@@ -47,6 +47,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { gameHost, quote } from "./device.js";
 import { netWorth } from "./market-prices.js";
+import { armsCounted } from "./benchmark-rules.js";
 import { idleBaseline } from "./baselines.js";
 import { resultsMarkdown, runResults, type RunKind } from "./results.js";
 import { renderInBackground } from "./video.js";
@@ -419,7 +420,9 @@ function scorecard(state: State, run?: Run, source: "final" | "last_observed" = 
   const o = state.stats?.observation;
   const s = o?.settlement;
   const goods = o?.resources_by_name ?? {};
-  const worth = netWorth(o?.gold, goods);
+  // Agent episodes score by their benchmark's rules (benchmark-rules.ts); other games count everything.
+  const arms = armsCounted(run?.benchmarkType);
+  const worth = netWorth(o?.gold, goods, { arms });
   const invalid = run ? invalidity(run, source) : [];
   return {
     // "last_observed": the game was gone at the end (e.g. a memory-guard stop), so these are the
@@ -432,6 +435,7 @@ function scorecard(state: State, run?: Run, source: "final" | "last_observed" = 
     game_time: o?.game_time,
     // Economy score: gold plus stored goods at the marketplace sell price (market-prices.ts).
     net_worth: worth.netWorth,
+    ...(arms ? {} : { arms_counted: false }),
     goods_value: worth.goodsValue,
     // Growth: what the run added beyond leaving the game alone for the same budget (baselines.ts).
     ...(baseline !== undefined ? { net_worth_baseline: baseline, net_worth_growth: worth.netWorth - baseline } : {}),
@@ -633,7 +637,7 @@ async function playEpisode(
         kind,
         player: run ? run.model.name : humanGame ? "A person" : "Nobody",
         save: plan.save,
-        ...(run ? { benchmark: plan.benchmark, run: { id: run.id, folder: run.folder } } : {}),
+        ...(run ? { benchmark: plan.benchmark, arms: armsCounted(run.benchmarkType), run: { id: run.id, folder: run.folder } } : {}),
         source,
         readAt: reading.stats?.captured_unix_ms,
         playedSeconds: run ? run.progress?.budget?.usedGameSeconds : humanGame ? humanGame.playedSeconds : idleGame ? idleGame.playedSeconds : 0,

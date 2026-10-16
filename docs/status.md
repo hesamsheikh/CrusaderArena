@@ -561,6 +561,13 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The 1.7.3 "(no arms)" benchmarks, not yet played: each map's no-arms rules read its
+  map's rules with the weapon prices left out and the no-arms sentences in, the three
+  maps' own rules come out byte for byte as before, and `arms_counted` follows the rules
+  file (`benchmark-rules.test.ts`); results list weapons at 0 and say so
+  (`results.test.ts`); a weapon sale's `netWorthChange` adds its gold only when weapons
+  are left out (`economy.test.ts`); the dataset timeline values them at 0
+  (`tools/dataset/test_dataset.py`).
 - The 1.7.2 changes, not yet tried in the live game:
   - The stockpile's last spot (`blocks_stockpile`) counted only where `expand_storage`
     could place one (`tile-map.test.ts`): a free spot people cannot walk to is no room, a

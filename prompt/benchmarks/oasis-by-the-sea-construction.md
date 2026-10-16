@@ -9,9 +9,10 @@ as far as you can within the game-time budget.
 **Score.** The settlement is judged as you leave it when the run ends. Net worth counts
 most; population and popularity count too, for less. Net worth is gold plus every stored
 good valued at the marketplace sell price per unit (wood 1, stone 7, iron 23, pitch 10;
-wheat and hops 8; bread, cheese, meat and apples 4; ale 10, flour 10; in the armory,
+wheat and hops 8; bread, cheese, meat and apples 4; ale 10, flour 10<!-- arms -->; in the armory,
 bows 15, crossbows 30, spears 10, pikes 18, maces 30, swords 30, leather armour 12 and
-metal armour 30); the starting
+metal armour 30<!-- /arms -->)<!-- no-arms -->, except weapons and armour, which count
+nothing in the armory<!-- /no-arms -->; the starting
 package is worth about 1,425. Buildings count only through what they bring.
 
 **A race.** Every model plays this save for the same game time, and runs are compared on
@@ -42,8 +43,14 @@ Choose, combine and adjust these as the game develops:
 
 - **Raw materials:** quarries (with ox tethers beside them) and iron mines produce stone and iron,
   which are worth 7 and 23 each and can be built with or sold.
+<!-- arms -->
 - **Weapons and armour:** what the weapon workshops make is kept in an armory and is
   stored value.
+<!-- /arms -->
+<!-- no-arms -->
+- **Weapons and armour:** what the weapon workshops make is kept in an armory, where it
+  counts nothing; sold at a marketplace, it brings its gold.
+<!-- /no-arms -->
 - **Food surplus:** food beyond what the population eats is stored value.
 - **Taxes:** taxes start at "no taxes" (`set_tax` changes them). Food variety, ale from
   an inn and religion raise popularity; high popularity lets you tax for steady gold
@@ -55,7 +62,7 @@ Choose, combine and adjust these as the game develops:
 including at the start: 5 wood costs 20 gold. Bought goods count toward net worth at the
 sell price, which is lower than the buy price, so buying lowers net worth by the
 difference. Selling turns goods into the same value in gold, so it leaves net worth
-unchanged. Net worth rises through taxes, produced goods and turning goods into goods
+unchanged<!-- no-arms --> (weapons and armour, which count nothing in store, add their gold)<!-- /no-arms -->. Net worth rises through taxes, produced goods and turning goods into goods
 worth more than their inputs; it falls through buying, construction costs and bribes.
 Early on, gold can also buy materials such as wood to put up more buildings sooner and
 start the economy faster. That is one option among others: it pays off only if those

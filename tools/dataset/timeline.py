@@ -38,6 +38,23 @@ def sell_prices(root: Path = ROOT) -> dict[str, int]:
     return {name: int(price) for name, price in re.findall(r'(\w+):\s*(\d+)', block.group(1))}
 
 
+def arms_goods(root: Path = ROOT) -> set[str]:
+    """Weapons and armour: the armory's goods in harness/server/inventory.ts."""
+    text = (root / 'harness/server/inventory.ts').read_text(encoding='utf-8')
+    block = re.search(r'armory:\s*\[([^\]]*)\]', text)
+    if not block:
+        raise ValueError('armory goods not found in inventory.ts')
+    return set(re.findall(r'"(\w+)"', block.group(1)))
+
+
+def scored_prices(prices: dict[str, int], scorecard: dict | None, root: Path = ROOT) -> dict[str, int]:
+    """The prices an episode's net worth counts: weapons and armour at 0 when its benchmark leaves
+    them out (episode.json's arms_counted is false)."""
+    if (scorecard or {}).get('arms_counted') is not False:
+        return prices
+    return {**prices, **{good: 0 for good in arms_goods(root)}}
+
+
 def _num(value):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
