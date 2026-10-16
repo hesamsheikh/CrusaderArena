@@ -79,10 +79,13 @@ const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
  * stream the provider broke off ("JSON error injected into SSE stream" from OpenRouter ended a GLM
  * episode, 2026-10-08; "Stream ended before a terminal response event" a GPT-6 Luna one at 9 min
  * 46 s of its 10, 2026-10-15; "Network connection lost." a GLM one at 34 min of its 45, the same
- * day), or a reply that stopped sending (stallGuard's "Stream stalled").
+ * day), or a reply that stopped sending (stallGuard's "Stream stalled"). A server error can come
+ * inside the stream with no status code: OpenAI's "An error occurred while processing your request.
+ * You can retry your request, …" ended a GPT-6.1 Sol episode at about 40 game minutes of its 45
+ * (2026-10-15), and it was played again from the start.
  */
 export function isTransientProviderError(message?: string) {
-  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before|network connection lost|stream stalled/i.test(message ?? "");
+  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before|network connection lost|stream stalled|error occurred while processing|retry your request|server.?error|internal.?error/i.test(message ?? "");
 }
 
 /** What the controller uses of FastWaits (game-speed.ts). */

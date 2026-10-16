@@ -145,7 +145,9 @@ turn. The dashboard shows both to the operator live.
 
 ## When things go wrong
 
-- **Provider errors.** Timeouts, rate limits, overloads, server errors, empty replies,
+- **Provider errors.** Timeouts, rate limits, overloads, server errors (also one sent
+  inside the stream with no status code, as OpenAI's "An error occurred while processing
+  your request. You can retry your request…"), empty replies,
   streams the provider broke off (an error injected into the stream, the stream ending
   before its last event, or the connection lost) and replies that send nothing for 2
   minutes are retried up to 5 times, waiting 2, 4, 8, 16 and

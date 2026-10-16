@@ -623,6 +623,48 @@ test("a spot refused during the call does not count as room taken beside the sto
   assert.deepEqual(placed.access("Hovel", { x: 108, y: 108 }), { ok: true });
 });
 
+test("a building beside the last room is refused only when it leaves no spot expand_storage could use", () => {
+  // A house against the room's down-right side leaves the room usable: it needs no open side.
+  assert.ok(lastRoom().access("Hovel", { x: 112, y: 102 }).ok);
+  // A bakery there (110..113 × 100..103), with water on its other three sides, would keep its only
+  // open side in the room, and a stockpile there would close it: it takes the room without covering it.
+  const walled = new TileMap({
+    ...region((set) => {
+      stockpile(set, 100, 100, 1);
+      fill(set, "organism", 90, 90, 99, 115, 1);
+      fill(set, "organism", 90, 90, 115, 99, 1);
+      fill(set, "organism", 90, 105, 104, 115, 1);
+      set("organism", 105, 99, 1);
+      set("organism", 105, 105, 1);
+      fill(set, "logic", 110, 99, 113, 99, 0x100000);
+      fill(set, "logic", 110, 104, 113, 104, 0x100000);
+      fill(set, "logic", 114, 100, 114, 103, 0x100000);
+    }),
+    structure_types: piles(1),
+  }, camera, frame);
+  assert.equal(walled.access("Bakery", { x: 112, y: 102 }).reason, "blocks_stockpile");
+});
+
+test("a spot beside the stockpile that people cannot walk to is no room for it", () => {
+  // Water all round but for the room down-right, in a way east to the region's edge (105..128 ×
+  // 99..105) that also runs below the stockpile (100..128 × 105..106), and a pocket up-left
+  // (95..99 × 100..104) that water and the stockpile close in. expand_storage would never place
+  // a stockpile in the pocket, so the room down-right is the last.
+  const map = new TileMap({
+    ...region((set) => {
+      fill(set, "logic", 85, 85, 115, 115, 0x100000);
+      fill(set, "logic", 105, 99, 128, 105, 0x8000);
+      fill(set, "logic", 100, 105, 128, 106, 0x8000);
+      fill(set, "logic", 95, 100, 99, 104, 0x8000);
+      stockpile(set, 100, 100, 1);
+    }),
+    structure_types: piles(1),
+  }, camera, frame);
+  const offered = map.storageSitesNear("Stockpile", { x: 97, y: 102 }, 3);
+  assert.ok(offered.length > 0 && offered.every((s) => s.tile.x > 104), "the pocket is not offered");
+  assert.equal(map.access("Hovel", { x: 108, y: 102 }).reason, "blocks_stockpile");
+});
+
 test("another stockpile is retried only flush with the stockpile, keeping open ground first", () => {
   // A stockpile at 100..104 with a house against its down-right side (105..108 × 100..103).
   const map = new TileMap({
@@ -781,15 +823,15 @@ test("no spot the harness picks takes the last room beside a stockpile for anoth
   assert.equal(lastSide().access("Hovel", { x: 108, y: 104 }).reason, "blocks_stockpile");
   assert.ok(lastSide().access("Hovel", { x: 115, y: 104 }).ok, "beyond the room it fits");
   assert.ok(lastSide().access("Stockpile", { x: 107, y: 102 }).ok, "a stockpile itself may take it");
-  assert.ok(lastSide().access("Hovel", { x: 108, y: 104 }, [], false).ok, "only spots chosen with spacing keep it");
+  assert.equal(lastSide().access("Hovel", { x: 108, y: 104 }, [], false).reason, "blocks_stockpile", "spots chosen without spacing keep it too");
   assert.equal(lastSide().sitesNear("Hovel", { x: 108, y: 104 }, 1, 0).length, 0, "find_sites does not offer it");
   // With room down-left as well, one side may be built on, until the other is taken in the same call.
   const twoSides = new TileMap({ ...region(blocked(false)), structure_types: piles(1) }, camera, frame);
   assert.ok(twoSides.access("Hovel", { x: 108, y: 104 }).ok);
   twoSides.claim("Hovel", { x: 104, y: 107 }, 0, true);
   assert.equal(twoSides.access("Hovel", { x: 108, y: 104 }).reason, "blocks_stockpile");
-  // A stockpile at the edge of the read region (which ends at x = 128) may have room beyond it:
-  // its one spot in view, up-left, is not held for it.
+  // A stockpile at the edge of the read region (which ends at x = 128) may have room beyond it,
+  // but only what the region shows counts: its one spot in view, up-left, is held for it.
   const edge = new TileMap({
     ...region((set) => {
       stockpile(set, 122, 100, 1);
@@ -798,5 +840,5 @@ test("no spot the harness picks takes the last room beside a stockpile for anoth
     }),
     structure_types: piles(1),
   }, camera, frame);
-  assert.ok(edge.access("Hovel", { x: 119, y: 102 }).ok);
+  assert.equal(edge.access("Hovel", { x: 119, y: 102 }).reason, "blocks_stockpile");
 });

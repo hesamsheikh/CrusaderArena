@@ -1,5 +1,5 @@
 {
-  "current": "1.7.1",
+  "current": "1.8.0",
   "history": [
     {
       "version": "1.0.0",
@@ -246,6 +246,12 @@
       "fingerprint": "63921aad76e55103755ad8aaae57a69d1c3f5800dc991a8c6f3047d3c68ea79e",
       "date": "2026-10-15",
       "note": "A model reply that sends nothing for 2 minutes fails as stalled, and stalled replies and lost connections are retried like other provider errors; what the model plays is unchanged"
+    },
+    {
+      "version": "1.8.0",
+      "fingerprint": "c8a6e4c67190e1c5cbb19e58239eded1e3f5310cf9066dc1a77d4188acb339b8",
+      "date": "2026-10-16",
+      "note": "build_structure retries stay within reach of the target and say where they went; the stockpile's last spot is kept as expand_storage sees it; in-stream server errors are retried; a Steam launch left behind is ended before a launch"
     }
   ]
 }

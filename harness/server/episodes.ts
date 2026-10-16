@@ -495,7 +495,9 @@ async function prepareEpisode(n: number, plan: Plan) {
       if (!opts.restart) throw new Error("A game is already running; close it or pass --restart.");
       await gameSession("close", 60);
     }
-    await gameSession("launch", 180);
+    const launched = await gameSession("launch", 180);
+    if (launched.cleared_launch)
+      log(`Ended a Steam launch of the game left running without it (${launched.cleared_launch} processes); Steam ignores new launches while one runs`);
     const launchedAt = Date.now();
     await gameSession("activate");
     await waitFor("the dashboard connection", 90, async () => {

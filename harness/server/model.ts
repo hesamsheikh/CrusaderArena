@@ -35,6 +35,21 @@ import {
 // Nearby spots tried after a silently blocked placement: at most one ring per
 // target, and a per-call cap so a batch of blocked targets stays a few seconds.
 const RETRIES_PER_PLACEMENT = 6;
+/**
+ * How far, in tiles, a blocked placement may be moved to another spot: its footprint's side plus
+ * one, and 4 at least, so the building still touches or nearly touches where it was asked. The
+ * search had reached 12 tiles for every building: in The Sinkhole's 1.7.1 round 22 of 58 moved
+ * placements went 6 to 11 tiles (a 4-tile workshop 10 tiles off), and models read them as silent
+ * moves. Past this the placement is not made and its result names the nearest spot that fits.
+ */
+export const retryReach = (building: string) => Math.max(4, footprintOf(building) + 1);
+/** How far the nearest spot that fits is looked for when none is within retryReach. */
+const NEAREST_FIT_REACH = 12;
+/** A retried placement in words: how far from the target it went, and to which tile. */
+export function movedNote(offsetTiles: [number, number], tile: { x: number; y: number }) {
+  const d = Math.max(Math.abs(offsetTiles[0]), Math.abs(offsetTiles[1]));
+  return `The target was blocked, so it was placed ${d} tile${d === 1 ? "" : "s"} away, at tile (${tile.x}, ${tile.y}).`;
+}
 /** Placements one build_structure call takes; GLM 5.3 Flash asked twice for more than 4 (2026-10-14, 15). */
 const PLACEMENTS_PER_CALL = 8;
 /**
@@ -1372,6 +1387,8 @@ export function makeAgent(
             let retrySkipped: string | undefined;
             let tileDebug: Record<string, unknown> | undefined;
             let missing: Record<string, number> | undefined;
+            let nearestFit: { tile: { x: number; y: number }; offsetTiles: [number, number] } | undefined;
+            let nearestAvoid: { x1: number; y1: number; x2: number; y2: number }[] = [];
             // A farm refused for its ground ("must be placed on an oasis", "not fertile enough") or a
             // quarry/iron mine/pitch rig refused for its resource ("Iron mine must be built on Iron
             // ore.") keeps the building selected like a silent block, so both retry at another spot.
@@ -1415,6 +1432,7 @@ export function makeAgent(
                 }
                 for (const p of placedAt)
                   avoid.push({ ...footprintRect(p.tile ?? map.tileAt(p), p.size), needsOpenSide: needsOpenSide(p.name), building: p.name });
+                nearestAvoid = avoid;
                 // Each spot the game refused (the target first) is claimed, with a margin after "Too
                 // close to …", and the nearest remaining fit is computed afresh. A target moved for
                 // access was never clicked: the map refuses it by itself, and claiming it would count
@@ -1425,7 +1443,7 @@ export function makeAgent(
                 const storage = isStorageKind(plan.name) && map.storageRects(plan.name).length > 0 ? plan.name as StorageKind : null;
                 next = () => {
                   if (retrySkipped) return undefined;
-                  const site = storage ? map.storageSitesNear(storage, origin, 1, avoid)[0] : map.sitesNear(plan.name, origin, 1, 12, avoid)[0];
+                  const site = storage ? map.storageSitesNear(storage, origin, 1, avoid)[0] : map.sitesNear(plan.name, origin, 1, retryReach(plan.name), avoid)[0];
                   return site && {
                     x: site.x, y: site.y, tile: site.tile, offsetTiles: [site.tile.x - origin.x, site.tile.y - origin.y],
                     ...(site.oasisShare !== undefined ? { oasisShare: site.oasisShare } : {}),
@@ -1464,6 +1482,12 @@ export function makeAgent(
                 if (!retryable(result)) break;
                 if (candidate.tile) tileMap?.claim(plan.name, candidate.tile, tooClose(result) ? TOO_CLOSE_MARGIN : 0);
               }
+              // Nothing placed within reach: the nearest spot past it, for the model to choose.
+              if (retryable(result) && retryMethod === "tile_map" && tileMap && !retrySkipped && !retryStopped && !isStorageKind(plan.name)) {
+                const origin = tileOrigin ?? tileMap.tileAt(target);
+                const site = tileMap.sitesNear(plan.name, origin, 1, NEAREST_FIT_REACH, nearestAvoid)[0];
+                if (site) nearestFit = { tile: site.tile, offsetTiles: [site.tile.x - origin.x, site.tile.y - origin.y] };
+              }
               if (retryStopped === "camera_moved") { observed = null; observedClearedBy = "build_structure"; }
             }
             const { outcome, feedback, visible } = result;
@@ -1488,6 +1512,9 @@ export function makeAgent(
               ...(outcome.evidence ? { evidence: outcome.evidence } : {}),
               // Where the reported status happened when a retry moved off the requested target.
               ...(at && outcome.status !== "not_placed" ? { at: { x: at.x, y: at.y }, offsetTiles: at.offsetTiles } : {}),
+              // Said in words: models read a retry's offsetTiles alone as a silent move (Kimi K3, 1.7.1).
+              ...(at && outcome.status === "placed" && placedTile ? { moved: movedNote(at.offsetTiles, placedTile) } : {}),
+              ...(nearestFit && outcome.status === "not_placed" ? { nearestFit, reach: retryReach(plan.name) } : {}),
               // The map tile placed or tried, whether it came from the request or a retry.
               ...(placedTile ? { tile: placedTile } : {}),
               ...(viewMoved ? { view: viewMoved } : {}),

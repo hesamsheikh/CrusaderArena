@@ -258,7 +258,14 @@ selling leaves it unchanged.
 episodes are independent games of the same save; `--playbook` makes them a
 [learning series](#learning-series). For each episode it:
 
-1. Starts the game through Steam on the game machine and connects to it.
+1. Starts the game through Steam on the game machine and connects to it
+   (`tools/ubuntu/game-session.py launch`). Steam runs the game under its launcher
+   (`reaper SteamLaunch AppId=3024040`, with Proton and its processes below it) and ignores
+   a new launch while that runs: one left behind without the game for a minute or more is
+   ended first, and the runner logs it. Closing the game ends its launcher too if it is
+   still there 10 seconds after the game exits. After the host's computer slept on
+   2026-10-15 the game had exited but its launcher had not, and every launch after it
+   found no game window until the launcher was ended by hand.
 2. Waits for the main menu, opens Load Game, searches for the save by name and loads it
    (up to 3 attempts), then confirms the map with the reader. While it waits it clicks
    the screen centre once a second, which skips the intro videos and the promo splash

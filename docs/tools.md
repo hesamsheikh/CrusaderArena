@@ -138,7 +138,15 @@ host's own hotkeys do: only the window's identity and size are taken from it, so
 **Retries.** A `not_placed` target is retried at nearby spots: up to 6 per building and
 24 per call. With the tile map, the host picks the nearest spots where the building
 fits (a farm on oasis grass, a quarry, iron mine or pitch rig on its ground, anything
-else off every other building's ground); otherwise
+else off every other building's ground), within its footprint's side plus one tile of
+the target and at least 4 (`reach`): 5 tiles for a hovel or workshop, 11 for a dairy
+farm. A placement retried elsewhere says so in `moved` ("The target was blocked, so it
+was placed 5 tiles away, at tile (…)"), beside `tile` and `offsetTiles`. When nothing
+fits within reach it is not made, and `nearestFit` names the nearest spot that does
+(within 12 tiles), which its remedy offers as a tile target. The search had reached 12
+tiles for every building: in The Sinkhole's 1.7.1 round 22 of 58 moved placements went 6
+to 11 tiles from their target, and a model read them as silent moves. Storage flush with
+its kind is retried wherever its kind leaves room, as before. Without the tile map
 it steps a short distance along each axis. The spots are projected from the camera the
 placement's own click came from: the screenshot's for a pixel target, the live one for
 a tile target (with a tile map read for that view). Retries stop when that camera
@@ -185,12 +193,20 @@ a gap of one tile. Any flush stockpile touches the pile at each end of its side,
 the walkway between a stockpile's piles is one tile wide.
 
 **Room for the stockpile to grow.** The same spots and targets keep one spot free beside
-the stockpile where another stockpile fits, as `expand_storage` looks for them: a
-footprint that would cover the last such spot is moved like a blocked one and reports
-`access: blocks_stockpile` (with `exact`, placed as asked with the warning). Spots taken
-earlier in the call do not count as room, a stockpile with no room left sets no limit,
-and neither does one whose surroundings the tile map has not read in full. Boxed-in
-stockpiles were one of the runs' commonest dead ends (runs of 2026-10-12 and 13).
+the stockpile where `expand_storage` could place another stockpile: flush with it, on
+free ground that people can walk to, and closing no neighbour's last open side. A
+footprint that would take the last such spot, by covering it or by touching it so that
+it no longer qualifies, is moved like a blocked one and reports `access: blocks_stockpile`
+(with `exact`, placed as asked with the warning). This holds for every building but a
+stockpile, granaries and armories placed flush with their kind among them. Spots taken
+earlier in the call do not count as room, and a stockpile with no room left sets no
+limit. Only spots inside the tile map read count, so a view that shows part of the
+stockpile's surroundings keeps the last spots it shows. Boxed-in stockpiles were one of
+the runs' commonest dead ends (runs of 2026-10-12 and 13). The first version of this rule
+counted every free footprint as room, held only for spots chosen with spacing and only
+for stockpiles whose surroundings the tile map had read in full; it never moved a
+placement in The Sinkhole's 1.7.1 round, where four of nine stockpiles still ran out of
+room.
 
 **Routes to the keep.** An open side is only a row of tiles; the ground beyond it can
 still be walled off by other buildings, water or cliffs, and then no worker reaches the

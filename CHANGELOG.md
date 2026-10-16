@@ -17,10 +17,47 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
-## [Unreleased]
+## [1.8.0] - 2026-10-16
+
+Placements stay near where the model asked, and the stockpile keeps room to grow as
+`expand_storage` sees it. A minor version because `build_structure` moves, refuses and reports
+placements differently, which changes what models build where.
+
+### Benchmark
+
+- A blocked `build_structure` target is retried only within its footprint's side plus one tile
+  of the target, and 4 at least (`reach`: 5 tiles for a hovel or workshop, 11 for a dairy farm),
+  where the search had reached 12 tiles for every building. A placement retried elsewhere says
+  so in words (`moved`: "The target was blocked, so it was placed 5 tiles away, at tile (…)"),
+  and one with nothing in reach is not made: `nearestFit` names the nearest spot that fits, and
+  its remedy offers it as a tile target. In The Sinkhole's 1.7.1 round 22 of 58 moved
+  placements went 6 to 11 tiles from their target, Kimi K3's poleturner's, blacksmith's and
+  armourer's workshops among them, and Kimi took the moves for silent ones although each
+  result gave the new tile and offset.
+- The spot kept beside the stockpile for another one (`blocks_stockpile`) is one
+  `expand_storage` could use: flush with it, on free ground people can walk to, closing no
+  neighbour's last open side. A building that would take it by touching it, not only by
+  covering it, is moved; the rule now holds for granaries and armories placed flush with their
+  kind as well, and for a stockpile only partly inside the tile map read, whose last spots in
+  view are kept. The 1.7.0 rule counted every free footprint as room and held only for spots
+  chosen with spacing and for stockpiles read in full: it never moved a placement in The
+  Sinkhole's 1.7.1 round, and four of its nine stockpiles still ran out of room (GLM 5.3
+  Flash's, Claude Sonnet 5.5's, GPT-6.1 Sol's and Claude Opus 5.5's), Opus's with iron still
+  coming in. Not yet tried in the live game.
 
 ### Harness
 
+- A server error sent inside the reply's stream with no status code is retried like the other
+  provider errors, with the game paused: OpenAI's "An error occurred while processing your
+  request. You can retry your request, …" ended GPT-6.1 Sol's game on The Sinkhole at about 40
+  of its 45 game minutes on 2026-10-15, and the episode was played again from the start (about
+  50 real minutes and $0.90).
+- Before launching the game, `tools/ubuntu/game-session.py` ends a Steam launch of it that is
+  still running without the game a minute or more after it started, and closing the game ends
+  one still there 10 seconds after the game exits; the episode runner logs it. Steam ignores a
+  new launch while one runs: after the host's computer slept on 2026-10-15, the game had exited
+  but its launch had not, and the next three launches found no game window. `status` reports
+  such a launch.
 - On OpenRouter, every request after a run's first asks first for the provider that served
   its last one, the profile's other providers behind it in their order, so a run that falls
   back stays with the provider that answered and keeps its prompt cache. Since the afternoon

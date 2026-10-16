@@ -482,7 +482,7 @@ export class TileMap {
     const rect = footprintRect(centre, footprintOf(building));
     if (needsOpenSide(building) && !this.openSides(rect, planned)) return { ok: false, reason: "no_open_side" };
     if (spaced && this.touchesStorage(building, rect, planned)) return { ok: false, reason: "touches_storage" };
-    if (spaced && building !== "Stockpile" && this.blocksStockpile(rect, planned)) return { ok: false, reason: "blocks_stockpile" };
+    if (building !== "Stockpile" && this.blocksStockpile(rect, planned, building)) return { ok: false, reason: "blocks_stockpile" };
     const ring = { x1: rect.x1 - 1, y1: rect.y1 - 1, x2: rect.x2 + 1, y2: rect.y2 + 1 };
     for (const n of [...this.existing(), ...this.claimed, ...planned]) {
       if (!n.needsOpenSide || !overlaps(n, ring) || overlaps(n, rect)) continue;
@@ -492,54 +492,72 @@ export class TileMap {
     return cut ? { ok: false, reason: cut } : { ok: true };
   }
   /**
-   * Whether a footprint would cover the last spot beside a stockpile where another stockpile still
-   * fits: one of the run's commonest dead ends was a stockpile boxed in by other buildings, after
-   * which expand_storage found no room and goods stopped coming in (runs of 2026-10-12 and 13).
-   * Buildings placed during this call, or `planned`, take room; spots only refused during it do
-   * not (a refused target that covered the last spot would otherwise turn the guard off). A
-   * stockpile with no room left already, or whose surroundings lie partly outside the read region,
-   * sets no limit.
+   * Whether `building` at `rect` would take the last spots beside a stockpile where another
+   * stockpile still fits: one of the run's commonest dead ends was a stockpile boxed in by other
+   * buildings, after which expand_storage found no room and goods stopped coming in (runs of
+   * 2026-10-12 and 13, and four of nine games on The Sinkhole on 1.7.1). A spot is taken when a
+   * building covers it, or touches it and leaves it no longer one expand_storage could use (it
+   * would close the building's last open side, or the way to it). It holds for every building but
+   * a stockpile, granaries and armories placed flush with their kind among them. Buildings placed
+   * during this call, or `planned`, take room; spots only refused during it do not (a refused
+   * target that covered the last spot would otherwise turn the guard off). A stockpile with no room
+   * left already sets no limit.
    */
-  blocksStockpile(rect: Rect, planned: readonly Footprint[] = []) {
+  blocksStockpile(rect: Rect, planned: readonly Footprint[] = [], building?: string) {
     const taken = [...this.claimed.filter((c) => c.building), ...planned];
+    const added: Footprint = { ...rect, ...(building ? { needsOpenSide: needsOpenSide(building), needsRoute: needsRoute(building), building } : {}) };
+    const a = Math.floor(footprintOf("Stockpile") / 2);
+    const near = (r: Rect, s: Rect) => overlaps(r, { x1: s.x1 - 1, y1: s.y1 - 1, x2: s.x2 + 1, y2: s.y2 + 1 });
+    // Whether spot `s` is still one for a stockpile beside `by`, with `closed` placed.
+    const usable = (s: Rect, by: readonly Footprint[], closed: readonly Footprint[]) =>
+      !by.some((t) => overlaps(t, s)) &&
+      (!by.some((t) => near(t, s)) || this.access("Stockpile", { x: s.x1 + a, y: s.y1 + a }, closed, false).ok);
     return this.stockpileSpots().some((spots) => {
-      const room = spots.filter((s) => !taken.some((t) => overlaps(t, s)));
-      return room.length > 0 && room.every((s) => overlaps(s, rect));
+      const room = spots.filter((s) => usable(s, taken, planned));
+      return room.length > 0 && !room.some((s) => usable(s, [added], [...planned, added]));
     });
   }
   /**
-   * For each stockpile cluster wholly read with the ground around it, the footprints flush beside
-   * its squares where another stockpile fits (as expand_storage looks for them), on the map as
-   * read: what this call places takes room in blocksStockpile.
+   * For each stockpile cluster, the footprints flush beside its squares where expand_storage could
+   * place another stockpile: free ground (fits) that people can walk to and that closes no
+   * neighbour's last open side (access, as expand_storage's last resort checks it), on the map as
+   * read: what this call places takes room in blocksStockpile. The guard had counted every free
+   * footprint, and so let buildings take spots expand_storage would have used while it kept others
+   * it never could. Only spots inside the read region count, so a view that shows part of a
+   * stockpile's surroundings keeps its last spots there open.
    */
   private stockpileSpots() {
     if (this.stockpileRoom) return this.stockpileRoom;
     const size = footprintOf("Stockpile"), a = Math.floor(size / 2);
-    const { x0, y0, w, h } = this.region;
     const squares = this.storageRects("Stockpile");
     const seen = new Set<Rect>();
+    // Spots claimed during this call, refused ones among them, close no way here.
+    const claimed = this.claimed;
+    this.claimed = [];
     this.stockpileRoom = [];
-    for (const square of squares) {
-      if (seen.has(square)) continue;
-      const cluster = this.cluster(square, squares);
-      for (const r of cluster) seen.add(r);
-      const x1 = Math.min(...cluster.map((r) => r.x1)) - size, y1 = Math.min(...cluster.map((r) => r.y1)) - size;
-      const x2 = Math.max(...cluster.map((r) => r.x2)) + size, y2 = Math.max(...cluster.map((r) => r.y2)) + size;
-      if (x1 < x0 || y1 < y0 || x2 >= x0 + w || y2 >= y0 + h) continue;
-      const spots: Rect[] = [];
-      for (const r of cluster)
-        for (const side of ["down-right", "down-left", "up-right", "up-left"]) {
-          const along = side === "down-right" || side === "up-left" ? "x" : "y";
-          const fixed = side === "down-right" ? r.x2 + 1 + a : side === "down-left" ? r.y2 + 1 + a
-            : side === "up-left" ? r.x1 - 1 - (size - 1 - a) : r.y1 - 1 - (size - 1 - a);
-          const [lo, hi] = along === "x" ? [r.y1, r.y2] : [r.x1, r.x2];
-          for (let other = lo - (size - 1 - a); other <= hi + a; other++) {
-            const t = along === "x" ? { x: fixed, y: other } : { x: other, y: fixed };
-            const spot = footprintRect(t, size);
-            if (!spots.some((s) => s.x1 === spot.x1 && s.y1 === spot.y1) && this.fits("Stockpile", t, true, []).ok) spots.push(spot);
+    try {
+      for (const square of squares) {
+        if (seen.has(square)) continue;
+        const cluster = this.cluster(square, squares);
+        for (const r of cluster) seen.add(r);
+        const spots: Rect[] = [];
+        for (const r of cluster)
+          for (const side of ["down-right", "down-left", "up-right", "up-left"]) {
+            const along = side === "down-right" || side === "up-left" ? "x" : "y";
+            const fixed = side === "down-right" ? r.x2 + 1 + a : side === "down-left" ? r.y2 + 1 + a
+              : side === "up-left" ? r.x1 - 1 - (size - 1 - a) : r.y1 - 1 - (size - 1 - a);
+            const [lo, hi] = along === "x" ? [r.y1, r.y2] : [r.x1, r.x2];
+            for (let other = lo - (size - 1 - a); other <= hi + a; other++) {
+              const t = along === "x" ? { x: fixed, y: other } : { x: other, y: fixed };
+              const spot = footprintRect(t, size);
+              if (spots.some((s) => s.x1 === spot.x1 && s.y1 === spot.y1)) continue;
+              if (this.fits("Stockpile", t, true, []).ok && this.access("Stockpile", t, [], false).ok) spots.push(spot);
+            }
           }
-        }
-      this.stockpileRoom.push(spots);
+        this.stockpileRoom.push(spots);
+      }
+    } finally {
+      this.claimed = claimed;
     }
     return this.stockpileRoom;
   }

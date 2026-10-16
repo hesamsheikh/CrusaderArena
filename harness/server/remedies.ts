@@ -93,6 +93,11 @@ export function placementRemedy(result: Record<string, unknown>) {
       const missing = result.missing as Record<string, number> | undefined;
       if (missing) return missingRemedy(building, missing);
       if (result.retrySkipped === "no_reader_camera") return "The reader had no camera for nearby retries: observe, then place it again.";
+      const nearest = result.nearestFit as { tile: { x: number; y: number }; offsetTiles: [number, number] } | undefined;
+      if (nearest) {
+        const d = Math.max(Math.abs(nearest.offsetTiles[0]), Math.abs(nearest.offsetTiles[1]));
+        return `Nothing fits within ${result.reach} tiles of that spot. The nearest spot where it fits is tile (${nearest.tile.x}, ${nearest.tile.y}), ${d} tiles away: place it there by tile_x/tile_y if that suits, or find_sites (building "${building}") lists others.`;
+      }
       return `Nothing fits at or near that spot: find_sites (building "${building}") lists spots where it fits in this view, or go_to_tile moves to open ground (map_overview).`;
     }
     default:

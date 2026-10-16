@@ -1000,6 +1000,27 @@ test("build_structure moves a silently blocked target to the nearest spot the ti
   assert.equal(p.retries, 1, "the first computed spot is free");
   assert.ok(disjoint(footprintRect(view.tileAt(p.at), 4), trees));
   assert.equal(game.tileReads(), 1);
+  assert.equal(p.moved, `The target was blocked, so it was placed 5 tiles away, at tile (${p.tile.x}, ${p.tile.y}).`);
+});
+
+test("a blocked target is moved only within reach of it; past that it names the nearest spot that fits", async () => {
+  // Trees over 95..105 leave a hovel (4×4, reach 5) no free spot within 5 tiles of tile 100.
+  // The search had reached 12 tiles: a 4-tile workshop went 10 tiles off (Kimi K3, 1.7.1).
+  const view = tileView();
+  const target = view.pixel({ x: 100, y: 100 });
+  const trees = { x1: 95, y1: 95, x2: 105, y2: 105 };
+  const game = simulatedGame({
+    tiles: (set) => { for (let x = trees.x1; x <= trees.x2; x++) for (let y = trees.y1; y <= trees.y2; y++) set("organism", x, y, 1); },
+    blocked: (x, y) => x === target.x && y === target.y,
+  });
+  const p = (await game.build([{ name: "Hovel", ...target }])).placements[0];
+  assert.equal(p.status, "not_placed", JSON.stringify(p));
+  assert.equal(p.reach, 5);
+  const away = Math.max(Math.abs(p.nearestFit.offsetTiles[0]), Math.abs(p.nearestFit.offsetTiles[1]));
+  assert.ok(away > 5, JSON.stringify(p.nearestFit));
+  assert.ok(disjoint(footprintRect(p.nearestFit.tile, 4), trees));
+  assert.equal(p.remedy, `Nothing fits within 5 tiles of that spot. The nearest spot where it fits is tile (${p.nearestFit.tile.x}, ${p.nearestFit.tile.y}), ${away} tiles away: place it there by tile_x/tile_y if that suits, or find_sites (building "Hovel") lists others.`);
+  assert.equal(p.retries, undefined, "no spot past reach is tried");
 });
 
 test("a farm refused for its ground is retried on oasis grass from the tile map", async () => {
@@ -1913,14 +1934,14 @@ test("find_sites groups spots by the ground under them, so the agent decides whi
 test("a blocked hovel is retried off oasis grass, which the harness keeps for farms", async () => {
   const target = tileView().pixel({ x: 100, y: 100 });
   const game = simulatedGame({
-    // Oasis grass everywhere except a plain strip from x 106 on.
-    tiles: (set) => { for (let x = 80; x <= 105; x++) for (let y = 80; y <= 120; y++) set("logic2", x, y, -128); },
+    // Oasis grass everywhere except plain ground from x 103 on, within a hovel's reach of 5 tiles.
+    tiles: (set) => { for (let x = 80; x <= 102; x++) for (let y = 80; y <= 120; y++) set("logic2", x, y, -128); },
     blocked: (x, y) => x === target.x && y === target.y,
   });
   const { json } = await game.run("build_structure", { placements: [{ name: "Hovel", tile_x: 100, tile_y: 100 }] });
   const p = json.placements[0];
   assert.equal(p.status, "placed", JSON.stringify(p));
-  assert.ok(footprintRect(p.tile, 4).x1 >= 106, `retried onto ${JSON.stringify(p.tile)}`);
+  assert.ok(footprintRect(p.tile, 4).x1 >= 103, `retried onto ${JSON.stringify(p.tile)}`);
 });
 
 test("demolish_building selects the demolish tool, clicks a tile's building and checks the count fell", async () => {

@@ -561,6 +561,21 @@ between September and October 2026.
 
 ## Tested in code only
 
+- The 1.8.0 changes, not yet tried in the live game:
+  - The stockpile's last spot (`blocks_stockpile`) counted only where `expand_storage`
+    could place one (`tile-map.test.ts`): a free spot people cannot walk to is no room, a
+    building that touches the last spot and so closes it is refused while one beside it
+    that leaves it usable is not, and the rule holds for storage placed flush with its kind
+    and for a stockpile partly outside the area read. Not known: whether this would have
+    kept room in the four 1.7.1 games on The Sinkhole that ran out (their tile maps were
+    not logged; their end saves are in the run folders).
+  - `build_structure` retries within `reach` of the target, `moved` in words, and
+    `nearestFit` with its remedy past reach (`model-observation.test.ts`).
+  - In-stream server errors without a status code retried (`controller.test.ts`, with
+    GPT-6.1 Sol's message of 2026-10-15).
+  - `game-session.py` ending a Steam launch left behind without the game before a launch,
+    leaving one that is still starting, and ending one left after closing
+    (`tools/ubuntu/test_game_session.py`, on the process table of 2026-10-15).
 - The 1.7.0 changes (`game-speed.test.ts`, `session.test.ts`, `controller.test.ts`,
   `device-lifecycle.test.ts`, `protocol.test.ts`, `anchors.test.ts`, `tile-map.test.ts`,
   `model-observation.test.ts`, `game-save.test.ts`, `video.test.ts`, `warnings.test.ts`,
