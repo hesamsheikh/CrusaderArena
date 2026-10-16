@@ -56,6 +56,12 @@
     { "id": "20261015T185216-6a2a0659", "model": "claude-opus-5-5", "map": "The Sinkhole" },
     { "id": "20261015T195630-5d6c7dc4", "model": "meta/muse-wonder", "map": "The Sinkhole" },
     { "id": "20261015T204651-fca746fe", "model": "google/gemini-4-argon", "map": "The Sinkhole" },
-    { "id": "20261015T215019-394d6bce", "model": "z-ai/glm-5.3-flash", "map": "The Sinkhole" }
+    { "id": "20261015T215019-394d6bce", "model": "z-ai/glm-5.3-flash", "map": "The Sinkhole" },
+    { "id": "20261016T110959-db76eefd", "model": "claude-fable-5-1", "map": "The Sinkhole" },
+    { "id": "20261016T133433-0bba1ea0", "model": "claude-fable-5-1", "map": "Oasis by the Sea" },
+    { "id": "20261016T141734-c9d76aca", "model": "claude-fable-5-1", "map": "Large Barren Desert" },
+    { "id": "20261016T151706-833a56ad", "model": "claude-fable-5-1", "map": "Oasis by the Sea" },
+    { "id": "20261016T160206-0bdb051d", "model": "claude-fable-5-1", "map": "Large Barren Desert" },
+    { "id": "20261016T164759-e6519477", "model": "claude-fable-5-1", "map": "The Sinkhole" }
   ]
 }
