@@ -270,6 +270,12 @@
       "fingerprint": "903c3c00f84ac54a3767caafc84db8407a9af555f5b18577bc980dc398b6b7a3",
       "date": "2026-10-16",
       "note": "Each scored map gains a \"(no arms)\" benchmark that plays its rules with weapons and armour left out of net worth (arms: false); the maps' own benchmarks are unchanged"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "b7621690f14ba4c53bfe828735c9d80a078e9ec852f96e8625fa8121d8b650a0",
+      "date": "2026-10-17",
+      "note": "The text-only handoff retry after a compaction reply that called a tool is sized by the smaller of a byte recount and the anchored estimate; it only lets a run continue that used to end with an error"
     }
   ]
 }

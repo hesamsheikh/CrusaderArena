@@ -1119,6 +1119,30 @@ test("the handoff request repeats the gameplay request; a tool call instead of a
   assert.equal(images(retry.messages), 0);
   assert.match(JSON.stringify(retry.messages.at(-1)), /about to be compacted/);
 });
+test("the text-only handoff retry is sized like the trigger, not by a byte recount above what the provider measured", async () => {
+  // GPT-6.1 Sol, 2026-10-17: OpenAI measured 75,563 tokens, the 65% trigger compacted, the handoff
+  // reply called a tool, and the text-only retry was refused on a byte recount of 165,773.
+  const f = fixture(14);
+  await f.controller.prepare();
+  f.setHandoffReply((call) => call === 1 ? { text: "", stopReason: "toolUse" } : {
+    text: "Verified prior progress. Continue the exact preserved plan and notebook. No uncertain action should be replayed.",
+  });
+  // A provider that measures well under the byte recount, as OpenAI did for Sol's text.
+  f.controller.agent.streamFunction = (_m, ctx) => {
+    f.advance(100);
+    const stream = createAssistantMessageEventStream();
+    const m = message([{ type: "text", text: "Evidence ".repeat(5750) }, call("observe", {})]);
+    m.usage = { ...usage, input: Math.ceil(contextEstimate(ctx.messages, ctx.systemPrompt || "") * 0.45) };
+    stream.push({ type: "done", reason: m.stopReason as "stop" | "toolUse", message: m });
+    return stream;
+  };
+  assert.equal(await f.controller.runSession(), "completed", JSON.stringify(f.logMessages));
+  assert.ok(f.controller.memory.compactions >= 1);
+  const [, retry] = f.handoffs;
+  assert.deepEqual(retry.tools, []);
+  // A byte recount of the retry is over the compaction limit; it went out all the same.
+  assert.ok(contextEstimate(retry.messages, retry.system) > 120000 - 4096, `recount=${contextEstimate(retry.messages, retry.system)}`);
+});
 test("failed handoff preserves old transcript and stops without replay", async () => {
   const f = fixture(4);
   f.controller.memory.installHandoff = () => {

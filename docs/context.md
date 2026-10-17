@@ -236,7 +236,11 @@ writes for its future self.
   decisions, failures, uncertainties and next steps (40 bytes to 12 KB). Only that
   message is new, so the provider's prompt cache covers the rest. If the model calls
   a tool instead of answering, writes too little, or the request would not fit the
-  budget, the host asks once more with the conversation as text only and no tools.
+  budget, the host asks once more with the conversation as text only and no tools. It
+  sizes that request by the smaller of a byte recount and the anchored estimate: the
+  recount runs high for text that packs more bytes per token (it once read GPT-6.1 Sol's
+  conversation at more than twice what the provider measured), the anchored estimate for
+  the screenshots the request leaves out.
 - **New conversation.** The pinned preparation message and reply; one message with
   the current plan, the notebook, the playbook's revision (in a learning series) and
   the handoff; the last model reply with its tool

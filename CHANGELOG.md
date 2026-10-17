@@ -17,6 +17,17 @@ there are any, and move into the next version's section when it is recorded. The
 `vMAJOR.MINOR.PATCH` marks the commit each version was released at. A test checks that
 this file lists every version in `benchmark-versions.json`, with its date.
 
+## [Unreleased]
+
+### Harness
+
+- When a compaction's handoff reply calls a tool instead of writing the handoff, the text-only
+  retry is sized by the smaller of a byte recount and the anchored, provider-measured estimate the
+  compaction trigger reads. It was sized on the byte recount alone, which read GPT-6.1 Sol's
+  conversation at 165,773 tokens where OpenAI measured 75,563, refused the retry as over the
+  115,904 limit and ended Sol's no-arms game on Oasis by the Sea (2026-10-17) with an error. Only
+  a run that used to end there plays on; 1.7.3 relocked.
+
 ## [1.7.3] - 2026-10-16
 
 Each scored map gains a second benchmark that leaves weapons and armour out of net worth, so a

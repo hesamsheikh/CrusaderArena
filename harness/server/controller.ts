@@ -348,7 +348,15 @@ export class RunController {
       // without tools or images, which leaves the model only text to write.
       if (!result || result.stopReason === "toolUse" || result.text.trim().length < 40) {
         const plain = [...pruneImages(this.agent.state.messages, 0), instruction];
-        const estimate = contextEstimate(plain, system);
+        // Two estimates that each run high in their own way decide together, the smaller winning: a
+        // byte recount, for text that packs more bytes per token than it assumes (it read GPT-6.1
+        // Sol's conversation at 165,773 tokens where OpenAI measured 75,563 and ended the run,
+        // 2026-10-17), and the anchored one the trigger reads, which never subtracts the screenshots
+        // this request leaves out.
+        const estimate = Math.min(
+          contextEstimate(plain, system),
+          this.contextBudget.estimate(plain, system, [], this.runtime.config.imageTokenEstimate),
+        );
         if (estimate > limit)
           throw new Error(
             `Context cannot fit a safe compaction request (${estimate} > ${limit}); preserving previous checkpoint.`,
