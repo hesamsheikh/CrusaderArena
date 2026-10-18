@@ -2,16 +2,28 @@
   "about": "The round of each benchmark: every agent run on it plays on this version, from this commit, so the models on one map stay comparable. A map's first valid run sets its round; npm run episodes -- --new-round moves it to the checkout's version once that run is valid. See docs/benchmark.md#rounds.",
   "rounds": {
     "Large Barren Desert construction": {
-      "version": "1.6.3",
-      "fingerprint": "96c4682877ca393cfbdbe24694ecef8c225e721cf0a11a8a580a1675caf13a95",
-      "commit": "1d0c69798a543c84becba0cfbaec0f818e4e923b",
-      "since": "2026-10-14"
+      "version": "1.7.3",
+      "fingerprint": "903c3c00f84ac54a3767caafc84db8407a9af555f5b18577bc980dc398b6b7a3",
+      "commit": "b967c65ca7c094e7d15aaf95fc209d424d6b9496",
+      "since": "2026-10-17"
+    },
+    "Large Barren Desert construction (no arms)": {
+      "version": "1.7.3",
+      "fingerprint": "903c3c00f84ac54a3767caafc84db8407a9af555f5b18577bc980dc398b6b7a3",
+      "commit": "b967c65ca7c094e7d15aaf95fc209d424d6b9496",
+      "since": "2026-10-17"
     },
     "Oasis by the Sea construction": {
-      "version": "1.6.3",
-      "fingerprint": "96c4682877ca393cfbdbe24694ecef8c225e721cf0a11a8a580a1675caf13a95",
-      "commit": "1d0c69798a543c84becba0cfbaec0f818e4e923b",
-      "since": "2026-10-13"
+      "version": "1.7.3",
+      "fingerprint": "903c3c00f84ac54a3767caafc84db8407a9af555f5b18577bc980dc398b6b7a3",
+      "commit": "b967c65ca7c094e7d15aaf95fc209d424d6b9496",
+      "since": "2026-10-16"
+    },
+    "Oasis by the Sea construction (no arms)": {
+      "version": "1.7.3",
+      "fingerprint": "903c3c00f84ac54a3767caafc84db8407a9af555f5b18577bc980dc398b6b7a3",
+      "commit": "b967c65ca7c094e7d15aaf95fc209d424d6b9496",
+      "since": "2026-10-16"
     },
     "The Sinkhole construction": {
       "version": "1.7.1",
