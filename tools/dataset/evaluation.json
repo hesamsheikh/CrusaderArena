@@ -10,6 +10,7 @@
     { "id": "20261017T115845-938f969a", "model": "openai/gpt-6.1-sol", "map": "Oasis by the Sea" },
     { "id": "20261017T132016-ab6eb16c", "model": "google/gemini-4-argon", "map": "Oasis by the Sea" },
     { "id": "20261018T104237-1ff2ab88", "model": "meta/muse-wonder", "map": "Oasis by the Sea" },
+    { "id": "20261019T162119-91d84684", "model": "deepseek/deepseek-v4.1-flash-1017", "map": "Oasis by the Sea" },
     { "id": "20261016T185252-0fd727bc", "model": "claude-haiku-5-5", "map": "Oasis by the Sea" },
     { "id": "20261016T194728-2f79fee8", "model": "claude-sonnet-5-5", "map": "Oasis by the Sea" },
     { "id": "20261016T204131-27075351", "model": "claude-opus-5-5", "map": "Oasis by the Sea" },
@@ -19,6 +20,7 @@
     { "id": "20261018T085607-d9d126a1", "model": "openai/gpt-6.1-sol", "map": "Oasis by the Sea" },
     { "id": "20261018T093657-80aeaf5f", "model": "google/gemini-4-argon", "map": "Oasis by the Sea" },
     { "id": "20261018T112154-c97aa1e3", "model": "meta/muse-wonder", "map": "Oasis by the Sea" },
+    { "id": "20261019T165556-cfb216f4", "model": "deepseek/deepseek-v4.1-flash-1017", "map": "Oasis by the Sea" },
     { "id": "20261017T142805-482f85c6", "model": "claude-haiku-5-5", "map": "Large Barren Desert" },
     { "id": "20261017T151105-82dddbd3", "model": "claude-sonnet-5-5", "map": "Large Barren Desert" },
     { "id": "20261017T155149-42bb4004", "model": "claude-opus-5-5", "map": "Large Barren Desert" },
@@ -28,6 +30,7 @@
     { "id": "20261018T133946-f693cdb3", "model": "openai/gpt-6.1-sol", "map": "Large Barren Desert" },
     { "id": "20261018T155704-115a5a74", "model": "google/gemini-4-argon", "map": "Large Barren Desert" },
     { "id": "20261018T173206-aadf0ce7", "model": "meta/muse-wonder", "map": "Large Barren Desert" },
+    { "id": "20261019T174523-fbe5f9df", "model": "deepseek/deepseek-v4.1-flash-1017", "map": "Large Barren Desert" },
     { "id": "20261017T144844-41ded8e2", "model": "claude-haiku-5-5", "map": "Large Barren Desert" },
     { "id": "20261017T153025-ea988d2f", "model": "claude-sonnet-5-5", "map": "Large Barren Desert" },
     { "id": "20261017T161903-73851a75", "model": "claude-opus-5-5", "map": "Large Barren Desert" },
@@ -37,6 +40,7 @@
     { "id": "20261018T141708-5d5e0ac6", "model": "openai/gpt-6.1-sol", "map": "Large Barren Desert" },
     { "id": "20261018T164504-a06fc9dc", "model": "google/gemini-4-argon", "map": "Large Barren Desert" },
     { "id": "20261018T180748-c32cdd8e", "model": "meta/muse-wonder", "map": "Large Barren Desert" },
+    { "id": "20261019T182110-47864b14", "model": "deepseek/deepseek-v4.1-flash-1017", "map": "Large Barren Desert" },
     { "id": "20261015T132727-8abdde61", "model": "claude-haiku-5-5", "map": "The Sinkhole" },
     { "id": "20261015T140724-fab00866", "model": "openai/gpt-6-luna", "map": "The Sinkhole" },
     { "id": "20261015T153838-6baec514", "model": "claude-sonnet-5-5", "map": "The Sinkhole" },
@@ -46,6 +50,7 @@
     { "id": "20261015T204651-fca746fe", "model": "google/gemini-4-argon", "map": "The Sinkhole" },
     { "id": "20261015T215019-394d6bce", "model": "z-ai/glm-5.3-flash", "map": "The Sinkhole" },
     { "id": "20261016T110959-db76eefd", "model": "claude-fable-5-1", "map": "The Sinkhole" },
+    { "id": "20261019T190209-fc06072c", "model": "deepseek/deepseek-v4.1-flash-1017", "map": "The Sinkhole" },
     { "id": "20261018T183932-e619a688", "model": "claude-haiku-5-5", "map": "The Sinkhole" },
     { "id": "20261019T075033-f2d6c8de", "model": "claude-sonnet-5-5", "map": "The Sinkhole" },
     { "id": "20261019T082447-7e09b8c5", "model": "claude-opus-5-5", "map": "The Sinkhole" },
@@ -54,6 +59,7 @@
     { "id": "20261019T103856-8e49a1dd", "model": "openai/gpt-6-luna", "map": "The Sinkhole" },
     { "id": "20261019T115946-c82f44ed", "model": "openai/gpt-6.1-sol", "map": "The Sinkhole" },
     { "id": "20261019T125812-d8d72e82", "model": "google/gemini-4-argon", "map": "The Sinkhole" },
-    { "id": "20261019T135218-3cfda420", "model": "meta/muse-wonder", "map": "The Sinkhole" }
+    { "id": "20261019T135218-3cfda420", "model": "meta/muse-wonder", "map": "The Sinkhole" },
+    { "id": "20261019T194658-d4ba279b", "model": "deepseek/deepseek-v4.1-flash-1017", "map": "The Sinkhole" }
   ]
 }
