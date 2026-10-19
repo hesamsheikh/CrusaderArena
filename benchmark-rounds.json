@@ -30,6 +30,12 @@
       "fingerprint": "6ee823bf5cb0f288ce08c252482fd14436b1d3aba129e026eb147b35381d5805",
       "commit": "07f2b7abb5d70e6f8c74158f88cfd804a04a0dc1",
       "since": "2026-10-15"
+    },
+    "The Sinkhole construction (no arms)": {
+      "version": "1.7.3",
+      "fingerprint": "b7621690f14ba4c53bfe828735c9d80a078e9ec852f96e8625fa8121d8b650a0",
+      "commit": "e0e0eb43a1531e6a659172250b82105759a7928a",
+      "since": "2026-10-18"
     }
   }
 }
