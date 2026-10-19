@@ -69,9 +69,16 @@ its exact version and settings (`dataset_version`, `save`, `game_minutes_budget`
   for the same game time, 25 real minutes at speed 40: `Oasis by the Sea benchmark start` (the
   person reached a net worth of 19,513 with 202 people) and `Large Barren Desert benchmark start`
   (9,984 with 250 people). Each episode's interview shows the model its result beside that game.
+- **Version 1.7: what is ranked.** Three maps: the two above and *The Sinkhole construction*
+  (from version 1.6.0), 45 game minutes from `The Sinkhole start` (the person reached 41,631 with
+  506 people). Each map has a second benchmark, "... (no arms)", and the evaluation lists one game
+  per model on each: on Oasis by the Sea and Large Barren Desert both played on 1.7.3, on The
+  Sinkhole the weapons-counted game on 1.7.1 and the no-arms game on 1.7.3. Games on earlier
+  versions stay in the dataset but are not ranked.
 - **Baseline.** `net_worth_growth` is net worth minus what doing nothing scores on the same save
   and game time: 1,304 for 25 game minutes on `Oasis by the Sea-1`, 1,220 for 33 min 20 s on
-  `Oasis by the Sea benchmark start` and 5,192 on `Large Barren Desert benchmark start`. Left
+  `Oasis by the Sea benchmark start`, 5,192 on `Large Barren Desert benchmark start` and 2,195 for
+  45 game minutes on `The Sinkhole start`. Left
   alone, the starting package arrives and the peasants eat the food. On the desert part of the
   package (stone, iron, pitch, ale and more wood, about 1,150) waits until the stockpile, full of
   wood, has room, so a game left alone never receives it and any run that frees storage counts
@@ -160,7 +167,9 @@ A submitted score comes from the submitter's machine; the video, the screenshots
 `evaluation.json`, at the top of this repository, lists the series that count in Crusader
 Bench's evaluation, by `series_id`. A series that is not listed is published but not ranked:
 an early run, a test, or one the maintainers set aside. The leaderboard uses only the listed
-series, and of a model's listed series on one map only those on the newest patch.
+series: version 1.7 games, two per model on each map, one on the map's benchmark and one on its
+"(no arms)" benchmark. A model's score on a map is the mean of its listed episodes there, and its
+overall score the mean of its map scores.
 
 ```python
 import json

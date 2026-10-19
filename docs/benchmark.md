@@ -26,8 +26,10 @@ game accepts, keep workers fed and housed, and grow.
 - **Same version.** Every run records its [benchmark version](#versions) (such as
   `1.0.0`), which fixes the prompts, tools, run rules, scoring and the code behind
   them. Each run also records the harness commit, hashes of its prompt and tools, the
-  preparation images and the model's settings. The website's leaderboard averages a model's
-  listed games on a map whatever their version ([publishing](publishing.md#the-website)).
+  preparation images and the model's settings. The website's leaderboard ranks version 1.7
+  games only: on each map, a model's game on the map's benchmark and its game on the map's
+  "(no arms)" benchmark, averaged ([publishing](publishing.md#the-website)). Games on earlier
+  versions stay published but are not ranked.
 
 ## Scenarios
 
@@ -276,7 +278,8 @@ a marketplace bring their gold, which counts: the rules say this too, and `marke
 `netWorthChange` includes it. Until 1.5.6 no model built an armory, as the rules said
 weapons added nothing; from 1.6.0 most did. A map's two benchmarks compare the same
 models with and without weapons on one version. Being separate benchmarks, they have
-separate [rounds](#rounds).
+separate [rounds](#rounds). On the website's leaderboard a model's score on a map is the
+mean of its two games there, one on each benchmark.
 
 The scorecard and the results say `arms_counted: false` and value weapons and armour at
 0, and so do the dashboard, the run overlay, `npm run report` and the dataset's

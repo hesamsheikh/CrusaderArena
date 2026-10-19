@@ -97,6 +97,13 @@ between September and October 2026.
   delivery. Before the fix, two runs that day sold 105 wood for 10 lots (494a5f78) and
   all 225 for 20 (cdecaf85). The simulated market in `economy.test.ts` covers the same
   cases and a purchase the game refuses while planks are being unloaded.
+  - **Known fault, not fixed:** from 200 in stock the game sells 50 a click, a step the
+    live check above never reached and the tool does not know. The 1.7.1 and 1.7.3 games
+    of 2026-10-15 to 19 show it in their recordings (Claude Haiku 5.5 sold planks from 315
+    in clicks of 50, 50, 50, 20 and 20). The tool counts such a click as 20, so its `units` and
+    `goldChange` read low (its `stock` and `gold` are right) and it can sell more than
+    asked: a request for 40 iron sold 100. Food is affected too. Net worth is read from
+    the game, so scores are not; the run analyses use the recordings' figures.
 - `build_structure` placement, its verification by cost and structure count, the
   camera guard, and retries at nearby spots.
 - `center_on`, `place_near`, `expand_storage`, `flat_view` and saved views.
