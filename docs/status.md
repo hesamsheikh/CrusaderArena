@@ -657,6 +657,8 @@ between September and October 2026.
     most the list showed of it going to its makers.
   - A model request whose stream ended before its last event retried like the other provider
     failures (`controller.test.ts`); no such error has come up since.
+  - A model reply cut off by a closed connection ("terminated") retried like the other provider
+    failures (`controller.test.ts` only; not yet seen live).
   - A pixel target in a long `build_structure` batch skipped as `screenshot_expired` once its
     screenshot has under 10 game seconds left, with the later pixel targets, while tile targets
     still run, and 24 retries a call (`model-observation.test.ts`); a record whose workers

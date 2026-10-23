@@ -82,10 +82,12 @@ const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
  * day), or a reply that stopped sending (stallGuard's "Stream stalled"). A server error can come
  * inside the stream with no status code: OpenAI's "An error occurred while processing your request.
  * You can retry your request, …" ended a GPT-6.1 Sol episode at about 40 game minutes of its 45
- * (2026-10-15), and it was played again from the start.
+ * (2026-10-15), and it was played again from the start. A provider that closes the connection
+ * partway through a reply leaves Node's fetch with "terminated" (2026-10-23, a game at 18 of its 33
+ * game minutes, played again from the start).
  */
 export function isTransientProviderError(message?: string) {
-  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before|network connection lost|stream stalled|error occurred while processing|retry your request|server.?error|internal.?error/i.test(message ?? "");
+  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before|network connection lost|\bterminated\b|stream stalled|error occurred while processing|retry your request|server.?error|internal.?error/i.test(message ?? "");
 }
 
 /** What the controller uses of FastWaits (game-speed.ts). */

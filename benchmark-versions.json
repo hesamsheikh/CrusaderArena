@@ -276,6 +276,12 @@
       "fingerprint": "b7621690f14ba4c53bfe828735c9d80a078e9ec852f96e8625fa8121d8b650a0",
       "date": "2026-10-17",
       "note": "The text-only handoff retry after a compaction reply that called a tool is sized by the smaller of a byte recount and the anchored estimate; it only lets a run continue that used to end with an error"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "65c524ff36537d5d047005001e500c53cb0b19e6080c8b93fb870f57e0e63aa0",
+      "date": "2026-10-23",
+      "note": "A model reply cut off by the provider closing the connection (\"terminated\") is retried like other provider errors, with the game paused; what the model plays is unchanged"
     }
   ]
 }

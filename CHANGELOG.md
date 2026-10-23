@@ -27,6 +27,10 @@ this file lists every version in `benchmark-versions.json`, with its date.
   conversation at 165,773 tokens where OpenAI measured 75,563, refused the retry as over the
   115,904 limit and ended Sol's no-arms game on Oasis by the Sea (2026-10-17) with an error. Only
   a run that used to end there plays on; 1.7.3 relocked.
+- A model reply cut off by the provider closing the connection partway through ("terminated", as
+  Node's fetch reports it) is retried like the other provider errors, with the game paused. It
+  ended a game at 18 of its 33 game minutes on 2026-10-23, and the game was played again from
+  the start. Only a run that used to end there plays on; 1.7.3 relocked.
 
 ## [1.7.3] - 2026-10-16
 

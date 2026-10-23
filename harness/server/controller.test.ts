@@ -1536,6 +1536,8 @@ test("transient provider failures are retried; others end the run", async () => 
   assert.ok(isTransientProviderError("JSON error injected into SSE stream"));
   assert.ok(isTransientProviderError("Stream ended before a terminal response event"));
   assert.ok(isTransientProviderError("Network connection lost."));
+  assert.ok(isTransientProviderError("terminated"));
+  assert.ok(isTransientProviderError("Error: terminated"));
   assert.ok(isTransientProviderError("Stream stalled: no data for 120 s."));
   assert.ok(isTransientProviderError("An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_1827eec29faa485588fc83c2b17f5a84 in your message."));
   assert.ok(isTransientProviderError('{"type":"server_error","message":"The server had an error processing your request."}'));
