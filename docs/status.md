@@ -549,6 +549,16 @@ between September and October 2026.
   was run again), not checked against Anthropic's billing. A 60,000-token
   budget is too small for Claude: its fresh conversation after a compaction (about
   39,300 tokens) did not fit under 65% of it, which ended that run with an error.
+- OpenAI's own API through its Responses API, with GPT-6 Astra on 2026-10-31: a
+  connection test through the 1.7.3 host and through the 1.7.1 round's host with its
+  preload, two 2-game-minute trials and three full 1.7.3 games (Oasis by the Sea with
+  and without arms, Large Barren Desert), all valid. Every request after the first read
+  all but 3 tokens of its prompt from OpenAI's cache, which also reports the tokens it
+  writes; the reasoning summaries came back and the encrypted reasoning went out again.
+  Costs are the host's pricing at OpenAI's list prices, not checked against OpenAI's
+  billing. Before the tools went out with `strict: false`, a full game had every tile
+  placement refused for also giving pixel x/y, which the strict schema made required.
+  The preload's route has not yet carried a full game.
 - The game on the test laptop's NVIDIA GPU, on 2026-10-13 with Ubuntu kernel 7.0.0-38
   and NVIDIA driver 610.57.04, the harness disconnected except where named: it reached
   the main menu with DXVK (three launches on Proton Experimental 11, one on Proton
