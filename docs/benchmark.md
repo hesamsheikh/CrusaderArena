@@ -165,7 +165,10 @@ moving a round changes no version.
     fingerprint.
   - Its host starts with [`round-preload.ts`](../harness/server/round-preload.ts), which
     adds the [prompt cache key](context.md#tokens-and-caching) to its requests for models
-    that need one. The key is part of the request, not of what the model reads.
+    that need one. The key is part of the request, not of what the model reads. It also
+    sends an OpenAI profile's requests through OpenAI's Responses API, as this checkout
+    does: that version's code would send them as chat completions, which OpenAI's
+    reasoning models refuse.
   - A version made before the [run overlay](harness.md#run-overlay) (1.5.6 and earlier)
     gets this checkout's `overlay.py` on the game machine, which that version's files do
     not include, and this checkout's runner feeds it from the round's host.

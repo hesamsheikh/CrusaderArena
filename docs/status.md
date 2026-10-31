@@ -724,6 +724,10 @@ between September and October 2026.
   `max`), with `default` still sending none and other levels refused
   (`model-config.test.ts`, `store.test.ts`). Moonshot's guide lists those three values;
   not yet checked live.
+- An OpenAI profile on OpenAI's own API sent through its Responses API: the reasoning level,
+  the encrypted reasoning asked for so it goes back with the next request, `max_output_tokens`
+  and the run's id as prompt cache key; and an earlier round's host, through its preload,
+  sending the same request body (`openai.test.ts`).
 - The 1.4.0 request savings (see the changelog), with a fake provider: the preparation
   request carries the gameplay tools and the first gameplay request repeats them
   (`controller.test.ts`, `model-config.test.ts`), a preparation reply that calls a tool

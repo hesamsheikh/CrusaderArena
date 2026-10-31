@@ -81,7 +81,7 @@ Fill in `.env`:
 | `GAME_REMOTE_ROOT` | `/home/player/codebox/CrusaderBench` | The repository's absolute path on the game machine |
 | `MOONSHOT_API_KEY` | | Key for the default Kimi K3 profile (optional if you add profiles in the dashboard) |
 | `MOONSHOT_MODEL`, `MOONSHOT_BASE_URL` | `kimi-k3`, `https://api.moonshot.ai/v1` | Override the default profile's model and endpoint |
-| `OPENROUTER_API_KEY` | | Key for profiles set to read it |
+| `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | | Keys for profiles set to read them |
 | `GAME_READER_INTERVAL_MS` | `100` | Reader sampling interval, 50 to 5000 |
 | `PORT` | `4317` | Dashboard port |
 

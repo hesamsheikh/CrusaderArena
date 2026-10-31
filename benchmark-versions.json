@@ -282,6 +282,12 @@
       "fingerprint": "65c524ff36537d5d047005001e500c53cb0b19e6080c8b93fb870f57e0e63aa0",
       "date": "2026-10-23",
       "note": "A model reply cut off by the provider closing the connection (\"terminated\") is retried like other provider errors, with the game paused; what the model plays is unchanged"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "4e5dd99108605aaaf62d0ac62850eb9933c35a87da1929709b6337440c10e110",
+      "date": "2026-10-31",
+      "note": "OpenAI's own API through its Responses API, also for earlier rounds' hosts; other profiles' requests unchanged"
     }
   ]
 }

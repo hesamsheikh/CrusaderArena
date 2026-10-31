@@ -204,7 +204,7 @@ export type Stats = {
  * Reasoning effort sent with every request. "default" sends no setting and leaves it to the
  * endpoint; "off" (OpenRouter only) asks for none.
  */
-/** "max" is the endpoint's highest effort: Claude's own "max", OpenRouter's "xhigh" (as Artificial Analysis reports models). */
+/** "max" is the endpoint's highest effort: Claude's own "max", OpenRouter's and OpenAI's "xhigh" (as Artificial Analysis reports models). */
 export const reasoningLevels = ["default", "off", "minimal", "low", "medium", "high", "max"] as const;
 export type ReasoningLevel = (typeof reasoningLevels)[number];
 /** How a profile's requests are made; part of every run's model snapshot. */
@@ -250,6 +250,8 @@ export const isMoonshot = (baseUrl: string) => /^api\.moonshot\./.test(new URL(b
 export const moonshotReasoning = new Set<ReasoningLevel>(["default", "low", "high", "max"]);
 /** Anthropic's own Messages API (not its OpenAI-compatible layer). */
 export const isAnthropic = (baseUrl: string) => new URL(baseUrl).hostname === "api.anthropic.com";
+/** OpenAI's own API, which the host calls through its Responses API (harness/server/openai.ts). */
+export const isOpenAI = (baseUrl: string) => new URL(baseUrl).hostname === "api.openai.com";
 /**
  * A profile's settings with defaults. Missing values are what the harness sent before they were
  * settings (2026-10-08): low reasoning on OpenRouter, the endpoint's default elsewhere, 8192 tokens.

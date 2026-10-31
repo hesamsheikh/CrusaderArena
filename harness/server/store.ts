@@ -52,7 +52,7 @@ export const profileSchema = z
     modelId: z.string().trim().min(1).max(150),
     baseUrl: endpoint,
     apiKey: z.string().trim().max(4096).optional(),
-    envKey: z.enum(["MOONSHOT_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]).optional(),
+    envKey: z.enum(["MOONSHOT_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]).optional(),
     reasoning: z.enum(reasoningLevels).optional(),
     maxTokens: z.number().int().min(1024).max(131072).optional(),
     // OpenRouter provider slugs, e.g. "z-ai" or "deepinfra/fp8".
@@ -166,7 +166,8 @@ export class Store {
       if (
         (data.envKey === "OPENROUTER_API_KEY" && host !== "openrouter.ai") ||
         (data.envKey === "MOONSHOT_API_KEY" && host !== "api.moonshot.ai") ||
-        (data.envKey === "ANTHROPIC_API_KEY" && host !== "api.anthropic.com")
+        (data.envKey === "ANTHROPIC_API_KEY" && host !== "api.anthropic.com") ||
+        (data.envKey === "OPENAI_API_KEY" && host !== "api.openai.com")
       ) throw new Error("Environment key does not match the model endpoint.");
     }
     if (
@@ -234,6 +235,7 @@ export class Store {
         this.env.MOONSHOT_API_KEY,
         this.env.OPENROUTER_API_KEY,
         this.env.ANTHROPIC_API_KEY,
+        this.env.OPENAI_API_KEY,
       ].filter(Boolean) as string[])
         value = (value as string).replaceAll(key, "[redacted]");
       return value;

@@ -265,7 +265,7 @@ Every request's cost is recorded as a `request_cost` event, and the run's total 
 `cost` in `run.json`. OpenRouter is asked to report what it billed for each request,
 and the host reads that from the reply's last usage chunk (`source: "billed"`), along
 with which upstream provider it routed the request to (`upstream`, e.g. "DeepInfra"),
-when it reports one. Other endpoints, Anthropic's and Moonshot's included, report only
+when it reports one. Other endpoints, Anthropic's, Moonshot's and OpenAI's included, report only
 token counts, so the host prices each request's tokens with the model profile's prices
 (`source: "prices"`, see [model settings](harness.md#model-profiles)). A failed or
 cut-off request is priced too, since its tokens count. A run cannot start on such an
@@ -287,6 +287,9 @@ separate from provider pinning (the "Providers, allow fallbacks" model setting, 
 [model profiles](harness.md#model-profiles)), which restricts OpenRouter to specific
 upstream providers; session affinity additionally favors the same connection among
 whichever providers are allowed.
+
+OpenAI's own API takes the run's id as `prompt_cache_key` on the same requests, which
+sends them to the servers that hold the run's cached prefix.
 
 OpenRouter tries a profile's providers in their order and passes a request on to the next
 when one refuses it, and each provider keeps its own prompt cache. So every request after

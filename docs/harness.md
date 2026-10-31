@@ -62,7 +62,7 @@ lists them; **+ Add** creates one.
 
   | Setting | Values | Meaning |
   | --- | --- | --- |
-  | Reasoning | `default`, `off`, `minimal`, `low`, `medium`, `high`, `max` | `default` sends no reasoning setting and lets the endpoint decide. `off` is OpenRouter only. Moonshot takes `default` (none sent, which Kimi K3 treats as `max`) or Kimi K3's levels `low`, `high` and `max`, sent as its `reasoning_effort`; Kimi K3 has no medium. On Anthropic a level is Claude's effort. `max` is the endpoint's highest effort, as Artificial Analysis reports models: Claude's `max`, OpenRouter's `xhigh` |
+  | Reasoning | `default`, `off`, `minimal`, `low`, `medium`, `high`, `max` | `default` sends no reasoning setting and lets the endpoint decide. `off` is OpenRouter only. Moonshot takes `default` (none sent, which Kimi K3 treats as `max`) or Kimi K3's levels `low`, `high` and `max`, sent as its `reasoning_effort`; Kimi K3 has no medium. On Anthropic a level is Claude's effort; on OpenAI it is the Responses API's reasoning effort. `max` is the endpoint's highest effort, as Artificial Analysis reports models: Claude's `max`, OpenRouter's and OpenAI's `xhigh` |
   | Max tokens | 1,024 to 131,072 (default 8,192) | Output tokens per reply, reasoning included. Used for gameplay, preparation and compaction (compaction never below 8,192) |
   | Providers, allow fallbacks | Provider names in order of preference | OpenRouter only: which upstream providers may serve the model. Empty lets OpenRouter choose for each request. After a fallback, a run's requests ask first for the provider that served its last one ([Tokens and caching](context.md#tokens-and-caching)) |
   | Prices | US dollars per million tokens: input, output, cache read, cache write; optionally higher ones for prompts over a number of tokens | Not OpenRouter, which reports what it billed. The provider's list prices, which the host applies to each request's tokens to record its cost (see [Context](context.md#tokens-and-caching)). Cache write is the 5-minute rate; a prompt counts input, cache reads and cache writes. A run cannot start without them. Runs record the prices they used |
@@ -70,9 +70,9 @@ lists them; **+ Add** creates one.
   Profiles created before these settings existed keep what the harness used to send:
   low reasoning on OpenRouter, the endpoint's default elsewhere, 8,192 tokens, no
   provider preference.
-- A profile can instead read `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY` from `.env`,
-  by creating it through the API with `envKey` set to that name; the endpoint must be
-  OpenRouter's or Anthropic's.
+- A profile can instead read `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+  from `.env`, by creating it through the API with `envKey` set to that name; the endpoint
+  must be OpenRouter's, Anthropic's or OpenAI's (`https://api.openai.com/v1`).
 - **Configure → Test saved model** sends one short, billed request.
 
 ## Manual control

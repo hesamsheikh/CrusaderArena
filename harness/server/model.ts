@@ -3,6 +3,7 @@ import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-age
 import { createModels, type AssistantMessage, type Message, type Model, type Usage } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { Type, type TSchema } from "typebox";
 const defineTool = <T extends TSchema>(tool: AgentTool<T>): AgentTool<any> =>
@@ -14,6 +15,7 @@ import type { Warnings } from "./warnings.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
 import { cacheKeyFetch } from "./cache-key.js";
+import { OPENAI_THINKING_LEVELS } from "./openai.js";
 import {
   buildableNames,
   buildingCost,
@@ -228,6 +230,7 @@ import {
   GAME_SPEED,
   isAnthropic,
   isMoonshot,
+  isOpenAI,
   isOpenRouter,
   modelSettings,
   TICKS_PER_GAME_SECOND,
@@ -242,7 +245,7 @@ const gameControls = readFileSync(
 
 export function modelConfig(
   profile?: ModelProfile,
-): Model<"openai-completions" | "anthropic-messages"> {
+): Model<"openai-completions" | "anthropic-messages" | "openai-responses"> {
   const baseUrl = profile?.baseUrl || process.env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1";
   const settings = modelSettings({ ...profile, baseUrl });
   const openRouter = isOpenRouter(baseUrl);
@@ -268,6 +271,21 @@ export function modelConfig(
         // go where the conversation repeats (placeAnthropicCacheBreakpoints).
         supportsCacheControlOnTools: false,
       },
+    };
+  // OpenAI's Responses API, which carries each reply's reasoning into the next request (openai.ts).
+  if (profile && isOpenAI(baseUrl))
+    return {
+      id: profile.modelId,
+      name: profile.name,
+      provider: profile.id,
+      api: "openai-responses",
+      baseUrl,
+      reasoning: true,
+      thinkingLevelMap: OPENAI_THINKING_LEVELS,
+      input: ["text", "image"],
+      contextWindow: 1048576,
+      maxTokens: settings.maxTokens,
+      cost: modelCost(profile.prices),
     };
   // Kimi K3 on Moonshot takes a level as `reasoning_effort` ("low", "high" or "max"); Pi sends none
   // to Moonshot unless told it may, and "default" still sends nothing.
@@ -480,7 +498,9 @@ function registry(profile: ModelProfile) {
       ? openrouterProvider()
       : isAnthropic(profile.baseUrl)
         ? anthropicProvider()
-        : moonshotaiProvider()),
+        : isOpenAI(profile.baseUrl)
+          ? openaiProvider()
+          : moonshotaiProvider()),
     id: profile.id,
     name: profile.name,
     baseUrl: profile.baseUrl,
