@@ -288,6 +288,12 @@
       "fingerprint": "4e5dd99108605aaaf62d0ac62850eb9933c35a87da1929709b6337440c10e110",
       "date": "2026-10-31",
       "note": "OpenAI's own API through its Responses API, also for earlier rounds' hosts; other profiles' requests unchanged"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "522e39450bc6fa60e9b2dcd9b4f1f532818e56543d0c86e3658367635d2b919b",
+      "date": "2026-10-31",
+      "note": "OpenAI's tools go out with strict: false, so optional parameters stay optional; other profiles' requests unchanged"
     }
   ]
 }

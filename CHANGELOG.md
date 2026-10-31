@@ -23,8 +23,10 @@ this file lists every version in `benchmark-versions.json`, with its date.
 
 - OpenAI's own API (`https://api.openai.com/v1`) is a supported endpoint. Its profiles go
   through OpenAI's Responses API, which carries each reply's encrypted reasoning into the next
-  request as OpenRouter does for the same models, send the run's id as the prompt cache key, and
-  can read `OPENAI_API_KEY` from `.env`. An earlier round's host gets the same through its
+  request as OpenRouter does for the same models, send the run's id as the prompt cache key, send
+  their tools with `strict: false` (the Responses API makes a tool strict otherwise, which
+  requires every parameter, so GPT-6 Astra's first game had to give pixel x/y with every tile
+  placement and had each refused), and can read `OPENAI_API_KEY` from `.env`. An earlier round's host gets the same through its
   preload. Other profiles' requests are unchanged; 1.7.3 relocked.
 - When a compaction's handoff reply calls a tool instead of writing the handoff, the text-only
   retry is sized by the smaller of a byte recount and the anchored, provider-measured estimate the

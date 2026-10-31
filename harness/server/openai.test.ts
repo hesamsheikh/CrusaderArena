@@ -53,6 +53,12 @@ test("an OpenAI profile goes through the Responses API, carrying its reasoning b
   assert.equal(body.messages, undefined);
 });
 
+test("OpenAI tools go out non-strict, so their optional parameters stay optional", async () => {
+  const [tool] = (await payload(astra)).tools as { strict?: boolean }[];
+  // The Responses API treats a tool without `strict` as strict, which requires every parameter.
+  assert.equal(tool.strict, false);
+});
+
 test("OpenAI reasoning: max is its xhigh, default sends no setting", async () => {
   assert.deepEqual((await payload({ ...astra, reasoning: "max" })).reasoning, { effort: "xhigh", summary: "auto" });
   assert.equal((await payload({ ...astra, reasoning: "default" })).reasoning, undefined);

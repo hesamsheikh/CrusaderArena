@@ -15,7 +15,7 @@ import type { Warnings } from "./warnings.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
 import { cacheKeyFetch } from "./cache-key.js";
-import { OPENAI_THINKING_LEVELS } from "./openai.js";
+import { OPENAI_COMPAT, OPENAI_THINKING_LEVELS } from "./openai.js";
 import {
   buildableNames,
   buildingCost,
@@ -286,6 +286,7 @@ export function modelConfig(
       contextWindow: 1048576,
       maxTokens: settings.maxTokens,
       cost: modelCost(profile.prices),
+      compat: OPENAI_COMPAT,
     };
   // Kimi K3 on Moonshot takes a level as `reasoning_effort` ("low", "high" or "max"); Pi sends none
   // to Moonshot unless told it may, and "default" still sends nothing.

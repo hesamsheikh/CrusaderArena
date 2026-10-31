@@ -17,12 +17,19 @@ import { isOpenAI } from "../shared/protocol.js";
 export const OPENAI_THINKING_LEVELS: ThinkingLevelMap = { off: null, max: "xhigh" };
 
 /**
+ * The Responses API makes a function tool strict unless it says otherwise, and a strict tool must
+ * fill every parameter: GPT-6 Astra's first game (2026-10-31) sent pixel x/y with every tile
+ * placement and had each refused for giving both. With this, Pi sends `strict: false`, so the
+ * optional parameters stay optional, as on chat completions.
+ */
+export const OPENAI_COMPAT = { supportsStrictMode: true };
+
+/**
  * The model an earlier round's host makes for an OpenAI profile, a chat-completions model with
  * the compat settings of an OpenAI-compatible endpoint, as modelConfig makes it here.
  */
 export function viaResponses<M extends { api: string; compat?: unknown }>(model: M) {
-  const { compat: _compat, ...rest } = model;
-  return { ...rest, api: "openai-responses" as const, thinkingLevelMap: OPENAI_THINKING_LEVELS };
+  return { ...model, api: "openai-responses" as const, thinkingLevelMap: OPENAI_THINKING_LEVELS, compat: OPENAI_COMPAT };
 }
 
 /** For an earlier round's host: the Responses model for a model on OpenAI's endpoint, else null. */
