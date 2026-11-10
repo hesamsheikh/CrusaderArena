@@ -184,7 +184,12 @@ The model must accept images and tool calls through an OpenAI-compatible chat
 completions endpoint, or be a Claude model on Anthropic's own Messages API, or an OpenAI
 model on OpenAI's own API, which the host calls through its Responses API so that each
 reply's reasoning goes back with the next request, as OpenRouter's reasoning details
-carry it for the same models. The
+carry it for the same models. Claude Fable 5.2 binds each thinking block to the
+conversation before it, so after a compaction, which keeps the last exchange behind a new
+handoff, its requests ask Anthropic to drop a block whose earlier conversation changed
+(`thinking.block_binding`, [`thinking-binding.ts`](../harness/server/thinking-binding.ts));
+without it the API refuses the first request after the compaction. Other models' requests
+do not carry it. The
 default profile is Moonshot's Kimi K3. Moonshot and OpenRouter endpoints are tested;
 other OpenAI-compatible endpoints are handled like Moonshot's and are untested. Each
 profile sets its reasoning level, its output limit per reply (8,192 tokens by

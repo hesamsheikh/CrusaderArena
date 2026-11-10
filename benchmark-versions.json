@@ -294,6 +294,12 @@
       "fingerprint": "522e39450bc6fa60e9b2dcd9b4f1f532818e56543d0c86e3658367635d2b919b",
       "date": "2026-10-31",
       "note": "OpenAI's tools go out with strict: false, so optional parameters stay optional; other profiles' requests unchanged"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "1237bdfb76a2c6c0cf4bd025144c2ecb0eeaa5bf26d1345f9e5d8b81a694735f",
+      "date": "2026-11-10",
+      "note": "Claude Fable 5.2 asks Anthropic to drop thinking blocks bound to a conversation a compaction rewrote; other models' requests unchanged"
     }
   ]
 }

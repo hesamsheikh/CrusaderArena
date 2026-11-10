@@ -168,7 +168,9 @@ moving a round changes no version.
     that need one. The key is part of the request, not of what the model reads. It also
     sends an OpenAI profile's requests through OpenAI's Responses API, as this checkout
     does: that version's code would send them as chat completions, which OpenAI's
-    reasoning models refuse.
+    reasoning models refuse. And it asks Anthropic to drop thinking blocks bound to a
+    conversation a compaction rewrote, for models that bind them (Claude Fable 5.2,
+    [Models](agent.md#models)), as this checkout does.
   - A version made before the [run overlay](harness.md#run-overlay) (1.5.6 and earlier)
     gets this checkout's `overlay.py` on the game machine, which that version's files do
     not include, and this checkout's runner feeds it from the round's host.

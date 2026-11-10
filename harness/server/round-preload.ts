@@ -11,12 +11,15 @@
  *   chat-completions factory, which hands that profile's requests to Pi's Responses API as this
  *   checkout's modelConfig does. (A load hook cannot pass modules through unchanged here: Node
  *   24's in-thread load hooks fail Pi's dynamic imports under tsx.)
+ * - drop_block for models that bind thinking blocks to their conversation (thinking-binding.ts).
+ *   Pi's Anthropic client takes the global fetch when it is made, once per request.
  */
 import { registerHooks } from "node:module";
 import { cacheKeyFetch } from "./cache-key.js";
+import { thinkingBindingFetch } from "./thinking-binding.js";
 import { PI_COMPLETIONS_FACTORY, routingModule } from "./openai.js";
 
-globalThis.fetch = cacheKeyFetch(globalThis.fetch.bind(globalThis));
+globalThis.fetch = thinkingBindingFetch(cacheKeyFetch(globalThis.fetch.bind(globalThis)));
 
 const self = new URL("./openai.ts", import.meta.url).href;
 registerHooks({

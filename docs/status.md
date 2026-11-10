@@ -559,6 +559,13 @@ between September and October 2026.
   billing. Before the tools went out with `strict: false`, a full game had every tile
   placement refused for also giving pixel x/y, which the strict schema made required.
   The preload's route has not yet carried a full game.
+- Claude Fable 5.2's thinking blocks after a compaction, on 2026-11-10: both attempts of
+  its first 1.7.3 game (Oasis by the Sea) ended on the first request after the first
+  compaction, refused because a kept thinking block was bound to the conversation before
+  it. A direct API test the same day refused the same kind of rewritten conversation
+  without `drop_block` and answered it with it. Tested in code: only Fable 5.2's requests
+  get it, as Pi sends them and through an earlier host's preload. A full game with it is
+  not yet checked.
 - The game on the test laptop's NVIDIA GPU, on 2026-10-13 with Ubuntu kernel 7.0.0-38
   and NVIDIA driver 610.57.04, the harness disconnected except where named: it reached
   the main menu with DXVK (three launches on Proton Experimental 11, one on Proton
@@ -686,7 +693,8 @@ between September and October 2026.
   preload through an earlier host's global fetch, with none for other models; the
   overlay's figures read from an earlier host's state, its clock run on from the game
   tick between that host's updates, tool calls counted from the run's events, and the
-  feed's figures used only while fresh.
+  feed's figures used only while fresh. `thinking-binding.test.ts` does the same for
+  Claude Fable 5.2's `drop_block`.
 
 - The 1.6.3 fixes (`model-observation.test.ts`, `remedies.test.ts`, `economy.test.ts`,
   `game-save.test.ts`), not yet run live:

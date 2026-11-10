@@ -21,6 +21,13 @@ this file lists every version in `benchmark-versions.json`, with its date.
 
 ### Harness
 
+- Claude Fable 5.2's requests ask Anthropic to drop a thinking block whose earlier
+  conversation a compaction rewrote (`thinking.block_binding.prefix_mismatch_behavior:
+  "drop_block"`). Fable 5.2 binds each thinking block to the conversation before it, and the
+  API refused the first request after a compaction, which ended both attempts of its first
+  game (2026-11-10). An earlier round's host gets the same through its preload. Other models'
+  requests are unchanged; 1.7.3 relocked.
+
 - OpenAI's own API (`https://api.openai.com/v1`) is a supported endpoint. Its profiles go
   through OpenAI's Responses API, which carries each reply's encrypted reasoning into the next
   request as OpenRouter does for the same models, send the run's id as the prompt cache key, send

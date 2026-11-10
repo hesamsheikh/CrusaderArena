@@ -15,6 +15,7 @@ import type { Warnings } from "./warnings.js";
 import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context.js";
 import { modelCost, usedTokens } from "./cost.js";
 import { cacheKeyFetch } from "./cache-key.js";
+import { thinkingBindingFetch } from "./thinking-binding.js";
 import { OPENAI_COMPAT, OPENAI_THINKING_LEVELS } from "./openai.js";
 import {
   buildableNames,
@@ -478,7 +479,8 @@ function costTracking(
       settle: () => {},
     };
   return {
-    options: { fetch: stallGuard() },
+    // Models that bind thinking blocks to their conversation get the API's drop_block (thinking-binding.ts).
+    options: { fetch: stallGuard(thinkingBindingFetch(fetch)) },
     settle: (usage: Usage) => {
       if (profile.prices && usedTokens(usage)) onCost?.(usage.cost.total, "prices");
     },
