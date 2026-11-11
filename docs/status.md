@@ -564,8 +564,10 @@ between September and October 2026.
   compaction, refused because a kept thinking block was bound to the conversation before
   it. A direct API test the same day refused the same kind of rewritten conversation
   without `drop_block` and answered it with it. Tested in code: only Fable 5.2's requests
-  get it, as Pi sends them and through an earlier host's preload. A full game with it is
-  not yet checked.
+  get it, as Pi sends them and through an earlier host's preload. Live with it on
+  2026-11-10 and 2026-11-11: Fable 5.2's six ranked games (five on 1.7.3, The Sinkhole
+  construction on the 1.7.1 round through the preload) were all valid on their first
+  attempt, with 2 to 3 compactions each and no failed request.
 - The game on the test laptop's NVIDIA GPU, on 2026-10-13 with Ubuntu kernel 7.0.0-38
   and NVIDIA driver 610.57.04, the harness disconnected except where named: it reached
   the main menu with DXVK (three launches on Proton Experimental 11, one on Proton
