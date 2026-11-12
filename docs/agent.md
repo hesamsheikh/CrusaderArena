@@ -153,6 +153,11 @@ turn. The dashboard shows both to the operator live.
   minutes are retried up to 5 times, waiting 2, 4, 8, 16 and
   30 seconds, with the game paused. This holds for gameplay, preparation, compaction and the playbook request
   after an episode. Other errors end the run.
+- **Failed connections.** A request whose connection fails before any response is sent
+  again by its own fetch up to 5 times, waiting 1, 2, 4, 8 and 16 seconds, and the
+  underlying cause (such as "other side closed") goes to the host's log. If it still fails,
+  the SDK's "Connection error." is retried as a provider error, above. An aborted request
+  is not sent again.
 - **Cut-off replies.** A reply that hits the profile's output limit (8,192 tokens by
   default) is discarded, tool calls included (none of them runs), and retried up to
   twice per turn with a reminder to think briefly and keep tool arguments short.

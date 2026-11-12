@@ -16,6 +16,7 @@ import { placeAnthropicCacheBreakpoints, placeCacheBreakpoints } from "./context
 import { modelCost, usedTokens } from "./cost.js";
 import { cacheKeyFetch } from "./cache-key.js";
 import { thinkingBindingFetch } from "./thinking-binding.js";
+import { connectionRetryFetch } from "./connection-retry.js";
 import { OPENAI_COMPAT, OPENAI_THINKING_LEVELS } from "./openai.js";
 import {
   buildableNames,
@@ -473,14 +474,15 @@ function costTracking(
   profile: ModelProfile,
   onCost?: (dollars: number, source: CostSource, upstream?: string) => void,
 ) {
+  // A request whose connection fails before any response is sent again (connection-retry.ts).
   if (isOpenRouter(profile.baseUrl))
     return {
-      options: { fetch: costReader((dollars, upstream) => onCost?.(dollars, "billed", upstream), stallGuard()) },
+      options: { fetch: costReader((dollars, upstream) => onCost?.(dollars, "billed", upstream), stallGuard(connectionRetryFetch(fetch))) },
       settle: () => {},
     };
   return {
     // Models that bind thinking blocks to their conversation get the API's drop_block (thinking-binding.ts).
-    options: { fetch: stallGuard(thinkingBindingFetch(fetch)) },
+    options: { fetch: stallGuard(thinkingBindingFetch(connectionRetryFetch(fetch))) },
     settle: (usage: Usage) => {
       if (profile.prices && usedTokens(usage)) onCost?.(usage.cost.total, "prices");
     },

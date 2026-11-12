@@ -84,10 +84,12 @@ const RETRY_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
  * You can retry your request, …" ended a GPT-6.1 Sol episode at about 40 game minutes of its 45
  * (2026-10-15), and it was played again from the start. A provider that closes the connection
  * partway through a reply leaves Node's fetch with "terminated" (2026-10-23, a game at 18 of its 33
- * game minutes, played again from the start).
+ * game minutes, played again from the start). A connection that fails before any response, which
+ * the request's fetch already retries (connection-retry.ts), reaches here as the SDK's "Connection
+ * error." only if it kept failing (2026-11-12: five games of Gemini 4 Hydrogen on OpenRouter).
  */
 export function isTransientProviderError(message?: string) {
-  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before|network connection lost|\bterminated\b|stream stalled|error occurred while processing|retry your request|server.?error|internal.?error/i.test(message ?? "");
+  return /empty response|overloaded|rate.?limit|\b429\b|timeout|timed out|\b5\d\d\b|temporarily|unavailable|ECONNRESET|socket hang up|error injected into SSE stream|stream ended before|network connection lost|connection error|\bterminated\b|stream stalled|error occurred while processing|retry your request|server.?error|internal.?error/i.test(message ?? "");
 }
 
 /** What the controller uses of FastWaits (game-speed.ts). */

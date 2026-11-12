@@ -306,6 +306,12 @@
       "fingerprint": "9124b90037e1e4d4084133d04224b172629c291861c824094f15c1fa03b02dff",
       "date": "2026-11-12",
       "note": "Reader: pass on Steam's per-instance launcher service name (SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM); round preload does the same for earlier versions"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "324e42079c711462c0bdc04369a2ca5487be31b48d23176d9faeb23dddb64a60",
+      "date": "2026-11-12",
+      "note": "A request whose connection fails before any response is sent again (fetch retry, also via round preload); Connection error retried by the run loop"
     }
   ]
 }

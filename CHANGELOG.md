@@ -21,6 +21,13 @@ this file lists every version in `benchmark-versions.json`, with its date.
 
 ### Harness
 
+- A model request whose connection fails before any response is sent again, up to five times
+  over about 31 seconds with the game paused, and the failure's underlying cause goes to the host's
+  log; if it keeps failing, the run loop retries it like the other provider errors ("Connection
+  error."). Five games of Gemini 4 Hydrogen on OpenRouter ended this way on 2026-11-12, each
+  played again from the start. An earlier round's host gets the fetch retry through its preload.
+  Only a run that used to end there plays on; 1.7.3 relocked.
+
 - The reader works with newer Steam clients, which give their launcher service a name per
   instance and pass it to the game in `SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM`.
   `run-proton.py` passes it on to the launch client; an earlier round's host gets it through

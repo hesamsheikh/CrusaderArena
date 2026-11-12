@@ -688,6 +688,11 @@ between September and October 2026.
     failures (`controller.test.ts`); no such error has come up since.
   - A model reply cut off by a closed connection ("terminated") retried like the other provider
     failures (`controller.test.ts` only; not yet seen live).
+  - A model request whose connection failed before any response sent again with the same body
+    up to five times, an aborted one or one with a streamed body not, and the cause logged
+    (`connection-retry.test.ts`); an earlier round's host given the same through its preload;
+    "Connection error." retried by the run loop (`controller.test.ts`). Five Gemini 4 Hydrogen
+    games ended on such a failure on 2026-11-12 before it; not yet seen live with it.
   - A pixel target in a long `build_structure` batch skipped as `screenshot_expired` once its
     screenshot has under 10 game seconds left, with the later pixel targets, while tile targets
     still run, and 24 retries a call (`model-observation.test.ts`); a record whose workers
