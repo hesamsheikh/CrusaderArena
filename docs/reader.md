@@ -13,7 +13,12 @@ on Unity's Mono runtime. The reader is our own code; no game file is changed, an
 third-party mod is used.
 
 1. `tools/ubuntu/run-proton.py` finds the running game and its Proton environment, and
-   starts our Windows launcher inside the same Proton prefix.
+   starts our Windows launcher inside the same Proton prefix, through Steam's launcher
+   service (`steam-runtime-launch-client --alongside-steam`). Newer Steam clients give that
+   service a name per instance and pass it to the game as
+   `SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM`; the script passes it on from the game's
+   environment. Without it the launch client fails with "Unable to connect to any of the
+   specified bus names" and the reader reads nothing.
 2. The launcher (`src/windows/probe.cpp`) checks SHA-256 fingerprints of four game
    files against the build the reader was mapped for, and stops if any differ.
 3. It loads our reader DLL (`src/windows/adapter.cpp`) into the game process and calls

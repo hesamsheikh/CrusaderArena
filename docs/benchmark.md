@@ -170,7 +170,10 @@ moving a round changes no version.
     does: that version's code would send them as chat completions, which OpenAI's
     reasoning models refuse. And it asks Anthropic to drop thinking blocks bound to a
     conversation a compaction rewrote, for models that bind them (Claude Fable 5.2,
-    [Models](agent.md#models)), as this checkout does.
+    [Models](agent.md#models)), as this checkout does. Its SSH calls to `run-proton.py`
+    first export the name of Steam's launcher service from the game's environment, which
+    newer Steam clients need and that version's script does not read
+    ([The reader](reader.md#how-it-works)).
   - A version made before the [run overlay](harness.md#run-overlay) (1.5.6 and earlier)
     gets this checkout's `overlay.py` on the game machine, which that version's files do
     not include, and this checkout's runner feeds it from the round's host.

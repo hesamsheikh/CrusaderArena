@@ -568,6 +568,16 @@ between September and October 2026.
   2026-11-10 and 2026-11-11: Fable 5.2's six ranked games (five on 1.7.3, The Sinkhole
   construction on the 1.7.1 round through the preload) were all valid on their first
   attempt, with 2 to 3 compactions each and no failed request.
+- The reader under a newer Steam client, on 2026-11-12: after Steam updated itself, its
+  launcher service had a per-instance bus name (passed to the game as
+  `SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM`), and `run-proton.py` could no longer reach it:
+  the probe failed with "Unable to connect to any of the specified bus names" and a trial
+  run's game loaded but the reader read nothing. Live the same day with the game at the
+  main menu: the probe and `watch` worked with `run-proton.py` taking the name from the
+  game's environment, and 1.7.1's unchanged `run-proton.py` streamed with the preload's
+  shell prefix. Tested in code (`steam-launcher.test.ts`): the prefix goes only on SSH calls
+  to `run-proton.py`, exports nothing without a game, and reaches an earlier host through
+  the preload. Not yet seen through a full run.
 - The game on the test laptop's NVIDIA GPU, on 2026-10-13 with Ubuntu kernel 7.0.0-38
   and NVIDIA driver 610.57.04, the harness disconnected except where named: it reached
   the main menu with DXVK (three launches on Proton Experimental 11, one on Proton
@@ -696,7 +706,8 @@ between September and October 2026.
   overlay's figures read from an earlier host's state, its clock run on from the game
   tick between that host's updates, tool calls counted from the run's events, and the
   feed's figures used only while fresh. `thinking-binding.test.ts` does the same for
-  Claude Fable 5.2's `drop_block`.
+  Claude Fable 5.2's `drop_block`, and `steam-launcher.test.ts` for Steam's launcher
+  service name.
 
 - The 1.6.3 fixes (`model-observation.test.ts`, `remedies.test.ts`, `economy.test.ts`,
   `game-save.test.ts`), not yet run live:

@@ -13,13 +13,17 @@
  *   24's in-thread load hooks fail Pi's dynamic imports under tsx.)
  * - drop_block for models that bind thinking blocks to their conversation (thinking-binding.ts).
  *   Pi's Anthropic client takes the global fetch when it is made, once per request.
+ * - Steam's launcher service name for the reader (steam-launcher.ts). Those hosts start
+ *   run-proton.py over SSH with child_process.spawn, which this patches before they import it.
  */
 import { registerHooks } from "node:module";
 import { cacheKeyFetch } from "./cache-key.js";
+import { launchReaderThroughSteamService } from "./steam-launcher.js";
 import { thinkingBindingFetch } from "./thinking-binding.js";
 import { PI_COMPLETIONS_FACTORY, routingModule } from "./openai.js";
 
 globalThis.fetch = thinkingBindingFetch(cacheKeyFetch(globalThis.fetch.bind(globalThis)));
+launchReaderThroughSteamService();
 
 const self = new URL("./openai.ts", import.meta.url).href;
 registerHooks({

@@ -21,6 +21,12 @@ this file lists every version in `benchmark-versions.json`, with its date.
 
 ### Harness
 
+- The reader works with newer Steam clients, which give their launcher service a name per
+  instance and pass it to the game in `SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM`.
+  `run-proton.py` passes it on to the launch client; an earlier round's host gets it through
+  its preload. Without it the reader read nothing and every game failed to load
+  (2026-11-12). What a run plays is unchanged; 1.7.3 relocked.
+
 - Claude Fable 5.2's requests ask Anthropic to drop a thinking block whose earlier
   conversation a compaction rewrote (`thinking.block_binding.prefix_mismatch_behavior:
   "drop_block"`). Fable 5.2 binds each thinking block to the conversation before it, and the

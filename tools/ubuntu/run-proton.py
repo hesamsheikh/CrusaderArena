@@ -91,6 +91,11 @@ def main():
     env = os.environ.copy()
     env.update(DBUS_SESSION_BUS_ADDRESS=f'unix:path=/run/user/{os.getuid()}/bus',
                XDG_RUNTIME_DIR=f'/run/user/{os.getuid()}')
+    # Newer Steam clients name their launcher service per instance and pass the name to the game;
+    # the launch client finds the service only through it. Older clients used one fixed name.
+    service = game_env.get('SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM')
+    if service:
+        env['SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM'] = service
     keys = ['STEAM_COMPAT_APP_ID', 'SteamAppId', 'STEAM_COMPAT_CLIENT_INSTALL_PATH',
             'STEAM_COMPAT_DATA_PATH', 'STEAM_COMPAT_TOOL_PATHS']
     command = [str(client), '--alongside-steam']

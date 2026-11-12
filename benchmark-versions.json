@@ -300,6 +300,12 @@
       "fingerprint": "1237bdfb76a2c6c0cf4bd025144c2ecb0eeaa5bf26d1345f9e5d8b81a694735f",
       "date": "2026-11-10",
       "note": "Claude Fable 5.2 asks Anthropic to drop thinking blocks bound to a conversation a compaction rewrote; other models' requests unchanged"
+    },
+    {
+      "version": "1.7.3",
+      "fingerprint": "9124b90037e1e4d4084133d04224b172629c291861c824094f15c1fa03b02dff",
+      "date": "2026-11-12",
+      "note": "Reader: pass on Steam's per-instance launcher service name (SRT_LAUNCHER_SERVICE_ALONGSIDE_STEAM); round preload does the same for earlier versions"
     }
   ]
 }
